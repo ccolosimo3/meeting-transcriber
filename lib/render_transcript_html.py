@@ -35,6 +35,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def timestamp(value: Any) -> str:
+    seconds = float(value or 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{int(hours):02d}:{int(minutes):02d}:{seconds:06.3f}"
+
+
+def human_timestamp(value: Any) -> str:
     total_seconds = max(0, int(float(value or 0)))
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
@@ -55,13 +62,21 @@ def duration_label(value: float) -> str:
 
 def meeting_identity(source: Path) -> tuple[str, str, str]:
     """Derive a human title and local date from the canonical meeting bundle."""
+    fallback = source.stem.replace("-", " ").replace("_", " ").strip()
+    fallback_identity = (
+        fallback.title() or "Meeting transcript",
+        "Date unavailable",
+        source.stem,
+    )
     bundle_name = source.parents[2].name if len(source.parents) >= 3 else ""
     match = BUNDLE_PATTERN.fullmatch(bundle_name)
     if not match:
-        fallback = source.stem.replace("-", " ").replace("_", " ").strip()
-        return fallback.title() or "Meeting transcript", "Date unavailable", source.stem
+        return fallback_identity
 
-    recorded_at = datetime.strptime("".join(match.group(1, 2)), "%Y%m%d%H%M%S")
+    try:
+        recorded_at = datetime.strptime("".join(match.group(1, 2)), "%Y%m%d%H%M%S")
+    except ValueError:
+        return fallback_identity
     slug = match.group(3) or "meeting"
     label = slug.replace("-", " ").replace("_", " ").strip()
     title = label[:1].upper() + label[1:]
@@ -157,7 +172,7 @@ def turn_markup(
         light, dark = speaker_styles[speaker]
         style = f"--speaker-light:{light};--speaker-dark:{dark}"
         label = speaker_label(speaker, names)
-        time = f'{timestamp(turn["start"])}–{timestamp(turn["end"])}'
+        time = f'{human_timestamp(turn["start"])}–{human_timestamp(turn["end"])}'
         copy = html.escape(" ".join(turn["texts"]))
 
         rows.append(
@@ -214,7 +229,7 @@ def render(
       --surface-subtle: #f1f3f6;
       --text: #1b2433;
       --muted: #687386;
-      --faint: #8b95a5;
+      --faint: #566273;
       --line: #dfe3e9;
       --line-strong: #cbd1da;
       --focus: #2563eb;
@@ -228,7 +243,7 @@ def render(
       --surface-subtle: #1d2129;
       --text: #eef1f5;
       --muted: #a8b0bd;
-      --faint: #818a99;
+      --faint: #a6afbd;
       --line: #2b3039;
       --line-strong: #3a414d;
       --focus: #60a5fa;
@@ -242,7 +257,7 @@ def render(
         --surface-subtle: #1d2129;
         --text: #eef1f5;
         --muted: #a8b0bd;
-        --faint: #818a99;
+        --faint: #a6afbd;
         --line: #2b3039;
         --line-strong: #3a414d;
         --focus: #60a5fa;
@@ -261,7 +276,7 @@ def render(
     .recorded-at {{ margin: 14px 0 0; color: var(--muted); }}
     .theme-toggle {{ min-height: 48px; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text); padding: 9px 15px; font-size: .86rem; font-weight: 700; cursor: pointer; }}
     .theme-toggle:hover {{ background: var(--surface-subtle); }}
-    .theme-toggle:focus-visible {{ outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent); outline-offset: 3px; }}
+    .theme-toggle:focus-visible {{ outline: 3px solid var(--focus); outline-offset: 3px; }}
     .summary {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 32px 0 0; padding-top: 24px; border-top: 1px solid var(--line); }}
     .summary div {{ min-width: 0; padding-right: 18px; }}
     .summary div + div {{ padding-left: 18px; border-left: 1px solid var(--line); }}
@@ -328,7 +343,7 @@ def render(
             <h1>{html.escape(title)}</h1>
             <p class="recorded-at">Recorded {html.escape(recorded_at)}</p>
           </div>
-          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme">Dark mode</button>
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">Dark mode</button>
         </div>
         <dl class="summary">
           <div><dt>Duration</dt><dd>{duration_label(duration)}</dd></div>
@@ -354,7 +369,12 @@ def render(
       const button = document.getElementById("theme-toggle");
       const systemDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
       const current = () => root.dataset.theme || (systemDark() ? "dark" : "light");
-      const updateLabel = () => {{ button.textContent = current() === "dark" ? "Light mode" : "Dark mode"; }};
+      const updateLabel = () => {{
+        const dark = current() === "dark";
+        button.textContent = dark ? "Light mode" : "Dark mode";
+        button.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+        button.setAttribute("aria-pressed", String(dark));
+      }};
       button.addEventListener("click", () => {{
         const next = current() === "dark" ? "light" : "dark";
         root.dataset.theme = next;

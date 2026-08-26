@@ -19,18 +19,52 @@ FINITE_LEVEL_PATTERN = re.compile(r"-\d+ dBFS")
 
 
 class RecordMeetingTests(unittest.TestCase):
+    @staticmethod
+    def _ffmpeg_descendant(root_pid: int) -> int | None:
+        process_rows: dict[int, tuple[int, str]] = {}
+        listing = subprocess.check_output(
+            ["/bin/ps", "-axo", "pid=,ppid=,comm="], text=True
+        )
+        for row in listing.splitlines():
+            fields = row.split(maxsplit=2)
+            if len(fields) == 3:
+                process_rows[int(fields[0])] = (int(fields[1]), fields[2])
+        descendants = {root_pid}
+        changed = True
+        while changed:
+            changed = False
+            for pid, (parent_pid, command) in process_rows.items():
+                if parent_pid not in descendants or pid in descendants:
+                    continue
+                descendants.add(pid)
+                changed = True
+                if Path(command).name == "ffmpeg":
+                    return pid
+        return None
+
+    @staticmethod
+    def _pid_exists(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
     def _write_executable(self, path: Path, contents: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(contents, encoding="utf-8")
         path.chmod(0o755)
 
-    def _run_with_fake_capture(self, *, valid: bool) -> tuple[subprocess.CompletedProcess[str], Path]:
+    def _run_with_fake_capture(
+        self, *, valid: bool
+    ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
         root = Path(temporary_directory.name)
         tools_dir = root / "tools"
         prefix = root / "ffmpeg-prefix"
         output_root = root / "meetings"
+        capture_argv = root / "capture-argv"
 
         self._write_executable(
             tools_dir / "brew",
@@ -40,6 +74,7 @@ class RecordMeetingTests(unittest.TestCase):
             prefix / "bin" / "ffmpeg",
             r"""#!/usr/bin/env bash
 set -euo pipefail
+printf '%s\0' "$@" > "$STUB_CAPTURE_ARGV"
 output=""
 for argument in "$@"; do output="$argument"; done
 printf 'partial audio' > "$output"
@@ -57,9 +92,12 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                 "MEETING_CONFIG_DIR": str(root / "config"),
                 "PATH": f"{tools_dir}:{environment['PATH']}",
                 "STUB_CAPTURE_STATUS": "0" if valid else "1",
+                "STUB_CAPTURE_ARGV": str(capture_argv),
                 "STUB_PROBE_STATUS": "0" if valid else "1",
+                "MEETING_RECORDING_DEVICE": "0",
             }
         )
+        environment.pop("MEETING_TRANSCRIBER_CAPTURE_INPUT", None)
         result = subprocess.run(
             ["/bin/bash", str(RECORD_COMMAND), "noninteractive"],
             text=True,
@@ -67,18 +105,33 @@ exit "${STUB_CAPTURE_STATUS:-0}"
             env=environment,
             check=False,
         )
-        return result, output_root
+        return result, output_root, capture_argv
 
     def test_noninteractive_capture_still_finalizes_one_recording(self) -> None:
-        result, output_root = self._run_with_fake_capture(valid=True)
+        result, output_root, capture_argv = self._run_with_fake_capture(valid=True)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Recording saved:", result.stdout)
         self.assertEqual(len(list(output_root.rglob("recording.wav"))), 1)
         self.assertEqual(list(output_root.rglob("recording.partial.wav")), [])
+        arguments = [
+            value.decode()
+            for value in capture_argv.read_bytes().split(b"\0")
+            if value
+        ]
+        self.assertTrue(
+            any(
+                arguments[index : index + 4]
+                == ["-f", "avfoundation", "-i", ":0"]
+                for index in range(len(arguments) - 3)
+            ),
+            arguments,
+        )
+        self.assertNotIn("lavfi", arguments)
+        self.assertNotIn("-re", arguments)
 
     def test_failed_capture_retains_only_the_partial_file(self) -> None:
-        result, output_root = self._run_with_fake_capture(valid=False)
+        result, output_root, _ = self._run_with_fake_capture(valid=False)
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("recording did not finalize; inspect the partial file:", result.stderr)
@@ -96,8 +149,15 @@ exit "${STUB_CAPTURE_STATUS:-0}"
         except (FileNotFoundError, subprocess.CalledProcessError):
             self.skipTest("Homebrew ffmpeg@7 is unavailable")
         ffprobe = ffmpeg_prefix / "bin" / "ffprobe"
-        if not ffprobe.is_file():
-            self.skipTest("Homebrew ffprobe is unavailable")
+        ffmpeg = ffmpeg_prefix / "bin" / "ffmpeg"
+        if not ffprobe.is_file() or not ffmpeg.is_file():
+            self.skipTest("Homebrew ffmpeg@7 is incomplete")
+        subprocess.run(
+            [str(ffmpeg), "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_root = Path(temporary_directory) / "meetings"
@@ -123,8 +183,13 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                 close_fds=True,
             )
             os.close(slave)
+            os.set_blocking(master, False)
             output = bytearray()
-            first_metadata_at: float | None = None
+            status_started_at: float | None = None
+            metadata_arrivals: list[float] = []
+            finite_level_count = 0
+            ffmpeg_pid: int | None = None
+            ffmpeg_exited_at: float | None = None
             q_sent_at: float | None = None
             try:
                 deadline = started_at + 8
@@ -133,6 +198,8 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                     if readable:
                         try:
                             chunk = os.read(master, 65536)
+                        except BlockingIOError:
+                            continue
                         except OSError as error:
                             if error.errno == errno.EIO:
                                 break
@@ -141,8 +208,16 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                             break
                         output.extend(chunk)
                         rendered = output.decode(errors="replace")
-                        if first_metadata_at is None and FINITE_LEVEL_PATTERN.search(rendered):
-                            first_metadata_at = time.monotonic()
+                        if status_started_at is None and "-∞ dBFS" in rendered:
+                            status_started_at = time.monotonic()
+                        if status_started_at is not None and ffmpeg_pid is None:
+                            ffmpeg_pid = self._ffmpeg_descendant(process.pid)
+                        next_finite_level_count = len(
+                            FINITE_LEVEL_PATTERN.findall(rendered)
+                        )
+                        if next_finite_level_count > finite_level_count:
+                            metadata_arrivals.append(time.monotonic())
+                            finite_level_count = next_finite_level_count
                         timer_values = [
                             int(hours) * 3600 + int(minutes) * 60 + int(seconds)
                             for hours, minutes, seconds in TIMER_PATTERN.findall(rendered)
@@ -150,9 +225,23 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                         if q_sent_at is None and timer_values and max(timer_values) >= 2:
                             os.write(master, b"q")
                             q_sent_at = time.monotonic()
+                    if (
+                        q_sent_at is not None
+                        and ffmpeg_pid is not None
+                        and ffmpeg_exited_at is None
+                        and not self._pid_exists(ffmpeg_pid)
+                    ):
+                        ffmpeg_exited_at = time.monotonic()
                     if process.poll() is not None:
                         break
                 return_code = process.wait(timeout=2)
+                finalized_at = time.monotonic()
+                if (
+                    ffmpeg_exited_at is None
+                    and ffmpeg_pid is not None
+                    and not self._pid_exists(ffmpeg_pid)
+                ):
+                    ffmpeg_exited_at = finalized_at
             finally:
                 if process.poll() is None:
                     process.kill()
@@ -161,12 +250,28 @@ exit "${STUB_CAPTURE_STATUS:-0}"
 
             rendered = output.decode(errors="replace")
             self.assertEqual(return_code, 0, rendered)
-            self.assertIsNotNone(first_metadata_at, rendered)
-            assert first_metadata_at is not None
-            self.assertLess(first_metadata_at - started_at, 1.0, rendered)
+            self.assertIsNotNone(status_started_at, rendered)
+            assert status_started_at is not None
+            self.assertGreaterEqual(len(metadata_arrivals), 3, rendered)
+            self.assertLess(metadata_arrivals[0] - status_started_at, 1.0, rendered)
+            self.assertGreater(metadata_arrivals[-1] - metadata_arrivals[0], 1.0)
+            self.assertLess(
+                max(
+                    later - earlier
+                    for earlier, later in zip(
+                        metadata_arrivals, metadata_arrivals[1:]
+                    )
+                ),
+                1.0,
+                rendered,
+            )
             self.assertIsNotNone(q_sent_at, rendered)
             assert q_sent_at is not None
-            self.assertLess(time.monotonic() - q_sent_at, 2.0, rendered)
+            self.assertIsNotNone(ffmpeg_pid, rendered)
+            self.assertIsNotNone(ffmpeg_exited_at, rendered)
+            assert ffmpeg_exited_at is not None
+            self.assertLess(ffmpeg_exited_at - q_sent_at, 2.0, rendered)
+            self.assertLess(finalized_at - q_sent_at, 3.0, rendered)
 
             displayed_seconds = [
                 int(hours) * 3600 + int(minutes) * 60 + int(seconds)

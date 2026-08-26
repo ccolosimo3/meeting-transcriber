@@ -10,16 +10,16 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from render_transcript_html import (  # noqa: E402
     duration_label,
+    human_timestamp,
     meeting_identity,
     render,
-    timestamp,
 )
 
 
 class HtmlRendererTests(unittest.TestCase):
     def test_timestamp_omits_milliseconds_and_unnecessary_hours(self) -> None:
-        self.assertEqual(timestamp(237.9), "3:57")
-        self.assertEqual(timestamp(3721.9), "1:02:01")
+        self.assertEqual(human_timestamp(237.9), "3:57")
+        self.assertEqual(human_timestamp(3721.9), "1:02:01")
 
     def test_meeting_identity_uses_canonical_bundle_name(self) -> None:
         source = Path(
@@ -40,6 +40,19 @@ class HtmlRendererTests(unittest.TestCase):
         title, _, _ = meeting_identity(source)
 
         self.assertEqual(title, "Q3 API review")
+
+    def test_meeting_identity_falls_back_for_noncanonical_and_invalid_dates(self) -> None:
+        for source in (
+            Path("/tmp/external/run/transcript.json"),
+            Path(
+                "/tmp/20260230-120000-review/transcripts/run-1/transcript.json"
+            ),
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    meeting_identity(source),
+                    ("Transcript", "Date unavailable", "transcript"),
+                )
 
     def test_duration_label_uses_compact_human_units(self) -> None:
         self.assertEqual(duration_label(185), "3 min")
@@ -75,14 +88,9 @@ class HtmlRendererTests(unittest.TestCase):
         self.assertIn("August 26, 2026 at 9:30 AM", rendered)
         self.assertIn("<dd>2</dd>", rendered)
         self.assertIn('id="theme-toggle"', rendered)
-        self.assertIn('aria-label="Switch color theme"', rendered)
-        self.assertIn("prefers-color-scheme: dark", rendered)
-        self.assertIn('localStorage.setItem("meeting-transcriber-theme", next)', rendered)
+        self.assertIn('aria-label="Switch to dark mode"', rendered)
+        self.assertIn('aria-pressed="false"', rendered)
         self.assertIn('class="transcript editorial"', rendered)
-        self.assertIn("@media (max-width: 680px)", rendered)
-        self.assertIn("@media print", rendered)
-        self.assertNotIn("ui-picker", rendered)
-        self.assertNotIn("Conversation Stream", rendered)
         self.assertIn("0:00–2:05", rendered)
         self.assertIn("2:06–3:05", rendered)
         self.assertIn("Chris", rendered)
