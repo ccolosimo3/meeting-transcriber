@@ -15,7 +15,10 @@ import time
 import unittest
 from urllib.request import urlopen
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -81,8 +84,8 @@ class CdpPage:
 
 
 @unittest.skipUnless(
-    any(candidate.is_file() for candidate in CHROME_CANDIDATES),
-    "requires a local Chromium browser for rendered HTML verification",
+    aiohttp is not None and any(candidate.is_file() for candidate in CHROME_CANDIDATES),
+    "requires aiohttp and a local Chromium browser for rendered HTML verification",
 )
 class HtmlBrowserTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -195,17 +198,14 @@ class HtmlBrowserTests(unittest.TestCase):
 
         self.assertGreater(len(result["pdf"]), 1000)
         self.assertEqual(result["pdf"][:4], b"%PDF")
-        self.assertEqual(
-            result["print"],
-            {
-                "toggleDisplay": "none",
-                "bodyBackground": "rgb(255, 255, 255)",
-                "documentBorder": "0px",
-                "documentShadow": "none",
-                "articleBreak": "avoid",
-                "mainPadding": "0px",
-            },
-        )
+        self.assertEqual(result["print"]["theme"], "dark")
+        self.assertEqual(result["print"]["toggleDisplay"], "none")
+        self.assertEqual(result["print"]["bodyBackground"], "rgb(255, 255, 255)")
+        self.assertEqual(result["print"]["documentBorder"], "0px")
+        self.assertEqual(result["print"]["documentShadow"], "none")
+        self.assertEqual(result["print"]["articleBreak"], "avoid")
+        self.assertEqual(result["print"]["mainPadding"], "0px")
+        self.assertGreaterEqual(result["print"]["speakerContrast"], 4.5)
 
     async def _exercise_browser_contract(self) -> dict[str, object]:
         async with aiohttp.ClientSession() as session:
@@ -249,6 +249,9 @@ class HtmlBrowserTests(unittest.TestCase):
                       )
                     }))()"""
                 )
+                await page.evaluate("document.getElementById('theme-toggle').click()")
+                await page.request("Page.reload")
+                await page.wait_for("Page.loadEventFired")
                 await page.request(
                     "Emulation.setEmulatedMedia",
                     {
@@ -259,14 +262,36 @@ class HtmlBrowserTests(unittest.TestCase):
                     },
                 )
                 print_state = await page.evaluate(
-                    """(() => ({
-                      toggleDisplay: getComputedStyle(document.getElementById('theme-toggle')).display,
-                      bodyBackground: getComputedStyle(document.body).backgroundColor,
-                      documentBorder: getComputedStyle(document.querySelector('.document')).borderTopWidth,
-                      documentShadow: getComputedStyle(document.querySelector('.document')).boxShadow,
-                      articleBreak: getComputedStyle(document.querySelector('.editorial-turn')).breakInside,
-                      mainPadding: getComputedStyle(document.querySelector('main')).paddingTop
-                    }))()"""
+                    """(() => {
+                      const rgb = value => value.match(/[0-9.]+/g).slice(0, 3).map(Number);
+                      const luminance = value => {
+                        const channels = rgb(value).map(channel => {
+                          const normalized = channel / 255;
+                          return normalized <= .04045
+                            ? normalized / 12.92
+                            : ((normalized + .055) / 1.055) ** 2.4;
+                        });
+                        return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+                      };
+                      const contrast = (left, right) => {
+                        const values = [luminance(left), luminance(right)].sort((a, b) => b - a);
+                        return (values[0] + .05) / (values[1] + .05);
+                      };
+                      const bodyBackground = getComputedStyle(document.body).backgroundColor;
+                      return {
+                        theme: document.documentElement.dataset.theme,
+                        toggleDisplay: getComputedStyle(document.getElementById('theme-toggle')).display,
+                        bodyBackground,
+                        documentBorder: getComputedStyle(document.querySelector('.document')).borderTopWidth,
+                        documentShadow: getComputedStyle(document.querySelector('.document')).boxShadow,
+                        articleBreak: getComputedStyle(document.querySelector('.editorial-turn')).breakInside,
+                        mainPadding: getComputedStyle(document.querySelector('main')).paddingTop,
+                        speakerContrast: contrast(
+                          getComputedStyle(document.querySelector('.speaker')).color,
+                          bodyBackground
+                        )
+                      };
+                    })()"""
                 )
                 printed = await page.request(
                     "Page.printToPDF", {"printBackground": True}

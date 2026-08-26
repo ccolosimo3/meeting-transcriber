@@ -62,9 +62,10 @@ def duration_label(value: float) -> str:
 
 def meeting_identity(source: Path) -> tuple[str, str, str]:
     """Derive a human title and local date from the canonical meeting bundle."""
-    fallback = source.stem.replace("-", " ").replace("_", " ").strip()
+    fallback_label = source.stem.replace("-", " ").replace("_", " ").strip()
+    fallback = fallback_label[:1].upper() + fallback_label[1:]
     fallback_identity = (
-        fallback.title() or "Meeting transcript",
+        fallback or "Meeting transcript",
         "Date unavailable",
         source.stem,
     )
@@ -328,6 +329,9 @@ def render(
       main {{ width: 100%; margin: 0; padding: 0; }}
       .document {{ border: 0; box-shadow: none; }}
       .theme-toggle {{ display: none; }}
+      :root[data-theme="dark"] .speaker, :root[data-theme="dark"] .legend-item,
+      :root[data-theme="dark"] .editorial-turn, :root:not([data-theme]) .speaker,
+      :root:not([data-theme]) .legend-item, :root:not([data-theme]) .editorial-turn {{ --speaker: var(--speaker-light); }}
       .document-header, .transcript {{ padding-right: 0; padding-left: 0; }}
       article {{ break-inside: avoid; }}
     }}
@@ -351,7 +355,7 @@ def render(
           <div><dt>Turns</dt><dd>{len(turns)}</dd></div>
           <div><dt>Language</dt><dd>{html.escape(language.upper())}</dd></div>
         </dl>
-        <div class="legend" aria-label="Speaker color legend">{legend}</div>
+        <div class="legend" role="group" aria-label="Speaker color legend">{legend}</div>
       </header>
       <div class="transcript editorial">
         <h2 class="visually-hidden">Transcript</h2>

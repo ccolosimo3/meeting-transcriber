@@ -54,6 +54,12 @@ class HtmlRendererTests(unittest.TestCase):
                     ("Transcript", "Date unavailable", "transcript"),
                 )
 
+        fallback_source = Path("/tmp/external/run/Q3-API-review.json")
+        self.assertEqual(
+            meeting_identity(fallback_source),
+            ("Q3 API review", "Date unavailable", "Q3-API-review"),
+        )
+
     def test_duration_label_uses_compact_human_units(self) -> None:
         self.assertEqual(duration_label(185), "3 min")
         self.assertEqual(duration_label(3721), "1 hr 2 min")
@@ -90,6 +96,7 @@ class HtmlRendererTests(unittest.TestCase):
         self.assertIn('id="theme-toggle"', rendered)
         self.assertIn('aria-label="Switch to dark mode"', rendered)
         self.assertIn('aria-pressed="false"', rendered)
+        self.assertIn('role="group" aria-label="Speaker color legend"', rendered)
         self.assertIn('class="transcript editorial"', rendered)
         self.assertIn("0:00–2:05", rendered)
         self.assertIn("2:06–3:05", rendered)

@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import re
 import select
-import shutil
 import subprocess
 import tempfile
 import time
