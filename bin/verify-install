@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+utility_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+wrapper="${utility_root}/bin/transcribe-meeting"
+verification_root="${MEETING_VERIFICATION_DIR:-${utility_root}/.local-artifacts/verification}"
+
+baseline() {
+  printf 'Baseline mode is no longer required; source and runtime data are separated.\n'
+}
+
+expect_prelaunch_failure() {
+  local name="$1"
+  local marker="$2"
+  shift 2
+  if "$@" >"${marker}.${name}.stdout" 2>"${marker}.${name}.stderr"; then
+    printf 'Error: %s unexpectedly succeeded\n' "$name" >&2
+    exit 1
+  fi
+  [[ ! -e "$marker" ]] || {
+    printf 'Error: %s launched a transcription engine before rejecting input\n' "$name" >&2
+    exit 1
+  }
+}
+
+make_stub() {
+  local stub="$1"
+  printf '%s\n' '#!/usr/bin/env bash' > "$stub"
+  printf '%s\n' 'set -euo pipefail' >> "$stub"
+  printf '%s\n' ': "${STUB_MARKER:?}" "${STUB_ARGV:?}" "${STUB_ENV:?}"' >> "$stub"
+  printf '%s\n' 'touch "$STUB_MARKER"' >> "$stub"
+  printf '%s\n' 'printf "%s\\n" "$@" > "$STUB_ARGV"' >> "$stub"
+  printf '%s\n' 'if [[ -n "${HF_TOKEN:-}" ]]; then printf "present\\n" > "$STUB_ENV"; else printf "absent\\n" > "$STUB_ENV"; fi' >> "$stub"
+  printf '%s\n' 'input="$1"; shift; output_dir=""' >> "$stub"
+  printf '%s\n' 'while [[ $# -gt 0 ]]; do if [[ "$1" == "--output_dir" && $# -ge 2 ]]; then output_dir="$2"; shift 2; else shift; fi; done' >> "$stub"
+  printf '%s\n' 'if [[ -n "$output_dir" ]]; then stem="$(basename "$input")"; stem="${stem%.*}"; printf "%s" "{\"language\":\"en\",\"segments\":[{\"speaker\":\"SPEAKER_00\",\"start\":0,\"end\":1,\"text\":\"stub\"}]}" > "$output_dir/$stem.json"; fi' >> "$stub"
+  chmod +x "$stub"
+}
+
+smoke() {
+  local run_stamp artifact_dir output_root ffmpeg_prefix source_file source_sha_before
+  run_stamp="$(date '+%Y%m%d-%H%M%S')"
+  artifact_dir="${verification_root}/smoke ${run_stamp}"
+  output_root="${artifact_dir}/Meeting outputs"
+  mkdir -p "$artifact_dir" "$output_root"
+  local receipt="${artifact_dir}/receipt.txt"
+  exec > >(tee -a "$receipt") 2>&1
+
+  printf 'Meeting Transcriber smoke verification\n'
+  printf 'Started: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  printf 'Artifacts: %s\n' "$artifact_dir"
+
+  command -v uv
+  uv --version
+  "$utility_root/.venv/bin/python" --version
+  "$utility_root/.venv/bin/mlx_whisper" --help >/dev/null
+  "$utility_root/.venv/bin/whisperx" --help >/dev/null
+  "$utility_root/.venv/bin/python" - <<'PY'
+from importlib.metadata import version
+for package in ("mlx-whisper", "whisperx", "pyannote.audio", "torchcodec"):
+    print(f"{package}={version(package)}")
+PY
+
+  ffmpeg_prefix="$(brew --prefix ffmpeg@7)"
+  "$ffmpeg_prefix/bin/ffmpeg" -version | head -n 1
+  PATH="$ffmpeg_prefix/bin:$PATH" \
+    DYLD_LIBRARY_PATH="$ffmpeg_prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+    "$utility_root/.venv/bin/python" -c 'import torchcodec; print("torchcodec import: ok")'
+
+  local voice_a="${artifact_dir}/Voice one.aiff"
+  local voice_b="${artifact_dir}/Voice two.aiff"
+  source_file="${artifact_dir}/Two voice sample.wav"
+  say -v Samantha -o "$voice_a" 'Hello. This is a local meeting transcription test.'
+  say -v Daniel -o "$voice_b" 'The second speaker confirms that no private meeting audio is needed.'
+  "$ffmpeg_prefix/bin/ffmpeg" -hide_banner -loglevel error -y \
+    -i "$voice_a" -i "$voice_b" \
+    -filter_complex '[0:a][1:a]concat=n=2:v=0:a=1' -ar 16000 -ac 1 "$source_file"
+  source_sha_before="$(shasum -a 256 "$source_file" | awk '{print $1}')"
+  printf 'Synthetic source SHA-256: %s\n' "$source_sha_before"
+
+  local stub="${artifact_dir}/whisperx stub"
+  local marker="${artifact_dir}/stub-launched"
+  local argv_file="${artifact_dir}/stub-argv.txt"
+  local env_file="${artifact_dir}/stub-env.txt"
+  make_stub "$stub"
+  export STUB_MARKER="$marker" STUB_ARGV="$argv_file" STUB_ENV="$env_file"
+
+  expect_prelaunch_failure missing-input "$marker" \
+    env MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
+    --backend whisperx --model tiny.en \
+    "${artifact_dir}/does not exist.wav" "$output_root"
+  expect_prelaunch_failure speakers-without-diarize "$marker" \
+    env MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
+    --backend whisperx --model tiny.en --speakers 2 \
+    "$source_file" "$output_root"
+  expect_prelaunch_failure missing-token "$marker" \
+    env -u HF_TOKEN MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
+    MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
+    --backend whisperx --model tiny.en --diarize \
+    "$source_file" "$output_root"
+
+  local collision_dir="${output_root}/collision"
+  mkdir "$collision_dir"
+  expect_prelaunch_failure collision "$marker" \
+    env MEETING_TRANSCRIBER_RUN_ID=collision MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" \
+    "$wrapper" --backend whisperx --model tiny.en "$source_file" "$output_root"
+
+  local sentinel='non-secret-sentinel-value'
+  local stub_output
+  stub_output="$(HF_TOKEN="$sentinel" MEETING_TRANSCRIBER_RUN_ID=stub-run \
+    MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
+    --backend whisperx --model tiny.en --diarize --speakers 2 \
+    "$source_file" "$output_root")"
+  [[ -e "$marker" ]] || { printf 'Error: stub did not launch\n' >&2; exit 1; }
+  grep -Fxq present "$env_file"
+  if grep -Fq "$sentinel" "$argv_file" || [[ "$stub_output" == *"$sentinel"* ]]; then
+    printf 'Error: inherited token appeared in argv or wrapper output\n' >&2
+    exit 1
+  fi
+  printf 'WhisperX credential inheritance/argv proof: ok\n'
+
+  local mlx_stub="${utility_root}/tests/fixtures/mlx-adapter-stub"
+  local mlx_argv="${artifact_dir}/mlx-stub-argv.txt"
+  local mlx_stub_output
+  mlx_stub_output="$(STUB_ARGV="$mlx_argv" MEETING_TRANSCRIBER_RUN_ID=mlx-stub \
+    MEETING_TRANSCRIBER_MLX_BIN="$mlx_stub" "$wrapper" \
+    --backend mlx --model turbo "$source_file" "$output_root")"
+  [[ "$mlx_stub_output" == *"${output_root}/mlx-stub"* ]] || {
+    printf 'Error: MLX stub did not report the expected output directory\n' >&2
+    exit 1
+  }
+  grep -Fxq -- '--model' "$mlx_argv"
+  grep -Fxq -- 'turbo' "$mlx_argv"
+  printf 'Default MLX Turbo dispatch proof: ok\n'
+
+  local start_seconds end_seconds real_output
+  start_seconds="$SECONDS"
+  real_output="$(MEETING_TRANSCRIBER_RUN_ID=real-run "$wrapper" \
+    --backend mlx --model turbo "$source_file" "$output_root")"
+  end_seconds="$SECONDS"
+  local real_dir="${output_root}/real-run"
+  [[ "$real_output" == *"$real_dir"* ]] || {
+    printf 'Error: wrapper did not report expected output directory\n' >&2
+    exit 1
+  }
+  for extension in txt json html srt vtt tsv; do
+    [[ -s "${real_dir}/transcript.${extension}" ]] || {
+      printf 'Error: missing or empty %s output\n' "$extension" >&2
+      exit 1
+    }
+  done
+
+  "$utility_root/.venv/bin/python" - "${real_dir}/transcript.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+segments = data.get("segments", [])
+assert segments, "JSON has no segments"
+assert any(str(segment.get("text", "")).strip() for segment in segments), "JSON has no text"
+assert all(isinstance(segment.get("start"), (int, float)) for segment in segments), "missing numeric start"
+assert all(isinstance(segment.get("end"), (int, float)) for segment in segments), "missing numeric end"
+print("JSON text/timestamps: ok")
+PY
+  grep -Eq '[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}' \
+    "${real_dir}/transcript.srt"
+  grep -Eq '[0-9]{2}:[0-9]{2}\.[0-9]{3} --> [0-9]{2}:[0-9]{2}\.[0-9]{3}' \
+    "${real_dir}/transcript.vtt"
+  [[ "$(shasum -a 256 "$source_file" | awk '{print $1}')" == "$source_sha_before" ]] || {
+    printf 'Error: source recording changed\n' >&2
+    exit 1
+  }
+
+  local total_bytes largest_file
+  total_bytes="$(find "$real_dir" -type f -exec stat -f '%z' {} + | awk '{sum += $1} END {print sum + 0}')"
+  largest_file="$(find "$real_dir" -type f -exec stat -f '%z %N' {} + | sort -nr | head -n 1)"
+  printf 'Elapsed transcription seconds: %s\n' "$((end_seconds - start_seconds))"
+  printf 'Total output bytes: %s\n' "$total_bytes"
+  printf 'Largest output: %s\n' "$largest_file"
+  printf 'Diarization: unverified (run verify-install diarization with Keychain token or HF_TOKEN)\n'
+  printf 'Smoke verification: PASS\n'
+}
+
+diarization() {
+  local latest source_file output_root run_dir
+  latest="$(find "$verification_root" -maxdepth 1 -type d -name 'smoke *' | sort | tail -n 1)"
+  [[ -n "$latest" ]] || {
+    printf 'Error: run verify-install smoke first\n' >&2
+    exit 2
+  }
+  source_file="${latest}/Two voice sample.wav"
+  output_root="${latest}/Diarization outputs"
+  mkdir -p "$output_root"
+  printf 'Diarization credential source: inherited HF_TOKEN or macOS Keychain\n'
+  MEETING_TRANSCRIBER_RUN_ID=diarization "$wrapper" \
+    --backend mlx --model turbo --diarize --speakers 2 \
+    "$source_file" "$output_root"
+  run_dir="${output_root}/diarization"
+  "$utility_root/.venv/bin/python" - "${run_dir}/transcript.json" <<'PY'
+import json
+import sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+speakers = {
+    word.get("speaker")
+    for segment in data.get("segments", [])
+    for word in segment.get("words", [])
+    if word.get("speaker")
+}
+speakers.update(
+    segment.get("speaker")
+    for segment in data.get("segments", [])
+    if segment.get("speaker")
+)
+assert len(speakers) >= 2, f"expected at least 2 speaker labels, got {sorted(speakers)}"
+print(f"Diarization verification: PASS ({len(speakers)} labels)")
+PY
+}
+
+case "${1:-}" in
+  baseline) baseline ;;
+  smoke) smoke ;;
+  diarization) diarization ;;
+  *)
+    printf 'Usage: verify-install baseline | smoke | diarization\n' >&2
+    exit 2
+    ;;
+esac

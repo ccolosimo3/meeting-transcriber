@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+data_root="$(meeting_data_root)"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  printf '%s\n' \
+    'Usage: meeting folder' \
+    '' \
+    'Opens the meeting bundle directory in Finder.'
+  exit 0
+fi
+[[ $# -eq 0 ]] || { printf 'Error: meeting folder accepts no arguments\n' >&2; exit 2; }
+
+mkdir -p "$data_root"
+chmod 700 "$data_root"
+open "$data_root"

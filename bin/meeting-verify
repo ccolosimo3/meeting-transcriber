@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  printf '%s\n' \
+    'Usage: meeting-verify baseline | smoke | diarization' \
+    '' \
+    '  baseline      Compatibility no-op; no baseline is required' \
+    '  smoke         Verify the local toolchain and transcription path' \
+    '  diarization   Verify real two-speaker diarization'
+  exit 0
+fi
+
+exec "${utility_root}/bin/verify-install" "$@"

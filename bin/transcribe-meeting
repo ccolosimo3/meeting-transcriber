@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+whisperx_bin="${MEETING_TRANSCRIBER_WHISPERX_BIN:-${utility_root}/.venv/bin/whisperx}"
+python_bin="${utility_root}/.venv/bin/python"
+render_html_bin="${MEETING_TRANSCRIBER_RENDER_HTML_BIN:-${utility_root}/bin/render-transcript-html}"
+backend="mlx"
+model="turbo"
+hotwords=""
+diarize=0
+speakers=""
+
+usage() {
+  printf '%s\n' \
+    'Usage: transcribe-meeting [--diarize] [--speakers N] [--backend ENGINE]' \
+    '                          [--model MODEL]' \
+    '                          [--hotwords TEXT] INPUT OUTPUT_ROOT'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --diarize)
+      diarize=1
+      shift
+      ;;
+    --speakers)
+      [[ $# -ge 2 ]] || fail '--speakers requires a positive integer'
+      speakers="$2"
+      shift 2
+      ;;
+    --model)
+      [[ $# -ge 2 ]] || fail '--model requires a value'
+      model="$2"
+      shift 2
+      ;;
+    --backend)
+      [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
+      backend="$2"
+      shift 2
+      ;;
+    --hotwords)
+      [[ $# -ge 2 ]] || fail '--hotwords requires a value'
+      hotwords="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ $# -eq 2 ]] || { usage >&2; exit 2; }
+input="$1"
+output_root="$2"
+
+[[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
+[[ -z "$speakers" || "$speakers" =~ ^[1-9][0-9]*$ ]] || fail '--speakers requires a positive integer'
+[[ -z "$speakers" || "$diarize" -eq 1 ]] || fail '--speakers may be used only with --diarize'
+[[ "$backend" == "mlx" || "$backend" == "whisperx" ]] || fail '--backend requires mlx or whisperx'
+diarization_token="${HF_TOKEN:-}"
+if [[ "$diarize" -eq 1 && -z "$diarization_token" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
+  keychain_account="${USER:-$(id -un)}"
+  if ! diarization_token="$(security find-generic-password \
+    -a "$keychain_account" -s meeting-transcriber-hf-token -w 2>/dev/null)"; then
+    fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
+  fi
+  [[ -n "$diarization_token" ]] || fail 'the meeting-transcriber-hf-token Keychain item is empty'
+fi
+[[ "$diarize" -eq 0 || -n "$diarization_token" ]] || fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
+unset HF_TOKEN
+if [[ "$backend" == "mlx" ]]; then
+  if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
+    [[ -x "$MEETING_TRANSCRIBER_MLX_BIN" ]] || fail "MLX adapter executable not found: $MEETING_TRANSCRIBER_MLX_BIN"
+  else
+    [[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
+    [[ -f "${utility_root}/lib/transcribe_mlx.py" ]] || fail 'MLX adapter is missing'
+  fi
+else
+  [[ -x "$whisperx_bin" ]] || fail "WhisperX executable not found: $whisperx_bin"
+fi
+[[ -x "$render_html_bin" ]] || fail "HTML renderer executable not found: $render_html_bin"
+
+ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" || fail 'Homebrew ffmpeg@7 is not installed'
+[[ -x "${ffmpeg_prefix}/bin/ffmpeg" ]] || fail "ffmpeg@7 executable not found under: $ffmpeg_prefix"
+
+mkdir -p "$output_root"
+[[ -d "$output_root" && -w "$output_root" ]] || fail "output root is not writable: $output_root"
+
+source_name="$(basename "$input")"
+source_stem="${source_name%.*}"
+
+if [[ -n "${MEETING_TRANSCRIBER_RUN_ID:-}" ]]; then
+  [[ "$MEETING_TRANSCRIBER_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail 'MEETING_TRANSCRIBER_RUN_ID contains invalid characters'
+  run_id="$MEETING_TRANSCRIBER_RUN_ID"
+else
+  run_id="$(date '+%Y%m%d-%H%M%S')"
+fi
+output_dir="${output_root}/${run_id}"
+[[ ! -e "$output_dir" ]] || fail "output directory already exists: $output_dir"
+mkdir "$output_dir"
+
+export PATH="${ffmpeg_prefix}/bin:${PATH}"
+export DYLD_LIBRARY_PATH="${ffmpeg_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+export PYANNOTE_METRICS_ENABLED=0
+
+if [[ "$backend" == "mlx" ]]; then
+  if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
+    command=("$MEETING_TRANSCRIBER_MLX_BIN")
+  else
+    command=("$python_bin" "${utility_root}/lib/transcribe_mlx.py")
+  fi
+  command+=(
+    --input "$input"
+    --model "$model"
+    --output-dir "$output_dir"
+    --output-name transcript
+  )
+  if [[ -n "$hotwords" ]]; then
+    command+=(--initial-prompt "$hotwords")
+  fi
+  if [[ "$diarize" -eq 1 ]]; then
+    command+=(--diarize)
+    if [[ -n "$speakers" ]]; then
+      command+=(--speakers "$speakers")
+    fi
+  fi
+else
+  command=(
+    "$whisperx_bin"
+    "$input"
+    --model "$model"
+    --device cpu
+    --compute_type int8
+    --condition_on_previous_text False
+    --output_dir "$output_dir"
+    --output_format all
+  )
+  if [[ -n "$hotwords" ]]; then
+    command+=(--hotwords "$hotwords")
+  fi
+  if [[ "$diarize" -eq 1 ]]; then
+    command+=(--diarize)
+    if [[ -n "$speakers" ]]; then
+      command+=(--min_speakers "$speakers" --max_speakers "$speakers")
+    fi
+  fi
+fi
+
+if [[ "$diarize" -eq 1 ]]; then
+  HF_TOKEN="$diarization_token" "${command[@]}"
+else
+  "${command[@]}"
+fi
+unset diarization_token
+if [[ "$backend" == "whisperx" ]]; then
+  for extension in json txt srt vtt tsv; do
+    source_output="${output_dir}/${source_stem}.${extension}"
+    [[ -e "$source_output" ]] || continue
+    destination_output="${output_dir}/transcript.${extension}"
+    if [[ "$source_output" != "$destination_output" ]]; then
+      mv "$source_output" "$destination_output"
+    fi
+  done
+fi
+json_output="${output_dir}/transcript.json"
+[[ -s "$json_output" ]] || fail "transcription did not create the expected JSON output: $json_output"
+"$render_html_bin" "$json_output" >/dev/null
+if [[ -n "${MEETING_TRANSCRIBER_RESULT_FILE:-}" ]]; then
+  printf '%s\n' "$output_dir" > "$MEETING_TRANSCRIBER_RESULT_FILE"
+fi
+printf '%s\n' "$output_dir"

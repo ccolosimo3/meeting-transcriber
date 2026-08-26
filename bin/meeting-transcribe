@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+data_root="$(meeting_data_root)"
+meetings_root="$data_root"
+output_root=""
+meetings_root_set=0
+diarize=1
+speakers=""
+backend="mlx"
+model="turbo"
+hotwords=""
+input=""
+
+usage() {
+  printf '%s\n' \
+    'Usage: meeting-transcribe [options] [INPUT]' \
+    '' \
+    'Transcribes INPUT, or the newest completed recording when INPUT is omitted.' \
+    'Speaker diarization is enabled by default.' \
+    '' \
+    'Options:' \
+    '  --speakers N          Use an exact speaker count' \
+    '  --backend ENGINE      mlx (default) or whisperx (CPU fallback)' \
+    '  --model MODEL         Whisper model (default: turbo)' \
+    '  --hotwords TEXT       Bias names or domain vocabulary' \
+    '  --no-diarize          Skip speaker diarization' \
+    '  --meetings-root DIR  Search DIR when INPUT is omitted' \
+    '  --output-root DIR     Advanced: write transcript runs directly under DIR' \
+    '  -h, --help            Show this help'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --speakers)
+      [[ $# -ge 2 ]] || fail '--speakers requires a positive integer'
+      speakers="$2"
+      shift 2
+      ;;
+    --model)
+      [[ $# -ge 2 ]] || fail '--model requires a value'
+      model="$2"
+      shift 2
+      ;;
+    --backend)
+      [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
+      backend="$2"
+      shift 2
+      ;;
+    --hotwords)
+      [[ $# -ge 2 ]] || fail '--hotwords requires a value'
+      hotwords="$2"
+      shift 2
+      ;;
+    --no-diarize)
+      diarize=0
+      shift
+      ;;
+    --meetings-root|--recordings-root)
+      [[ $# -ge 2 ]] || fail "$1 requires a value"
+      meetings_root="$2"
+      meetings_root_set=1
+      shift 2
+      ;;
+    --output-root)
+      [[ $# -ge 2 ]] || fail '--output-root requires a value'
+      output_root="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      [[ -z "$input" ]] || fail 'provide at most one input file'
+      input="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ -z "$speakers" || "$speakers" =~ ^[1-9][0-9]*$ ]] || fail '--speakers requires a positive integer'
+[[ -z "$speakers" || "$diarize" -eq 1 ]] || fail '--speakers may not be used with --no-diarize'
+[[ "$backend" == "mlx" || "$backend" == "whisperx" ]] || fail '--backend requires mlx or whisperx'
+
+arguments=(--backend "$backend" --model "$model")
+if [[ -n "$hotwords" ]]; then
+  arguments+=(--hotwords "$hotwords")
+fi
+if [[ "$diarize" -eq 1 ]]; then
+  arguments+=(--diarize)
+  if [[ -n "$speakers" ]]; then
+    arguments+=(--speakers "$speakers")
+  fi
+fi
+
+if [[ -n "$input" ]]; then
+  [[ "$meetings_root_set" -eq 0 ]] || fail '--meetings-root may be used only when INPUT is omitted'
+  [[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
+  input="$(cd "$(dirname "$input")" && pwd)/$(basename "$input")"
+  if [[ -z "$output_root" ]]; then
+    mkdir -p "$meetings_root"
+    meetings_root="$(cd "$meetings_root" && pwd)"
+    input_name="$(basename "$input")"
+    input_parent="$(dirname "$input")"
+    if [[ ( "$input_name" == recording || "$input_name" == recording.* ) \
+      && "$input_name" != recording.partial.* \
+      && ! -L "$input" \
+      && "$(dirname "$input_parent")" == "$meetings_root" ]]; then
+      output_root="$(dirname "$input")/transcripts"
+    else
+      source_stem="${input_name%.*}"
+      source_extension=""
+      if [[ "$input_name" == *.* ]]; then
+        source_extension=".${input_name##*.}"
+      fi
+      source_slug="$(printf '%s' "$source_stem" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+      [[ -n "$source_slug" ]] || source_slug="meeting"
+      if [[ -n "${MEETING_TRANSCRIBER_BUNDLE_ID:-}" ]]; then
+        [[ "$MEETING_TRANSCRIBER_BUNDLE_ID" =~ ^[A-Za-z0-9._-]+$ ]] \
+          || fail 'MEETING_TRANSCRIBER_BUNDLE_ID contains invalid characters'
+        import_stamp="$MEETING_TRANSCRIBER_BUNDLE_ID"
+      else
+        import_stamp="$(date '+%Y%m%d-%H%M%S')"
+      fi
+      bundle_dir="${meetings_root}/${import_stamp}-${source_slug}"
+      [[ ! -e "$bundle_dir" ]] || fail "dated meeting bundle already exists: $bundle_dir"
+      mkdir "$bundle_dir"
+      imported_recording="${bundle_dir}/recording${source_extension}"
+      cp "$input" "$imported_recording"
+      chmod 600 "$imported_recording"
+      input="$imported_recording"
+      output_root="${bundle_dir}/transcripts"
+      printf 'Imported recording: %s\n' "$input"
+    fi
+  fi
+  exec "${utility_root}/bin/transcribe-meeting" \
+    "${arguments[@]}" "$input" "$output_root"
+fi
+
+latest_arguments=(--backend "$backend" --model "$model" --meetings-root "$meetings_root")
+if [[ -n "$output_root" ]]; then
+  latest_arguments+=(--output-root "$output_root")
+fi
+if [[ -n "$hotwords" ]]; then
+  latest_arguments+=(--hotwords "$hotwords")
+fi
+if [[ "$diarize" -eq 0 ]]; then
+  latest_arguments+=(--no-diarize)
+elif [[ -n "$speakers" ]]; then
+  latest_arguments+=(--speakers "$speakers")
+fi
+exec "${utility_root}/bin/transcribe-latest-meeting" "${latest_arguments[@]}"

@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+data_root="$(meeting_data_root)"
+config_root="$(meeting_config_root)"
+config_file="$(meeting_config_file)"
+recording_device=""
+skip_token=0
+skip_skill=0
+
+usage() {
+  printf '%s\n' \
+    'Usage: meeting setup [--device NAME_OR_INDEX] [--skip-token] [--skip-skill]' \
+    '' \
+    'Creates local data/configuration directories, selects a microphone,' \
+    'offers secure Keychain token setup, installs the bundled Codex skill,' \
+    'and finishes with meeting doctor.'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --device)
+      [[ $# -ge 2 ]] || fail '--device requires a value'
+      recording_device="$2"
+      shift 2
+      ;;
+    --skip-token)
+      skip_token=1
+      shift
+      ;;
+    --skip-skill)
+      skip_skill=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+mkdir -p "$config_root" "$data_root" "${HOME}/.local/bin"
+chmod 700 "$config_root" "$data_root"
+while IFS= read -r -d '' private_directory; do
+  chmod 700 "$private_directory"
+done < <(find "$data_root" -type d -print0)
+while IFS= read -r -d '' private_file; do
+  chmod 600 "$private_file"
+done < <(find "$data_root" -type f -print0)
+
+current_device="$(meeting_config_get recording_device 0)"
+if [[ -z "$recording_device" && -t 0 ]]; then
+  if ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)"; then
+    printf 'Available audio devices:\n'
+    "${ffmpeg_prefix}/bin/ffmpeg" -hide_banner -f avfoundation -list_devices true -i '' 2>&1 \
+      | sed -n '/AVFoundation audio devices:/,$p' \
+      | sed '/Error opening input/,$d' || true
+    printf '\nRecording device name or index [%s]: ' "$current_device"
+    read -r recording_device || true
+  fi
+fi
+recording_device="${recording_device:-$current_device}"
+
+umask 077
+temporary_config="$(mktemp "${config_root}/.config.XXXXXX")"
+printf 'recording_device=%s\n' "$recording_device" > "$temporary_config"
+mv "$temporary_config" "$config_file"
+printf 'Configuration: %s\n' "$config_file"
+
+command_link="${HOME}/.local/bin/meeting"
+expected_command="$(realpath "${utility_root}/bin/meeting")"
+linked_command=""
+if [[ -L "$command_link" && -e "$command_link" ]]; then
+  linked_command="$(realpath "$command_link")"
+fi
+if [[ ! -e "$command_link" && ! -L "$command_link" ]]; then
+  ln -s "${utility_root}/bin/meeting" "$command_link"
+  printf 'Installed command: %s\n' "$command_link"
+elif [[ -L "$command_link" && "$linked_command" == "$expected_command" ]]; then
+  printf 'Command already installed: %s\n' "$command_link"
+elif [[ -L "$command_link" && ! -e "$command_link" ]]; then
+  ln -sfn "${utility_root}/bin/meeting" "$command_link"
+  printf 'Repaired command link: %s\n' "$command_link"
+else
+  printf 'Note: leaving existing command untouched: %s\n' "$command_link" >&2
+fi
+
+resolved_meeting="$(command -v meeting 2>/dev/null || true)"
+resolved_command=""
+if [[ -n "$resolved_meeting" && -e "$resolved_meeting" ]]; then
+  resolved_command="$(realpath "$resolved_meeting")"
+fi
+if [[ "$resolved_meeting" != "$command_link" || "$resolved_command" != "$expected_command" ]]; then
+  printf 'Error: meeting does not resolve to this installation.\n' >&2
+  printf 'Expected: %s\n' "$command_link" >&2
+  if [[ -n "$resolved_meeting" ]]; then
+    printf 'Current:  %s\n' "$resolved_meeting" >&2
+  else
+    printf 'Add this line to your shell profile, then restart the shell:\n' >&2
+    printf '  export PATH="$HOME/.local/bin:$PATH"\n' >&2
+  fi
+  command_path_ready=0
+else
+  printf 'Command is available on PATH: %s\n' "$resolved_meeting"
+  command_path_ready=1
+fi
+
+if [[ "$skip_token" -eq 0 ]]; then
+  keychain_account="${USER:-$(id -un)}"
+  if security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
+    printf 'Hugging Face token: already configured in Keychain\n'
+  elif [[ -t 0 ]]; then
+    printf 'Store a Hugging Face token in Keychain now? [y/N] '
+    read -r token_reply || true
+    case "$token_reply" in
+      y|Y|yes|YES)
+        printf 'Keychain will prompt securely for the token.\n'
+        security add-generic-password -U -a "$keychain_account" \
+          -s meeting-transcriber-hf-token -w
+        ;;
+      *)
+        printf 'Skipped token setup. Diarization will require --no-diarize until configured.\n'
+        ;;
+    esac
+  fi
+fi
+
+if [[ "$skip_skill" -eq 0 && -d "${utility_root}/skills/meeting" ]]; then
+  skill_parent="${HOME}/.codex/skills"
+  installed_skill="${skill_parent}/meeting"
+  if [[ ! -e "$installed_skill" ]]; then
+    mkdir -p "$skill_parent"
+    ditto "${utility_root}/skills/meeting" "$installed_skill"
+    printf 'Installed Codex skill: %s\n' "$installed_skill"
+  elif diff -qr "${utility_root}/skills/meeting" "$installed_skill" >/dev/null 2>&1; then
+    printf 'Codex skill already up to date: %s\n' "$installed_skill"
+  else
+    printf 'Bundled and installed meeting skills differ; leaving the installed copy untouched.\n' >&2
+    printf 'Review them before replacing: %s\n' "$installed_skill" >&2
+  fi
+fi
+
+printf '\n'
+"${utility_root}/bin/meeting-doctor"
+[[ "$command_path_ready" -eq 1 ]] || exit 1

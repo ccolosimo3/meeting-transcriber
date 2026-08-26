@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+data_root="$(meeting_data_root)"
+configured_device="$(meeting_config_get recording_device 0)"
+failures=0
+warnings=0
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  printf '%s\n' \
+    'Usage: meeting doctor' \
+    '' \
+    'Checks the local installation without transcribing audio or loading models.'
+  exit 0
+fi
+[[ $# -eq 0 ]] || { printf 'Error: meeting doctor accepts no arguments\n' >&2; exit 2; }
+
+ok() { printf '✓ %s\n' "$1"; }
+warn() { printf '! %s\n' "$1"; warnings=$((warnings + 1)); }
+bad() { printf '✗ %s\n' "$1"; failures=$((failures + 1)); }
+
+printf 'Meeting Transcriber doctor\n\n'
+
+[[ "$(uname -s)" == "Darwin" ]] && ok 'macOS detected' || bad 'this utility currently supports macOS only'
+command -v brew >/dev/null 2>&1 && ok 'Homebrew is available' || bad 'Homebrew is not installed'
+command -v uv >/dev/null 2>&1 && ok "$(uv --version)" || bad 'uv is not installed'
+
+ffmpeg_prefix=""
+if command -v brew >/dev/null 2>&1 && ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" && [[ -x "${ffmpeg_prefix}/bin/ffmpeg" ]]; then
+  ok "$(${ffmpeg_prefix}/bin/ffmpeg -version | sed -n '1p')"
+else
+  bad 'Homebrew ffmpeg@7 is not installed'
+fi
+
+if [[ -x "${utility_root}/.venv/bin/python" && -x "${utility_root}/.venv/bin/whisperx" && -x "${utility_root}/.venv/bin/mlx_whisper" ]]; then
+  if versions="$(${utility_root}/.venv/bin/python - <<'PY'
+from importlib.metadata import version
+print(", ".join(f"{name} {version(name)}" for name in ("mlx-whisper", "whisperx", "pyannote.audio", "torchcodec")))
+PY
+)"; then
+    ok "Python environment: ${versions}"
+  else
+    bad 'Python executables exist but package metadata is incomplete or corrupt'
+  fi
+else
+  bad "Python environment is incomplete; run uv sync --frozen in ${utility_root}"
+fi
+
+if [[ -x "${utility_root}/.venv/bin/python" ]]; then
+  if mlx_device="$(${utility_root}/.venv/bin/python - <<'PY'
+import mlx.core as mx
+print(mx.default_device())
+PY
+)" && printf '%s\n' "$mlx_device" | grep -qi 'gpu'; then
+    ok "MLX default device: ${mlx_device}"
+  else
+    bad "MLX is not using the Apple GPU: ${mlx_device:-unavailable}"
+  fi
+fi
+
+if [[ -n "$ffmpeg_prefix" && -x "${utility_root}/.venv/bin/python" ]]; then
+  if PATH="${ffmpeg_prefix}/bin:${PATH}" \
+    DYLD_LIBRARY_PATH="${ffmpeg_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
+    "${utility_root}/.venv/bin/python" -c \
+      'import av, torchcodec; assert av.library_versions["libavcodec"][0] == 61' \
+      >/dev/null 2>&1; then
+    ok 'PyAV and TorchCodec can load the FFmpeg 7 library family'
+  else
+    bad 'PyAV and TorchCodec are not aligned on the FFmpeg 7 library family'
+  fi
+fi
+
+if [[ -n "$ffmpeg_prefix" ]]; then
+  device_listing="$(${ffmpeg_prefix}/bin/ffmpeg -hide_banner -f avfoundation -list_devices true -i '' 2>&1 \
+    | sed -n '/AVFoundation audio devices:/,$p' || true)"
+  if [[ "$configured_device" =~ ^[0-9]+$ ]]; then
+    device_pattern="[$configured_device]"
+  else
+    device_pattern="$configured_device"
+  fi
+  if printf '%s\n' "$device_listing" | grep -Fq "$device_pattern"; then
+    ok "Recording device: ${configured_device}"
+  else
+    warn "Configured recording device was not found: ${configured_device}; run meeting setup"
+  fi
+fi
+
+keychain_account="${USER:-$(id -un)}"
+if security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
+  ok 'Hugging Face token is available in macOS Keychain'
+else
+  warn 'No Hugging Face token in Keychain; diarization will require setup or --no-diarize'
+fi
+
+if [[ -f "${HOME}/.codex/skills/meeting/SKILL.md" ]]; then
+  ok 'Codex meeting skill is installed'
+else
+  warn 'Codex meeting skill is not installed; run meeting setup'
+fi
+
+command_link="${HOME}/.local/bin/meeting"
+resolved_meeting="$(command -v meeting 2>/dev/null || true)"
+expected_command="$(realpath "${utility_root}/bin/meeting")"
+resolved_command=""
+if [[ -n "$resolved_meeting" && -e "$resolved_meeting" ]]; then
+  resolved_command="$(realpath "$resolved_meeting")"
+fi
+if [[ -L "$command_link" && -e "$command_link" && "$resolved_meeting" == "$command_link" && "$resolved_command" == "$expected_command" ]]; then
+  ok "Front-door command resolves correctly: ${command_link}"
+elif [[ ! -e "$command_link" && ! -L "$command_link" ]]; then
+  bad 'The meeting command is not installed; run meeting setup'
+elif [[ -z "$resolved_meeting" ]]; then
+  bad 'The meeting command exists under ~/.local/bin but that directory is not on PATH'
+else
+  bad "The meeting command resolves somewhere unexpected: ${resolved_meeting}"
+fi
+
+if [[ -d "$data_root" && -w "$data_root" ]]; then
+  ok "Writable meeting bundle directory: ${data_root}"
+elif [[ ! -e "$data_root" && -w "$(dirname "$data_root")" ]]; then
+  ok "Meeting bundle directory can be created: ${data_root}"
+else
+  bad "Meeting bundle directory is not writable: ${data_root}"
+fi
+
+permission_problems=0
+if [[ -d "$data_root" ]]; then
+  while IFS= read -r -d '' private_path; do
+    private_mode="$(stat -f '%Lp' "$private_path")"
+    if (( (8#$private_mode & 077) != 0 )); then
+      permission_problems=$((permission_problems + 1))
+    fi
+  done < <(find "$data_root" ! -type l -print0)
+fi
+if [[ "$permission_problems" -eq 0 ]]; then
+  ok 'Meeting bundle permissions are private'
+else
+  bad "Found ${permission_problems} meeting bundle path(s) readable by group or others; run meeting setup"
+fi
+
+printf '\n'
+if [[ "$failures" -gt 0 ]]; then
+  printf 'Doctor found %d blocking problem(s) and %d warning(s).\n' "$failures" "$warnings"
+  exit 1
+fi
+printf 'Doctor passed with %d warning(s).\n' "$warnings"

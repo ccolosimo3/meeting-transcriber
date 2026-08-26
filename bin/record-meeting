@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+data_root="$(meeting_data_root)"
+meetings_root="$data_root"
+audio_device="${MEETING_RECORDING_DEVICE:-$(meeting_config_get recording_device 0)}"
+dry_run=0
+
+usage() {
+  printf '%s\n' \
+    'Usage: meeting-record [--device NAME] [--output-root DIR] [--dry-run] [LABEL]' \
+    '' \
+    'Records the Mac microphone until you press q. A dated meeting bundle is' \
+    'created with recording.wav; a failed capture remains recording.partial.wav.'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --device)
+      [[ $# -ge 2 ]] || fail '--device requires a value'
+      audio_device="$2"
+      shift 2
+      ;;
+    --output-root)
+      [[ $# -ge 2 ]] || fail '--output-root requires a value'
+      meetings_root="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ $# -le 1 ]] || { usage >&2; exit 2; }
+label="${1:-meeting}"
+label_slug="$(printf '%s' "$label" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+[[ -n "$label_slug" ]] || label_slug="meeting"
+
+ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" || fail 'Homebrew ffmpeg@7 is not installed'
+ffmpeg_bin="${ffmpeg_prefix}/bin/ffmpeg"
+ffprobe_bin="${ffmpeg_prefix}/bin/ffprobe"
+[[ -x "$ffmpeg_bin" && -x "$ffprobe_bin" ]] || fail 'ffmpeg@7 is incomplete'
+
+audio_device_name="$audio_device"
+if [[ "$audio_device" =~ ^[0-9]+$ ]]; then
+  device_listing="$("$ffmpeg_bin" -hide_banner -f avfoundation \
+    -list_devices true -i '' 2>&1 || true)"
+  resolved_device_name="$(printf '%s\n' "$device_listing" | awk -v device="$audio_device" '
+    /AVFoundation audio devices:/ { in_audio = 1; next }
+    in_audio && match($0, "\\[" device "\\] ") {
+      sub(/^.*\[[0-9]+\] /, "")
+      print
+      exit
+    }
+  ')"
+  [[ -z "$resolved_device_name" ]] || audio_device_name="$resolved_device_name"
+fi
+
+status_python="${utility_root}/.venv/bin/python"
+status_renderer="${utility_root}/lib/recording_status.py"
+interactive_status=0
+if [[ -t 0 && -t 1 && -x "$status_python" && -f "$status_renderer" ]]; then
+  interactive_status=1
+fi
+
+stamp="$(date '+%Y%m%d-%H%M%S')"
+bundle_dir="${meetings_root}/${stamp}-${label_slug}"
+final_path="${bundle_dir}/recording.wav"
+partial_path="${bundle_dir}/recording.partial.wav"
+
+command=(
+  /usr/bin/caffeinate
+  -i
+  "$ffmpeg_bin"
+  -hide_banner
+  -loglevel warning
+  -thread_queue_size 1024
+  -f avfoundation
+  -i ":${audio_device}"
+  -vn
+)
+if [[ "$interactive_status" -eq 1 ]]; then
+  command+=(
+    -af
+    'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-'
+  )
+fi
+command+=(
+  -ac 1
+  -ar 48000
+  -c:a pcm_s16le
+  -n
+  "$partial_path"
+)
+
+if [[ "$dry_run" -eq 1 ]]; then
+  printf 'Recording device: %s (%s)\n' "$audio_device_name" "$audio_device"
+  printf 'Completed file: %s\n' "$final_path"
+  printf 'Command:'
+  printf ' %q' "${command[@]}"
+  printf '\n'
+  exit 0
+fi
+
+mkdir -p "$meetings_root"
+[[ -d "$meetings_root" && -w "$meetings_root" ]] || fail "meeting directory is not writable: $meetings_root"
+[[ ! -e "$bundle_dir" ]] || fail "dated meeting bundle already exists: $bundle_dir"
+mkdir "$bundle_dir"
+
+if [[ "$interactive_status" -eq 0 ]]; then
+  printf 'Recording from: %s\n' "$audio_device_name"
+  printf 'Press q to stop and finalize the recording.\n'
+  printf 'In-progress file: %s\n' "$partial_path"
+fi
+
+interrupted=0
+trap 'interrupted=1' INT TERM
+set +e
+if [[ "$interactive_status" -eq 1 ]]; then
+  "${command[@]}" | "$status_python" "$status_renderer" \
+    --microphone "$audio_device_name"
+  pipeline_status=("${PIPESTATUS[@]}")
+  capture_status="${pipeline_status[0]}"
+else
+  "${command[@]}"
+  capture_status=$?
+fi
+set -e
+trap - INT TERM
+
+if [[ -s "$partial_path" ]] && "$ffprobe_bin" -v error -show_entries format=duration \
+  -of default=noprint_wrappers=1:nokey=1 "$partial_path" >/dev/null 2>&1; then
+  mv "$partial_path" "$final_path"
+  printf 'Recording saved: %s\n' "$final_path"
+  printf 'Next: meeting process\n'
+  if [[ "$capture_status" -ne 0 || "$interrupted" -eq 1 ]]; then
+    printf 'Note: capture was interrupted, but the audio container finalized successfully.\n' >&2
+  fi
+  exit 0
+fi
+
+printf 'Error: recording did not finalize; inspect the partial file: %s\n' "$partial_path" >&2
+exit 1

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${STUB_ARGV:?}"
+printf '%s\n' "$@" > "$STUB_ARGV"
+if [[ -n "${STUB_ENV:-}" ]]; then
+  if [[ -n "${HF_TOKEN:-}" ]]; then
+    printf 'present\n' > "$STUB_ENV"
+  else
+    printf 'absent\n' > "$STUB_ENV"
+  fi
+fi
+
+input=""
+output_dir=""
+output_name=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --input) input="$2"; shift 2 ;;
+    --output-dir) output_dir="$2"; shift 2 ;;
+    --output-name) output_name="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -n "$input" ]] || { printf 'stub: missing --input\n' >&2; exit 2; }
+[[ -n "$output_dir" ]] || { printf 'stub: missing --output-dir\n' >&2; exit 2; }
+[[ -n "$output_name" ]] || { printf 'stub: missing --output-name\n' >&2; exit 2; }
+
+printf '%s' \
+  '{"language":"en","segments":[{"speaker":"SPEAKER_00","start":0,"end":1,"text":"interface smoke","words":[{"word":"interface smoke","start":0,"end":1,"speaker":"SPEAKER_00"}]}]}' \
+  > "${output_dir}/${output_name}.json"
+printf '[SPEAKER_00]: interface smoke\n' > "${output_dir}/${output_name}.txt"
+printf '1\n00:00:00,000 --> 00:00:01,000\n[SPEAKER_00]: interface smoke\n' > "${output_dir}/${output_name}.srt"
+printf 'WEBVTT\n\n00:00.000 --> 00:01.000\n[SPEAKER_00]: interface smoke\n' > "${output_dir}/${output_name}.vtt"
+printf 'start\tend\ttext\n0\t1000\tinterface smoke\n' > "${output_dir}/${output_name}.tsv"

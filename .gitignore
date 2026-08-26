@@ -1,0 +1,24 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+
+# Private runtime data belongs outside a source checkout.
+recordings/
+transcripts/
+verification/
+tests/artifacts/
+.local-artifacts/
+
+# Meeting media is private even when copied outside the normal data directory.
+*.wav
+*.aiff
+*.mp3
+*.m4a
+*.flac
+*.mp4
+
+# Never commit local credentials or configuration.
+.env
+.env.*
+config

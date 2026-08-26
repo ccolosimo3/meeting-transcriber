@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+
+usage() {
+  printf '%s\n' \
+    'Meeting Transcriber' \
+    '' \
+    '  meeting record [LABEL]          Record until q is pressed' \
+    '  meeting process [options]       Complete the latest recording' \
+    '  meeting open                    Open the latest transcript' \
+    '  meeting folder                  Open all meeting files in Finder' \
+    '  meeting prepare                 Prepare the latest transcript for Codex' \
+    '  meeting setup                   Configure this Mac' \
+    '  meeting doctor                  Check the installation' \
+    '' \
+    'Advanced:' \
+    '  meeting transcribe [options]    Transcribe without the guided follow-up' \
+    '  meeting speakers [assignments]  Name speakers' \
+    '  meeting verify MODE             Run development verification' \
+    '  meeting help                    Show this help' \
+    '' \
+    'Run a subcommand with --help for its options.'
+}
+
+interactive_menu() {
+  printf '%s\n' \
+    'Meeting Transcriber' \
+    '' \
+    '  1. Record a new meeting' \
+    '  2. Process the latest recording' \
+    '  3. Open the latest transcript' \
+    '  4. Prepare the latest transcript for Codex' \
+    '  5. Check the installation' \
+    '  6. Exit' \
+    ''
+  printf 'Choose an option [1-6]: '
+  read -r choice
+  case "$choice" in
+    1)
+      printf 'Meeting label (optional): '
+      read -r label || true
+      if [[ -n "$label" ]]; then
+        "${utility_root}/bin/meeting-record" "$label"
+      else
+        "${utility_root}/bin/meeting-record"
+      fi
+      printf 'Process this recording now? [Y/n] '
+      read -r process_reply || true
+      case "${process_reply:-y}" in
+        y|Y|yes|YES) exec "${utility_root}/bin/meeting-process" ;;
+        *) printf 'Saved. Run meeting process when you are ready.\n' ;;
+      esac
+      ;;
+    2) exec "${utility_root}/bin/meeting-process" ;;
+    3) exec "${utility_root}/bin/meeting-view" ;;
+    4) exec "${utility_root}/bin/meeting-prepare" ;;
+    5) exec "${utility_root}/bin/meeting-doctor" ;;
+    6) exit 0 ;;
+    *) printf 'Unknown option: %s\n' "$choice" >&2; exit 2 ;;
+  esac
+}
+
+if [[ $# -eq 0 ]]; then
+  if [[ -t 0 ]]; then
+    interactive_menu
+  else
+    usage
+  fi
+  exit 0
+fi
+
+subcommand="$1"
+shift
+case "$subcommand" in
+  record|start) exec "${utility_root}/bin/meeting-record" "$@" ;;
+  process) exec "${utility_root}/bin/meeting-process" "$@" ;;
+  open|view) exec "${utility_root}/bin/meeting-view" "$@" ;;
+  folder|files) exec "${utility_root}/bin/meeting-folder" "$@" ;;
+  prepare) exec "${utility_root}/bin/meeting-prepare" "$@" ;;
+  setup) exec "${utility_root}/bin/meeting-setup" "$@" ;;
+  doctor) exec "${utility_root}/bin/meeting-doctor" "$@" ;;
+  transcribe) exec "${utility_root}/bin/meeting-transcribe" "$@" ;;
+  speakers) exec "${utility_root}/bin/meeting-speakers" "$@" ;;
+  verify) exec "${utility_root}/bin/meeting-verify" "$@" ;;
+  help|-h|--help) usage ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$subcommand" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

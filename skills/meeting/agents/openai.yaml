@@ -1,0 +1,4 @@
+interface:
+  display_name: "Meeting"
+  short_description: "Digest meetings and choose useful follow-up"
+  default_prompt: "Use $meeting to digest this transcript and suggest the most useful next step."

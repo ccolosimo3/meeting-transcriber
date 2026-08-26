@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${STUB_RENDER_ENV:?}" "${REAL_HTML_RENDERER:?}"
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  printf 'present\n' > "$STUB_RENDER_ENV"
+else
+  printf 'absent\n' > "$STUB_RENDER_ENV"
+fi
+exec "$REAL_HTML_RENDERER" "$@"

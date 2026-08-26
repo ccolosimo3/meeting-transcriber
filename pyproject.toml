@@ -1,0 +1,14 @@
+[project]
+name = "meeting-transcriber"
+version = "0.1.0"
+description = "Private local MLX Whisper and pyannote meeting transcription utility"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  # Build against Homebrew FFmpeg 7 so PyAV and TorchCodec share one library family.
+  "av==14.4.0",
+  "mlx-whisper==0.4.3",
+  "whisperx==3.8.6",
+]
+
+[tool.uv]
+package = false
