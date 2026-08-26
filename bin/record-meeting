@@ -13,6 +13,7 @@ source "${utility_root}/lib/config.sh"
 data_root="$(meeting_data_root)"
 meetings_root="$data_root"
 audio_device="${MEETING_RECORDING_DEVICE:-$(meeting_config_get recording_device 0)}"
+capture_input="${MEETING_TRANSCRIBER_CAPTURE_INPUT:-}"
 dry_run=0
 
 usage() {
@@ -68,7 +69,7 @@ ffprobe_bin="${ffmpeg_prefix}/bin/ffprobe"
 [[ -x "$ffmpeg_bin" && -x "$ffprobe_bin" ]] || fail 'ffmpeg@7 is incomplete'
 
 audio_device_name="$audio_device"
-if [[ "$audio_device" =~ ^[0-9]+$ ]]; then
+if [[ -z "$capture_input" && "$audio_device" =~ ^[0-9]+$ ]]; then
   device_listing="$("$ffmpeg_bin" -hide_banner -f avfoundation \
     -list_devices true -i '' 2>&1 || true)"
   resolved_device_name="$(printf '%s\n' "$device_listing" | awk -v device="$audio_device" '
@@ -101,14 +102,17 @@ command=(
   -hide_banner
   -loglevel warning
   -thread_queue_size 1024
-  -f avfoundation
-  -i ":${audio_device}"
-  -vn
 )
+if [[ -n "$capture_input" ]]; then
+  command+=(-re -f lavfi -i "$capture_input")
+else
+  command+=(-f avfoundation -i ":${audio_device}")
+fi
+command+=(-vn)
 if [[ "$interactive_status" -eq 1 ]]; then
   command+=(
     -af
-    'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-'
+    'astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.Peak_level:file=-:direct=1'
   )
 fi
 command+=(

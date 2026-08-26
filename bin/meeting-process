@@ -128,7 +128,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-invocation=("${utility_root}/bin/meeting-transcribe" "${transcribe_arguments[@]}" "$input")
+if [[ "${#transcribe_arguments[@]}" -gt 0 ]]; then
+  invocation=("${utility_root}/bin/meeting-transcribe" "${transcribe_arguments[@]}" "$input")
+else
+  invocation=("${utility_root}/bin/meeting-transcribe" "$input")
+fi
 
 printf '\nTranscribing…\n'
 MEETING_DATA_DIR="$meetings_root" \
@@ -136,14 +140,8 @@ MEETING_DATA_DIR="$meetings_root" \
 output_dir="$(sed -n '1p' "$result_file")"
 [[ -n "$output_dir" && -d "$output_dir" ]] || fail 'transcription completed without reporting its output directory'
 
-json_path=""
-json_count=0
-while IFS= read -r -d '' candidate; do
-  [[ "$candidate" == *.speakers.json ]] && continue
-  json_path="$candidate"
-  json_count=$((json_count + 1))
-done < <(find "$output_dir" -maxdepth 1 -type f -name '*.json' -print0)
-[[ "$json_count" -eq 1 ]] || fail "expected one transcript JSON in $output_dir; found $json_count"
+json_path="${output_dir}/transcript.json"
+[[ -f "$json_path" ]] || fail "canonical transcript JSON is missing: $json_path"
 
 if [[ "$diarize" -eq 1 && "$offer_names" -eq 1 ]]; then
   if [[ -t 0 ]]; then
@@ -162,12 +160,12 @@ if [[ "$diarize" -eq 1 && "$offer_names" -eq 1 ]]; then
   fi
 fi
 
-prepare_arguments=()
-if [[ "$copy_prompt" -eq 0 ]]; then
-  prepare_arguments+=(--no-copy)
-fi
 printf '\nPreparing the agent transcript…\n'
-"${utility_root}/bin/meeting-prepare" "${prepare_arguments[@]}" "$json_path"
+if [[ "$copy_prompt" -eq 0 ]]; then
+  "${utility_root}/bin/meeting-prepare" --no-copy "$json_path"
+else
+  "${utility_root}/bin/meeting-prepare" "$json_path"
+fi
 
 if [[ "$open_transcript" -eq 1 ]]; then
   "${utility_root}/bin/view-latest-transcript" --json "$json_path"

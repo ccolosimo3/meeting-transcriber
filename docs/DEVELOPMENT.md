@@ -75,13 +75,20 @@ Use the smallest proof appropriate to the change:
 
 ```bash
 bash -n bin/* lib/config.sh install.sh
-.venv/bin/python -m py_compile lib/*.py
-.venv/bin/python -m unittest tests/test_mlx_adapter.py
+.venv/bin/python -m py_compile lib/*.py tests/*.py
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 meeting doctor
 meeting record --dry-run "verification"
 meeting prepare --no-copy /path/to/transcript.json
 tests/interface-smoke.sh
 ```
+
+The discover-based suite includes two environment-qualified real-boundary
+tests. Recorder PTY coverage requires macOS and Homebrew `ffmpeg@7`; rendered
+HTML browser coverage requires `aiohttp` from the locked environment and a
+local Google Chrome or Chromium executable. Those tests skip when their
+prerequisites are unavailable, so recorder and transcript-UI changes should be
+verified in the supported V0 environment before release.
 
 `bin/verify-install` retains the heavier synthetic-audio smoke and real
 diarization checks used to qualify dependency behavior. These checks may load
