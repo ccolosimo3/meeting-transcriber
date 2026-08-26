@@ -156,7 +156,8 @@ meeting bundle; the original file is not changed. The selected transcription
 engine supplies structured JSON, text, subtitle, and table formats. This
 project adds:
 
-- `.html` — local color-coded transcript for reading;
+- `.html` — compact, responsive transcript for reading, with speaker colors,
+  human-friendly timestamps, print styling, and a durable light/dark preference;
 - `.speakers.json` — local mapping from anonymous labels to display names; and
 - `.agent.md` — compact named transcript with timestamps for an agent.
 
