@@ -690,6 +690,43 @@ class AssemblyAIAdapterTests(unittest.TestCase):
         self.assertEqual(rows["retry"], 0)
         self.assertEqual(rows["action"], 0)
 
+    def test_interrupt_during_final_deletion_is_cleanup_required_not_failure(self) -> None:
+        class DeleteInterrupted(assemblyai.AssemblyAIAdapter):
+            def _json_request(
+                self,
+                method: str,
+                suffix: str,
+                operation: str,
+                body: dict[str, object] | None = None,
+            ) -> dict[str, object]:
+                if method == "DELETE":
+                    raise KeyboardInterrupt
+                return super()._json_request(method, suffix, operation, body)
+
+        with mock.patch.object(assemblyai, "AssemblyAIAdapter", DeleteInterrupted):
+            status, stdout, stderr, output = self._run_main({})
+
+        resolved_json = output.resolve() / "transcript.json"
+        self.assertEqual(status, 3, stderr)
+        self.assertEqual(stdout.strip().splitlines(), [str(resolved_json)])
+        self.assertIn("Transcript saved; cleanup required", stderr)
+        self.assertIn(f"meeting cleanup {resolved_json}", stderr)
+        self.assertIn("Read", stderr)
+        self.assertIn("Agent", stderr)
+        self.assertIn("Data", stderr)
+        rows = self._action_rows(stderr)
+        self.assertEqual(rows, {"retry": 0, "action": 0, "cleanup": 1}, stderr)
+        for name in ("transcript.json", "transcript.md", "transcript.html"):
+            self.assertTrue((output / name).is_file(), name)
+        receipt = json.loads((output / ".assemblyai.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["state"], "published")
+        self.assertFalse(receipt["deletion"]["confirmed"])
+        self.assertIn("KeyboardInterrupt", receipt["deletion"]["last_error"])
+        classification = transcript_run.classify(output.resolve())
+        self.assertIsNotNone(classification)
+        assert classification is not None
+        self.assertEqual(classification[0], "cleanup-required")
+
     def _cleanup_adapter(
         self, json_path: Path, base_url: str, stderr: io.StringIO
     ) -> assemblyai.AssemblyAIAdapter:

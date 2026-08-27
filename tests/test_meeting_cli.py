@@ -13,6 +13,12 @@ import unittest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 
+import sys  # noqa: E402
+
+sys.path.insert(0, str(PROJECT_ROOT / "tests"))
+
+from test_assemblyai_adapter import running_server, write_published_run  # noqa: E402
+
 
 def file_sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -812,6 +818,7 @@ class DiscoveryTests(unittest.TestCase):
 
         self.assertEqual(returncode, 0, stderr)
         self.assertIn("Remote cleanup required", stderr)
+        self.assertIn("job-123", stderr)
         self.assertIn("never change remote state", stderr)
         document = json.loads((run / "transcript.json").read_text(encoding="utf-8"))
         self.assertEqual(document["speaker_names"], {"SPEAKER_00": "Casey"})
@@ -820,6 +827,96 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIn("Casey", (run / "transcript.html").read_text(encoding="utf-8"))
         self.assertFalse(self.open_log.exists())
         self.assertFalse((run / "transcript.speakers.json").exists())
+
+
+class CleanupCommandTests(unittest.TestCase):
+    """The recovery-only `meeting cleanup` wrapper over the loopback server."""
+
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name)
+        self.meetings_root = self.root / "meetings"
+        clean_run = (
+            self.meetings_root / "20260826-120000-newer" / "transcripts" / "20260826-130000"
+        )
+        write_published_run(
+            clean_run,
+            deletion={"confirmed": True, "confirmed_at": "2026-08-26T13:01:00Z"},
+        )
+        self.pending_run = (
+            self.meetings_root / "20260826-100000-older" / "transcripts" / "20260826-110000"
+        )
+        self.pending_json = write_published_run(
+            self.pending_run, deletion={"confirmed": False, "last_error": "boom"}
+        )
+
+    def _run_cleanup(
+        self, base_url: str, *arguments: str, **overrides: str
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.pop("ASSEMBLYAI_API_KEY", None)
+        environment.update(
+            {
+                "MEETING_DATA_DIR": str(self.meetings_root),
+                "MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE": base_url,
+                "MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL": "0",
+                "ASSEMBLYAI_API_KEY": "cleanup-key-sentinel",
+            }
+        )
+        environment.update(overrides)
+        for key, value in list(environment.items()):
+            if value == "":
+                environment.pop(key)
+        return subprocess.run(
+            ["/bin/bash", str(PROJECT_ROOT / "bin" / "meeting-cleanup"), *arguments],
+            text=True,
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+
+    def test_default_target_selection_transitions_the_pending_receipt(self) -> None:
+        with running_server({"delete_statuses": [200]}) as (server, base_url):
+            result = self._run_cleanup(base_url)
+            methods = [request["method"] for request in server.requests]
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                result.stdout.strip().splitlines(), [str(self.pending_json.resolve())]
+            )
+            self.assertEqual(methods, ["DELETE"])
+            self.assertIn("Remote cleanup complete", result.stderr)
+            receipt = json.loads(
+                (self.pending_run / ".assemblyai.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(receipt["deletion"]["confirmed"])
+            self.assertNotIn("cleanup-key-sentinel", json.dumps(receipt))
+            self.assertNotIn(
+                "cleanup-key-sentinel", result.stdout + result.stderr
+            )
+
+            second = self._run_cleanup(base_url)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("No transcript requires cleanup.", second.stderr)
+            self.assertEqual(
+                [request["method"] for request in server.requests], ["DELETE"]
+            )
+
+    def test_missing_key_stops_before_any_request_or_mutation(self) -> None:
+        receipt_sha = file_sha(self.pending_run / ".assemblyai.json")
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(
+                base_url,
+                ASSEMBLYAI_API_KEY="",
+                MEETING_TRANSCRIBER_DISABLE_KEYCHAIN="1",
+            )
+            self.assertEqual(server.requests, [])
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("meeting setup", result.stderr)
+        self.assertEqual(file_sha(self.pending_run / ".assemblyai.json"), receipt_sha)
 
 
 class MenuRecorderResultTests(unittest.TestCase):

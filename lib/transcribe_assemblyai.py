@@ -559,7 +559,24 @@ class AssemblyAIAdapter:
                 )
             raise
 
-        confirmed = self._delete()
+        # After publication the transcript is usable no matter what happens to
+        # remote deletion: any escape from the final DELETE (including Ctrl-C)
+        # is the cleanup-required outcome, never a hard failure.
+        try:
+            confirmed = self._delete()
+        except BaseException as error:
+            confirmed = False
+            try:
+                self._update_deletion(
+                    confirmed=False,
+                    last_error=f"{type(error).__name__}: {error}"[:500],
+                    last_attempt_at=utc_now(),
+                )
+                self._finish_phase(
+                    "Deleting remote transcript and audio...", suffix="failed"
+                )
+            except Exception:
+                pass
         return output_dir / f"{output_name}.json", confirmed
 
     def _qualified_absent_after_delete(self) -> bool:

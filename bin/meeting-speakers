@@ -86,6 +86,9 @@ if [[ -n "$json_path" ]]; then
   run_info="$("$python_bin" "${utility_root}/lib/transcript_run.py" "$(dirname "$json_path")" 2>/dev/null)" \
     || fail "not a usable transcript run: $(dirname "$json_path")"
   state="${run_info%%$'\t'*}"
+  rest="${run_info#*$'\t'}"
+  transcript_id="${rest#*$'\t'}"
+  [[ "$transcript_id" != "$rest" ]] || transcript_id=""
 else
   latest="$(meeting_latest_run "$data_root" || true)"
   if [[ -z "$latest" ]]; then
