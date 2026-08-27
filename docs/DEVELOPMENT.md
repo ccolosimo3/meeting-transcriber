@@ -68,7 +68,9 @@ in the adapter child's `Authorization` header, and pins
 `speech_models: ["universal-3-5-pro"]`. The wrapper retrieves
 `ASSEMBLYAI_API_KEY` only after provider selection or reads the
 `meeting-transcriber-assemblyai-key` Keychain item, unsets the inherited value,
-and does not expose it to renderers or preparation children.
+and does not expose it to local engines, renderers, or preparation children. The
+guided orchestrator scopes an environment override only to its managed
+transcription child before continuing downstream.
 
 Each managed run atomically persists mode-`0600`
 `transcript.assemblyai.json`. The receipt begins after upload, gains the known

@@ -10,6 +10,13 @@ if [[ -n "${STUB_ENV:-}" ]]; then
     printf 'absent\n' > "$STUB_ENV"
   fi
 fi
+if [[ -n "${STUB_LOCAL_ASSEMBLYAI_ENV:-}" ]]; then
+  if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then
+    printf 'present\n' > "$STUB_LOCAL_ASSEMBLYAI_ENV"
+  else
+    printf 'absent\n' > "$STUB_LOCAL_ASSEMBLYAI_ENV"
+  fi
+fi
 
 input=""
 output_dir=""

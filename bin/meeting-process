@@ -20,6 +20,7 @@ input=""
 meetings_root="$data_root"
 transcribe_arguments=()
 local_provider=0
+assemblyai_override=""
 
 usage() {
   printf '%s\n' \
@@ -107,6 +108,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+assemblyai_override="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
 if [[ -z "$input" ]]; then
   input="$(meeting_latest_recording "$meetings_root" || true)"
   [[ -n "$input" ]] || fail "no completed meeting recording found in: $meetings_root"
@@ -151,8 +155,15 @@ else
   printf '\nProvider: AssemblyAI (recording will leave this Mac)\n'
 fi
 printf 'Transcribing…\n'
-MEETING_DATA_DIR="$meetings_root" \
-  MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+if [[ "$local_provider" -eq 0 && -n "$assemblyai_override" ]]; then
+  ASSEMBLYAI_API_KEY="$assemblyai_override" \
+    MEETING_DATA_DIR="$meetings_root" \
+    MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+else
+  MEETING_DATA_DIR="$meetings_root" \
+    MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+fi
+unset assemblyai_override
 output_dir="$(sed -n '1p' "$result_file")"
 [[ -n "$output_dir" && -d "$output_dir" ]] || fail 'transcription completed without reporting its output directory'
 

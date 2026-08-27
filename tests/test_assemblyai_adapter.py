@@ -25,7 +25,7 @@ def completed_response() -> dict[str, object]:
         "speech_model_used": "universal-3-5-pro",
         "language_code": "en",
         "audio_url": "https://cdn.example/private-upload-token",
-        "text": "First.Second exactly as returned.",
+        "text": "First. Second exactly as returned.",
         "utterances": [
             {
                 "speaker": "B",
@@ -213,7 +213,11 @@ class AssemblyAIAdapterTests(unittest.TestCase):
             },
         )
         canonical = json.loads((output / "transcript.json").read_text(encoding="utf-8"))
-        self.assertEqual(canonical["text"], "First.Second exactly as returned.")
+        self.assertEqual(canonical["text"], "First. Second exactly as returned.")
+        segment_join = "".join(
+            segment["text"] for segment in canonical["segments"]
+        ).strip()
+        self.assertNotEqual(canonical["text"], segment_join)
         self.assertEqual(canonical["language"], "en")
         self.assertEqual([segment["id"] for segment in canonical["segments"]], [0, 1])
         self.assertEqual(

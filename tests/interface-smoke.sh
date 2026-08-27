@@ -32,8 +32,10 @@ export MEETING_TRANSCRIBER_RUN_ID=interface-test
 export STUB_ARGV="${artifact_root}/stub-argv.txt"
 export STUB_ENV="${artifact_root}/stub-env.txt"
 export STUB_RENDER_ENV="${artifact_root}/render-env.txt"
+export STUB_RENDER_ASSEMBLYAI_ENV="${artifact_root}/render-assemblyai-env.txt"
 export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-argv.txt"
 export STUB_ASSEMBLYAI_ENV="${artifact_root}/assemblyai-env.txt"
+export STUB_LOCAL_ASSEMBLYAI_ENV="${artifact_root}/local-assemblyai-env.txt"
 export REAL_HTML_RENDERER="${project_root}/bin/render-transcript-html"
 # Keep Homebrew's read-only discovery out of the isolated test home.
 export HOMEBREW_CACHE="${real_home}/Library/Caches/Homebrew"
@@ -172,13 +174,18 @@ fi
 # the later HTML-rendering child.
 export MEETING_TRANSCRIBER_RUN_ID=interface-diarized
 export STUB_ARGV="${artifact_root}/mlx-diarized-argv.txt"
-HF_TOKEN=non-secret-sentinel "${project_root}/bin/meeting" transcribe --local --speakers 2 \
+ASSEMBLYAI_API_KEY=local-leak-sentinel HF_TOKEN=non-secret-sentinel \
+  "${project_root}/bin/meeting" transcribe --local --speakers 2 \
   "$latest_recording" \
   > "${artifact_root}/mlx-diarized.txt"
 grep -Fxq present "$STUB_ENV"
+grep -Fxq absent "$STUB_LOCAL_ASSEMBLYAI_ENV"
 grep -Fxq absent "$STUB_RENDER_ENV"
+grep -Fxq absent "$STUB_RENDER_ASSEMBLYAI_ENV"
 if grep -Fq 'non-secret-sentinel' "$STUB_ARGV" \
-  || grep -R -Fq 'non-secret-sentinel' "${latest_bundle}/transcripts/interface-diarized"; then
+  || grep -Fq 'local-leak-sentinel' "$STUB_ARGV" \
+  || grep -R -Fq 'non-secret-sentinel' "${latest_bundle}/transcripts/interface-diarized" \
+  || grep -R -Fq 'local-leak-sentinel' "${latest_bundle}/transcripts/interface-diarized"; then
   printf 'Error: diarization credential escaped into argv or transcript output\n' >&2
   exit 1
 fi

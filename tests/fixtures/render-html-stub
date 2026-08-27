@@ -7,4 +7,11 @@ if [[ -n "${HF_TOKEN:-}" ]]; then
 else
   printf 'absent\n' > "$STUB_RENDER_ENV"
 fi
+if [[ -n "${STUB_RENDER_ASSEMBLYAI_ENV:-}" ]]; then
+  if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then
+    printf 'present\n' > "$STUB_RENDER_ASSEMBLYAI_ENV"
+  else
+    printf 'absent\n' > "$STUB_RENDER_ASSEMBLYAI_ENV"
+  fi
+fi
 exec "$REAL_HTML_RENDERER" "$@"
