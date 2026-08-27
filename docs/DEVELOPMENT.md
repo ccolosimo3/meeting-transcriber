@@ -56,10 +56,11 @@ and dispatch to one owner per command:
 - `bin/meeting-setup` and `bin/meeting-doctor` own configuration and the
   Recording/Transcription readiness report.
 - `lib/format.sh` is the shared terminal formatting helper; human status goes
-  to stderr on every public command. Two deliberate exemptions: help/usage text
+  to stderr on every public command. Deliberate exemptions: help/usage text
   prints on stdout everywhere (it is the requested result of `--help`), and
-  `meeting doctor` keeps its compact `✓`/`!`/`✗` readiness rows (on stderr)
-  instead of label/value rows.
+  `meeting doctor` and `meeting setup` keep their compact step-report styles
+  (`✓`/`!`/`✗` readiness rows and the stepwise configuration report, both on
+  stderr) instead of label/value rows.
 
 ## Toolchain
 

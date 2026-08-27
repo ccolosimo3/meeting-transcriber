@@ -917,21 +917,34 @@ class CleanupCommandTests(unittest.TestCase):
                 [request["method"] for request in server.requests], ["DELETE"]
             )
 
-    def test_explicit_transcript_path_routes_to_the_same_transition(self) -> None:
+    def test_explicit_transcript_path_beats_default_selection(self) -> None:
+        # A second, older cleanup-required run: default selection would pick
+        # the newer pending run, so only the explicit-path branch can clean
+        # this one.
+        explicit_run = (
+            self.meetings_root / "20260825-090000-oldest" / "transcripts" / "20260825-100000"
+        )
+        explicit_json = write_published_run(
+            explicit_run, deletion={"confirmed": False, "last_error": "boom"}
+        )
         with running_server({"delete_statuses": [200]}) as (server, base_url):
-            result = self._run_cleanup(base_url, str(self.pending_json))
+            result = self._run_cleanup(base_url, str(explicit_json))
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
-                result.stdout.strip().splitlines(), [str(self.pending_json.resolve())]
+                result.stdout.strip().splitlines(), [str(explicit_json.resolve())]
             )
             self.assertEqual(
                 [request["method"] for request in server.requests], ["DELETE"]
             )
-        receipt = json.loads(
+        explicit_receipt = json.loads(
+            (explicit_run / ".assemblyai.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(explicit_receipt["deletion"]["confirmed"])
+        untouched = json.loads(
             (self.pending_run / ".assemblyai.json").read_text(encoding="utf-8")
         )
-        self.assertTrue(receipt["deletion"]["confirmed"])
+        self.assertFalse(untouched["deletion"]["confirmed"])
 
     def test_missing_key_stops_before_any_request_or_mutation(self) -> None:
         receipt_sha = file_sha(self.pending_run / ".assemblyai.json")
