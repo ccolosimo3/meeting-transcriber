@@ -73,6 +73,15 @@ def atomic_write_json(path: Path, value: dict[str, Any]) -> dict[str, Any]:
     return loaded
 
 
+def receipt_provider_response(response: dict[str, Any]) -> dict[str, Any]:
+    """Retain provider diagnostics without durable uploaded-audio locators."""
+    return {
+        key: value
+        for key, value in response.items()
+        if key not in {"audio_url", "upload_url"}
+    }
+
+
 def _finite_number(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"AssemblyAI completion has invalid {field}")
@@ -279,6 +288,9 @@ class AssemblyAIAdapter:
         timestamps = dict(self.receipt.get("timestamps", {}))
         timestamps.setdefault("created_at", utc_now())
         timestamps[f"{state}_at"] = utc_now()
+        provider_response = updates.get("provider_response")
+        if isinstance(provider_response, dict):
+            updates["provider_response"] = receipt_provider_response(provider_response)
         receipt = {
             **self.receipt,
             "provider": "assemblyai",
@@ -319,6 +331,11 @@ class AssemblyAIAdapter:
             status = response.get("status")
             if status in {"queued", "processing"}:
                 if status != last_status:
+                    self._save(
+                        "submitted",
+                        transcript_id=self.transcript_id,
+                        provider_status=status,
+                    )
                     self._progress(str(status))
                     last_status = str(status)
                 time.sleep(self.poll_interval)
@@ -377,8 +394,16 @@ class AssemblyAIAdapter:
                 file=self.stderr,
             )
             raise
-        except ProviderError as error:
-            self._save("upload_rejected", error=str(error))
+        except ProviderHTTPError as error:
+            if error.status >= 500:
+                self._save("unknown_after_upload", error=str(error))
+                print(
+                    "Warning: the upload outcome is unknown after a provider error; "
+                    "partial remote audio may exist.",
+                    file=self.stderr,
+                )
+            else:
+                self._save("upload_rejected", error=str(error))
             raise
         upload_url = upload_response.get("upload_url")
         if not isinstance(upload_url, str) or not upload_url:
@@ -413,13 +438,22 @@ class AssemblyAIAdapter:
                 file=self.stderr,
             )
             raise
-        except ProviderError as error:
-            self._save("upload_succeeded", submission_error=str(error))
-            print(
-                "Warning: submission was rejected; uploaded audio may remain for the "
-                "provider retention window.",
-                file=self.stderr,
-            )
+        except ProviderHTTPError as error:
+            if error.status >= 500:
+                self._save("unknown_after_submit", error=str(error))
+                print(
+                    "Warning: submission outcome is unknown after a provider error; "
+                    "uploaded audio and an unknown billable job may remain. The "
+                    "submission was not retried.",
+                    file=self.stderr,
+                )
+            else:
+                self._save("upload_succeeded", submission_error=str(error))
+                print(
+                    "Warning: submission was rejected; uploaded audio may remain for the "
+                    "provider retention window.",
+                    file=self.stderr,
+                )
             raise
         transcript_id = submission.get("id")
         if not isinstance(transcript_id, str) or not transcript_id:

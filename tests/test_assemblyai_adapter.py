@@ -24,6 +24,7 @@ def completed_response() -> dict[str, object]:
         "status": "completed",
         "speech_model_used": "universal-3-5-pro",
         "language_code": "en",
+        "audio_url": "https://cdn.example/private-upload-token",
         "text": "First.Second exactly as returned.",
         "utterances": [
             {
@@ -225,7 +226,7 @@ class AssemblyAIAdapterTests(unittest.TestCase):
         self.assertEqual(receipt["transcript_id"], "job-123")
         self.assertEqual(receipt["deletion"]["confirmed"], True)
         self.assertNotIn("test-key", json.dumps(receipt))
-        self.assertNotIn("upload.invalid", json.dumps(receipt))
+        self.assertNotIn("private-upload-token", json.dumps(receipt))
         self.assertEqual((output / "transcript.assemblyai.json").stat().st_mode & 0o777, 0o600)
         self.assertIn("queued", progress)
         self.assertIn("processing", progress)
@@ -302,6 +303,18 @@ class AssemblyAIAdapterTests(unittest.TestCase):
                 "upload_succeeded",
                 ["POST", "POST"],
             ),
+            (
+                "upload-5xx",
+                {"upload_status": 503},
+                "unknown_after_upload",
+                ["POST"],
+            ),
+            (
+                "submit-5xx",
+                {"submit_status": 503},
+                "unknown_after_submit",
+                ["POST", "POST"],
+            ),
         ):
             with self.subTest(name=name):
                 with tempfile.TemporaryDirectory() as temporary:
@@ -327,6 +340,8 @@ class AssemblyAIAdapterTests(unittest.TestCase):
                     self.assertEqual(receipt["state"], expected_state)
                     self.assertEqual(methods, expected_methods)
                     self.assertNotIn("deletion", receipt)
+                    if name.endswith("5xx"):
+                        self.assertIn("unknown", stderr.getvalue())
 
     def test_ambiguous_pre_id_failures_persist_residual_risk(self) -> None:
         class UploadAmbiguous(assemblyai.AssemblyAIAdapter):
@@ -404,6 +419,36 @@ class AssemblyAIAdapterTests(unittest.TestCase):
             self.assertFalse(receipt["deletion"]["confirmed"])
             self.assertIn("job-123", stderr.getvalue())
             self.assertIn("may remain remotely", stderr.getvalue())
+
+        exhausted_scenario = {
+            "poll_responses": [
+                {"id": "job-123", "status": "processing"},
+                503,
+                503,
+                503,
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio = root / "meeting.wav"
+            audio.write_bytes(b"audio")
+            output = root / "output"
+            output.mkdir()
+            with running_server(exhausted_scenario) as (server, base_url):
+                adapter = assemblyai.AssemblyAIAdapter(
+                    api_key="test-key", base_url=base_url, poll_interval=0
+                )
+                with self.assertRaises(assemblyai.ProviderHTTPError):
+                    adapter.run(audio, output, "transcript", None)
+                methods = [request["method"] for request in server.requests]
+            receipt = json.loads(
+                (output / "transcript.assemblyai.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(methods.count("GET"), 4)
+            self.assertEqual(methods[-1], "DELETE")
+            self.assertEqual(receipt["state"], "poll_failed")
+            self.assertEqual(receipt["provider_status"], "processing")
+            self.assertTrue(receipt["deletion"]["confirmed"])
 
     def test_interrupt_after_submission_attempts_cleanup_and_persists_id(self) -> None:
         class InterruptedAdapter(assemblyai.AssemblyAIAdapter):
