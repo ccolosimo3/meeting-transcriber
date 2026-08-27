@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 from pathlib import Path
 import re
@@ -55,8 +56,8 @@ class RecordMeetingTests(unittest.TestCase):
         path.chmod(0o755)
 
     def _run_with_fake_capture(
-        self, *, valid: bool
-    ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+        self, *, valid: bool, capture_status: str | None = None, result_file: bool = False
+    ) -> tuple[subprocess.CompletedProcess[str], Path, Path, Path]:
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
         root = Path(temporary_directory.name)
@@ -84,19 +85,23 @@ exit "${STUB_CAPTURE_STATUS:-0}"
             prefix / "bin" / "ffprobe",
             "#!/usr/bin/env bash\nexit \"${STUB_PROBE_STATUS:-0}\"\n",
         )
+        record_result = root / "record-result.json"
         environment = os.environ.copy()
         environment.update(
             {
                 "MEETING_DATA_DIR": str(output_root),
                 "MEETING_CONFIG_DIR": str(root / "config"),
                 "PATH": f"{tools_dir}:{environment['PATH']}",
-                "STUB_CAPTURE_STATUS": "0" if valid else "1",
+                "STUB_CAPTURE_STATUS": capture_status or ("0" if valid else "1"),
                 "STUB_CAPTURE_ARGV": str(capture_argv),
                 "STUB_PROBE_STATUS": "0" if valid else "1",
                 "MEETING_RECORDING_DEVICE": "0",
             }
         )
         environment.pop("MEETING_TRANSCRIBER_CAPTURE_INPUT", None)
+        environment.pop("MEETING_TRANSCRIBER_RECORD_RESULT_FILE", None)
+        if result_file:
+            environment["MEETING_TRANSCRIBER_RECORD_RESULT_FILE"] = str(record_result)
         result = subprocess.run(
             ["/bin/bash", str(RECORD_COMMAND), "noninteractive"],
             text=True,
@@ -104,13 +109,18 @@ exit "${STUB_CAPTURE_STATUS:-0}"
             env=environment,
             check=False,
         )
-        return result, output_root, capture_argv
+        return result, output_root, capture_argv, record_result
 
     def test_noninteractive_capture_still_finalizes_one_recording(self) -> None:
-        result, output_root, capture_argv = self._run_with_fake_capture(valid=True)
+        result, output_root, capture_argv, record_result = self._run_with_fake_capture(
+            valid=True
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Recording saved:", result.stdout)
+        self.assertIn("Recording saved", result.stderr)
+        self.assertIn("meeting transcribe", result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertFalse(record_result.exists())
         self.assertEqual(len(list(output_root.rglob("recording.wav"))), 1)
         self.assertEqual(list(output_root.rglob("recording.partial.wav")), [])
         arguments = [
@@ -130,12 +140,35 @@ exit "${STUB_CAPTURE_STATUS:-0}"
         self.assertNotIn("-re", arguments)
 
     def test_failed_capture_retains_only_the_partial_file(self) -> None:
-        result, output_root, _ = self._run_with_fake_capture(valid=False)
+        result, output_root, _, record_result = self._run_with_fake_capture(
+            valid=False, result_file=True
+        )
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("recording did not finalize; inspect the partial file:", result.stderr)
         self.assertEqual(len(list(output_root.rglob("recording.partial.wav"))), 1)
         self.assertEqual(list(output_root.rglob("recording.wav")), [])
+        self.assertFalse(record_result.exists())
+
+    def test_result_file_reports_stopped_and_interrupted_outcomes(self) -> None:
+        result, output_root, _, record_result = self._run_with_fake_capture(
+            valid=True, result_file=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(record_result.read_text(encoding="utf-8"))
+        recordings = list(output_root.rglob("recording.wav"))
+        self.assertEqual(payload["outcome"], "stopped")
+        self.assertEqual(payload["recording"], str(recordings[0]))
+
+        result, output_root, _, record_result = self._run_with_fake_capture(
+            valid=True, capture_status="1", result_file=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("interrupted", result.stderr)
+        payload = json.loads(record_result.read_text(encoding="utf-8"))
+        self.assertEqual(payload["outcome"], "interrupted")
+        recordings = list(output_root.rglob("recording.wav"))
+        self.assertEqual(payload["recording"], str(recordings[0]))
 
     @unittest.skipUnless(os.uname().sysname == "Darwin", "requires macOS PTY and ffmpeg@7")
     def test_interactive_lavfi_pipeline_streams_and_finalizes_on_one_q(self) -> None:

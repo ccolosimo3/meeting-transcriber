@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+source "${utility_root}/lib/format.sh"
+data_root="$(meeting_data_root)"
+python_bin="${utility_root}/.venv/bin/python"
+json_path=""
+
+usage() {
+  printf '%s\n' \
+    'Usage: meeting cleanup [TRANSCRIPT_JSON]' \
+    '' \
+    'Recovery only: confirms remote AssemblyAI deletion for one saved transcript' \
+    'whose earlier cleanup was unconfirmed. It never uploads audio and never' \
+    'starts a transcription job.'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      fail "meeting cleanup accepts only an optional transcript path"
+      ;;
+    *)
+      [[ -z "$json_path" ]] || fail 'provide at most one transcript path'
+      json_path="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -n "$json_path" ]]; then
+  [[ -f "$json_path" ]] || fail "JSON transcript does not exist: $json_path"
+  json_path="$(cd "$(dirname "$json_path")" && pwd)/$(basename "$json_path")"
+else
+  latest="$(meeting_latest_cleanup_required "$data_root" || true)"
+  if [[ -z "$latest" ]]; then
+    ui_text 'No transcript requires cleanup.'
+    exit 0
+  fi
+  rest="${latest#*$'\t'}"
+  json_path="${rest%%$'\t'*}"
+fi
+
+[[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
+[[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] || fail 'AssemblyAI adapter is missing'
+
+# Contain the credential exactly like transcription: read it once, remove it
+# from the environment, and pass it only to the adapter child.
+assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+if [[ -z "$assemblyai_key" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
+  keychain_account="${USER:-$(id -un)}"
+  assemblyai_key="$(security find-generic-password \
+    -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w 2>/dev/null)" || assemblyai_key=""
+fi
+if [[ -z "$assemblyai_key" ]]; then
+  ui_heading 'Setup problem'
+  ui_row 'Problem' 'No AssemblyAI API key is configured (Keychain item meeting-transcriber-assemblyai-key)'
+  ui_row 'Fix' 'meeting setup'
+  exit 2
+fi
+
+set +e
+ASSEMBLYAI_API_KEY="$assemblyai_key" "$python_bin" \
+  "${utility_root}/lib/transcribe_assemblyai.py" --cleanup "$json_path"
+cleanup_status=$?
+set -e
+unset assemblyai_key
+exit "$cleanup_status"

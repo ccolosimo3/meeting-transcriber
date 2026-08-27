@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 script_source="${BASH_SOURCE[0]}"
 while [[ -L "$script_source" ]]; do
@@ -8,5 +9,118 @@ while [[ -L "$script_source" ]]; do
   [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+source "${utility_root}/lib/format.sh"
+data_root="$(meeting_data_root)"
+open_bin="${MEETING_TRANSCRIBER_OPEN_BIN:-/usr/bin/open}"
+open_browser=1
+json_path=""
 
-exec "${utility_root}/bin/name-latest-speakers" "$@"
+usage() {
+  printf '%s\n' \
+    'Usage: meeting speakers [TRANSCRIPT_JSON] [--no-open]' \
+    '' \
+    'Interactively names the anonymous speakers of the latest transcript (or of' \
+    'TRANSCRIPT_JSON), then regenerates the Markdown and HTML views.' \
+    '' \
+    'Options:' \
+    '  --no-open   Do not open the regenerated HTML transcript' \
+    '  -h, --help  Show this help'
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+migration_error() {
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-open)
+      open_browser=0
+      shift
+      ;;
+    --json)
+      migration_error '`--json` was removed; pass the transcript path directly: meeting speakers TRANSCRIPT_JSON'
+      ;;
+    --meetings-root|--transcripts-root)
+      migration_error "\`${1}\` was removed; \`meeting speakers\` searches the private meeting folder."
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      [[ -z "$json_path" ]] || fail 'provide at most one transcript path'
+      json_path="$1"
+      shift
+      ;;
+  esac
+done
+
+[[ -t 0 ]] || fail 'meeting speakers requires an interactive terminal'
+
+python_bin="$(meeting_python_bin)"
+[[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
+
+historical_refusal() {
+  ui_heading 'This transcript cannot be renamed'
+  ui_line 'It was created by an earlier version of Meeting Transcriber.'
+  ui_line 'Its saved HTML remains readable with the names it was created with.'
+  ui_line 'Transcribe the recording again if you need editable embedded names.'
+  exit 2
+}
+
+state=""
+transcript_id=""
+if [[ -n "$json_path" ]]; then
+  [[ -f "$json_path" ]] || fail "JSON transcript does not exist: $json_path"
+  json_path="$(cd "$(dirname "$json_path")" && pwd)/$(basename "$json_path")"
+  run_info="$("$python_bin" "${utility_root}/lib/transcript_run.py" "$(dirname "$json_path")" 2>/dev/null)" \
+    || fail "not a usable transcript run: $(dirname "$json_path")"
+  state="${run_info%%$'\t'*}"
+else
+  latest="$(meeting_latest_run "$data_root" || true)"
+  if [[ -z "$latest" ]]; then
+    ui_heading 'No transcript found'
+    ui_row 'Searched' "$(ui_display_path "$data_root")"
+    ui_heading 'Next'
+    ui_line 'meeting transcribe'
+    exit 2
+  fi
+  state="${latest%%$'\t'*}"
+  rest="${latest#*$'\t'}"
+  json_path="${rest%%$'\t'*}"
+  transcript_id="${rest#*$'\t'}"
+  [[ "$transcript_id" != "$rest" ]] || transcript_id=""
+fi
+
+case "$state" in
+  historical|historical-unconfirmed)
+    historical_refusal
+    ;;
+  cleanup-required)
+    ui_heading 'Remote cleanup required'
+    ui_row 'Transcript' "${transcript_id:-unknown}"
+    ui_line 'Remote data deletion is unconfirmed for this transcript.'
+    ui_line 'Local name edits never change remote state.'
+    ui_row 'Cleanup' "meeting cleanup ${json_path}"
+    printf '\n' >&2
+    ;;
+esac
+
+"$python_bin" "${utility_root}/lib/set_speaker_names.py" "$json_path"
+
+html_path="${json_path%.json}.html"
+ui_heading 'Transcript'
+ui_row 'Read' "$(ui_display_path "$html_path")"
+if [[ "$open_browser" -eq 1 ]]; then
+  "$open_bin" "$html_path"
+fi

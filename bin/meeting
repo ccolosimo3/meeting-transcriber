@@ -8,64 +8,101 @@ while [[ -L "$script_source" ]]; do
   [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
 
 usage() {
   printf '%s\n' \
     'Meeting Transcriber' \
     '' \
-    '  meeting record [LABEL]          Record until q is pressed' \
-    '  meeting process [options]       Complete the latest recording' \
-    '  meeting open                    Open the latest transcript' \
-    '  meeting folder                  Open all meeting files in Finder' \
-    '  meeting prepare                 Prepare the latest transcript for Codex' \
-    '  meeting setup                   Configure this Mac' \
-    '  meeting doctor                  Check the installation' \
+    '  meeting record [LABEL]              Record until q is pressed' \
+    '  meeting transcribe [INPUT]          Transcribe a recording with AssemblyAI' \
+    '  meeting open                        Open the latest transcript' \
+    '  meeting speakers [TRANSCRIPT_JSON]  Name or correct speakers' \
+    '  meeting folder                      Open the meeting folder in Finder' \
+    '  meeting setup                       Configure this Mac' \
+    '  meeting doctor                      Check recording and transcription readiness' \
+    '  meeting help                        Show this help' \
     '' \
-    'Advanced:' \
-    '  meeting transcribe [options]    Transcribe without the guided follow-up' \
-    '  meeting speakers [assignments]  Name speakers' \
-    '  meeting verify MODE             Run development verification' \
-    '  meeting help                    Show this help' \
+    'Recovery:' \
+    '  meeting cleanup [TRANSCRIPT_JSON]   Confirm remote deletion for a saved transcript' \
     '' \
-    'Run a subcommand with --help for its options.'
+    'Run a command with --help for its options.'
+}
+
+migration_error() {
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+menu_record() {
+  local label result_file record_status outcome recording python_bin reply
+  printf 'Meeting label (optional): ' >&2
+  read -r label || label=''
+  result_file="$(mktemp "${TMPDIR:-/tmp}/meeting-record-result.XXXXXX")"
+  record_status=0
+  set +e
+  if [[ -n "$label" ]]; then
+    MEETING_TRANSCRIBER_RECORD_RESULT_FILE="$result_file" \
+      "${utility_root}/bin/record-meeting" "$label"
+  else
+    MEETING_TRANSCRIBER_RECORD_RESULT_FILE="$result_file" \
+      "${utility_root}/bin/record-meeting"
+  fi
+  record_status=$?
+  set -e
+  if [[ "$record_status" -ne 0 || ! -s "$result_file" ]]; then
+    rm -f "$result_file"
+    return 0
+  fi
+  python_bin="$(meeting_python_bin)"
+  outcome="$("$python_bin" -c \
+    'import json,sys; print(json.load(open(sys.argv[1])).get("outcome",""))' \
+    "$result_file" 2>/dev/null || true)"
+  recording="$("$python_bin" -c \
+    'import json,sys; print(json.load(open(sys.argv[1])).get("recording",""))' \
+    "$result_file" 2>/dev/null || true)"
+  rm -f "$result_file"
+  if [[ "$outcome" == "stopped" && -n "$recording" ]]; then
+    printf 'Transcribe this recording now? [Y/n] ' >&2
+    read -r reply || reply='n'
+    case "${reply:-y}" in
+      y|Y|yes|YES) exec "${utility_root}/bin/meeting-transcribe" "$recording" ;;
+      *) printf 'Saved. Run meeting transcribe when you are ready.\n' >&2 ;;
+    esac
+  elif [[ -n "$recording" ]]; then
+    printf 'Recording saved after interruption: %s\n' "$recording" >&2
+  fi
+  return 0
 }
 
 interactive_menu() {
-  printf '%s\n' \
-    'Meeting Transcriber' \
-    '' \
-    '  1. Record a new meeting' \
-    '  2. Process the latest recording' \
-    '  3. Open the latest transcript' \
-    '  4. Prepare the latest transcript for Codex' \
-    '  5. Check the installation' \
-    '  6. Exit' \
-    ''
-  printf 'Choose an option [1-6]: '
-  read -r choice
-  case "$choice" in
-    1)
-      printf 'Meeting label (optional): '
-      read -r label || true
-      if [[ -n "$label" ]]; then
-        "${utility_root}/bin/meeting-record" "$label"
-      else
-        "${utility_root}/bin/meeting-record"
-      fi
-      printf 'Process this recording now? [Y/n] '
-      read -r process_reply || true
-      case "${process_reply:-y}" in
-        y|Y|yes|YES) exec "${utility_root}/bin/meeting-process" ;;
-        *) printf 'Saved. Run meeting process when you are ready.\n' ;;
-      esac
-      ;;
-    2) exec "${utility_root}/bin/meeting-process" ;;
-    3) exec "${utility_root}/bin/meeting-view" ;;
-    4) exec "${utility_root}/bin/meeting-prepare" ;;
-    5) exec "${utility_root}/bin/meeting-doctor" ;;
-    6) exit 0 ;;
-    *) printf 'Unknown option: %s\n' "$choice" >&2; exit 2 ;;
-  esac
+  local choice
+  while true; do
+    printf '%s\n' \
+      'Meeting Transcriber' \
+      '' \
+      'What would you like to do?' \
+      '  1  Record a meeting' \
+      '  2  Transcribe the latest recording' \
+      '  3  Open the latest transcript' \
+      '  4  Name or correct speakers' \
+      '  5  Open the meeting folder' \
+      '  6  Check setup' \
+      '  7  Exit' \
+      '' >&2
+    printf 'Choose an option 1-7 [7]: ' >&2
+    read -r choice || choice=7
+    case "${choice:-7}" in
+      1) menu_record ;;
+      2) exec "${utility_root}/bin/meeting-transcribe" ;;
+      3) exec "${utility_root}/bin/meeting-open" ;;
+      4) exec "${utility_root}/bin/meeting-speakers" ;;
+      5) exec "${utility_root}/bin/meeting-folder" ;;
+      6) exec "${utility_root}/bin/meeting-doctor" ;;
+      7) exit 0 ;;
+      *) printf 'Unknown option: %s\n\n' "$choice" >&2 ;;
+    esac
+  done
 }
 
 if [[ $# -eq 0 ]]; then
@@ -80,17 +117,36 @@ fi
 subcommand="$1"
 shift
 case "$subcommand" in
-  record|start) exec "${utility_root}/bin/meeting-record" "$@" ;;
-  process) exec "${utility_root}/bin/meeting-process" "$@" ;;
-  open|view) exec "${utility_root}/bin/meeting-view" "$@" ;;
-  folder|files) exec "${utility_root}/bin/meeting-folder" "$@" ;;
-  prepare) exec "${utility_root}/bin/meeting-prepare" "$@" ;;
+  record) exec "${utility_root}/bin/record-meeting" "$@" ;;
+  transcribe) exec "${utility_root}/bin/meeting-transcribe" "$@" ;;
+  open) exec "${utility_root}/bin/meeting-open" "$@" ;;
+  speakers) exec "${utility_root}/bin/meeting-speakers" "$@" ;;
+  folder) exec "${utility_root}/bin/meeting-folder" "$@" ;;
   setup) exec "${utility_root}/bin/meeting-setup" "$@" ;;
   doctor) exec "${utility_root}/bin/meeting-doctor" "$@" ;;
-  transcribe) exec "${utility_root}/bin/meeting-transcribe" "$@" ;;
-  speakers) exec "${utility_root}/bin/meeting-speakers" "$@" ;;
-  verify) exec "${utility_root}/bin/meeting-verify" "$@" ;;
-  help|-h|--help) usage ;;
+  cleanup) exec "${utility_root}/bin/meeting-cleanup" "$@" ;;
+  help|-h|--help)
+    [[ $# -eq 0 ]] || { printf 'Error: meeting help accepts no arguments\n' >&2; exit 2; }
+    usage
+    ;;
+  process)
+    migration_error '`meeting process` was replaced by `meeting transcribe`.'
+    ;;
+  prepare)
+    migration_error '`meeting prepare` is no longer needed; every transcript now includes transcript.md.'
+    ;;
+  verify)
+    migration_error '`meeting verify` was removed; development checks live in the repository test suite.'
+    ;;
+  start)
+    migration_error '`meeting start` was removed; use `meeting record`.'
+    ;;
+  view)
+    migration_error '`meeting view` was removed; use `meeting open`.'
+    ;;
+  files)
+    migration_error '`meeting files` was removed; use `meeting folder`.'
+    ;;
   *)
     printf 'Unknown command: %s\n\n' "$subcommand" >&2
     usage >&2

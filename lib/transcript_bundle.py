@@ -1,92 +1,226 @@
+"""Canonical transcript type, validation boundary, and atomic publication."""
+
 from __future__ import annotations
 
 import json
+import math
+import os
+import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 
-def format_timestamp(
-    seconds: float, always_include_hours: bool = False, decimal_marker: str = "."
-) -> str:
-    """Match the timestamp formatting used by mlx-whisper 0.4.3."""
-    if seconds < 0:
-        raise ValueError("non-negative timestamp expected")
-    milliseconds = round(seconds * 1000.0)
-    hours = milliseconds // 3_600_000
-    milliseconds -= hours * 3_600_000
-    minutes = milliseconds // 60_000
-    milliseconds -= minutes * 60_000
-    whole_seconds = milliseconds // 1_000
-    milliseconds -= whole_seconds * 1_000
-    hours_marker = f"{hours:02d}:" if always_include_hours or hours > 0 else ""
-    return (
-        f"{hours_marker}{minutes:02d}:{whole_seconds:02d}"
-        f"{decimal_marker}{milliseconds:03d}"
+class CanonicalTranscriptError(ValueError):
+    """Raised when a payload is not a valid canonical transcript."""
+
+
+@dataclass
+class TimedWord:
+    word: str
+    start: float
+    end: float
+    probability: float
+    speaker: str
+
+
+@dataclass
+class Segment:
+    id: int
+    start: float
+    end: float
+    text: str
+    speaker: str
+    words: list[TimedWord] = field(default_factory=list)
+
+
+@dataclass
+class CanonicalTranscript:
+    language: str
+    text: str
+    segments: list[Segment]
+    speaker_names: dict[str, str] = field(default_factory=dict)
+
+    def speaker_labels(self) -> list[str]:
+        """Segment speaker labels in first-appearance order."""
+        ordered: list[str] = []
+        for segment in self.segments:
+            if segment.speaker not in ordered:
+                ordered.append(segment.speaker)
+        return ordered
+
+    def all_speaker_labels(self) -> set[str]:
+        labels = set(self.speaker_labels())
+        for segment in self.segments:
+            for word in segment.words:
+                labels.add(word.speaker)
+        return labels
+
+
+def _require_nonempty_string(value: Any, description: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CanonicalTranscriptError(f"transcript has invalid {description}")
+    return value
+
+
+def _require_number(value: Any, description: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise CanonicalTranscriptError(f"transcript has invalid {description}")
+    number = float(value)
+    if not math.isfinite(number):
+        raise CanonicalTranscriptError(f"transcript has invalid {description}")
+    return number
+
+
+def _parse_word(value: Any) -> TimedWord:
+    if not isinstance(value, dict):
+        raise CanonicalTranscriptError("transcript has an invalid timed word")
+    word = value.get("word")
+    if not isinstance(word, str) or not word:
+        raise CanonicalTranscriptError("transcript has a timed word without text")
+    start = _require_number(value.get("start"), "word start")
+    end = _require_number(value.get("end"), "word end")
+    probability = _require_number(value.get("probability"), "word probability")
+    if start < 0 or end < start:
+        raise CanonicalTranscriptError("transcript has invalid word timestamps")
+    if not 0 <= probability <= 1:
+        raise CanonicalTranscriptError("transcript has an out-of-range word probability")
+    speaker = value.get("speaker")
+    if not isinstance(speaker, str) or not speaker:
+        raise CanonicalTranscriptError("transcript has a timed word without a speaker")
+    return TimedWord(
+        word=word, start=start, end=end, probability=probability, speaker=speaker
     )
 
 
-def nonempty_segments(result: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_segments = result.get("segments")
-    if not isinstance(raw_segments, list):
-        raise ValueError("transcript has no segment list")
-    segments = [
-        segment
-        for segment in raw_segments
-        if isinstance(segment, dict) and str(segment.get("text", "")).strip()
-    ]
-    if not segments:
-        raise ValueError("transcript has no nonempty segments")
-    return segments
+def _parse_segment(value: Any) -> Segment:
+    if not isinstance(value, dict):
+        raise CanonicalTranscriptError("transcript has an invalid segment")
+    identifier = value.get("id")
+    if isinstance(identifier, bool) or not isinstance(identifier, int):
+        raise CanonicalTranscriptError("transcript has an invalid segment id")
+    start = _require_number(value.get("start"), "segment start")
+    end = _require_number(value.get("end"), "segment end")
+    if start < 0 or end < start:
+        raise CanonicalTranscriptError("transcript has invalid segment timestamps")
+    text = _require_nonempty_string(value.get("text"), "segment text")
+    speaker = _require_nonempty_string(value.get("speaker"), "segment speaker")
+    words_value = value.get("words")
+    if not isinstance(words_value, list):
+        raise CanonicalTranscriptError("transcript segment has no word list")
+    return Segment(
+        id=identifier,
+        start=start,
+        end=end,
+        text=text,
+        speaker=speaker,
+        words=[_parse_word(word) for word in words_value],
+    )
 
 
-def labeled_text(segment: dict[str, Any], *, subtitle: bool = False) -> str:
-    text = str(segment.get("text", "")).strip()
-    if subtitle:
-        text = text.replace("-->", "->")
-    speaker = str(segment.get("speaker", "")).strip()
-    return f"[{speaker}]: {text}" if speaker else text
+def parse_canonical(
+    payload: object, *, require_speaker_names: bool = True
+) -> CanonicalTranscript:
+    """Narrow an unknown JSON payload into the named canonical transcript type."""
+    if not isinstance(payload, dict):
+        raise CanonicalTranscriptError("transcript JSON must contain an object")
+    language = _require_nonempty_string(payload.get("language"), "language")
+    text = _require_nonempty_string(payload.get("text"), "text")
+    segments_value = payload.get("segments")
+    if not isinstance(segments_value, list) or not segments_value:
+        raise CanonicalTranscriptError("transcript has no segments")
+    segments = [_parse_segment(segment) for segment in segments_value]
+    if not any(segment.words for segment in segments):
+        raise CanonicalTranscriptError("transcript has no timed words")
+
+    names_value = payload.get("speaker_names")
+    if names_value is None:
+        if require_speaker_names:
+            raise CanonicalTranscriptError("transcript has no speaker_names object")
+        names_value = {}
+    if not isinstance(names_value, dict):
+        raise CanonicalTranscriptError("transcript speaker_names must be an object")
+    transcript = CanonicalTranscript(
+        language=language, text=text, segments=segments, speaker_names={}
+    )
+    known_labels = transcript.all_speaker_labels()
+    speaker_names: dict[str, str] = {}
+    for label, name in names_value.items():
+        if not isinstance(label, str) or label not in known_labels:
+            raise CanonicalTranscriptError(
+                f"speaker_names has a label that does not occur in the transcript: {label!r}"
+            )
+        if not isinstance(name, str) or not name.strip() or name != name.strip():
+            raise CanonicalTranscriptError(
+                f"speaker_names has an invalid display name for {label}"
+            )
+        speaker_names[label] = name
+    transcript.speaker_names = speaker_names
+    return transcript
 
 
-def write_outputs(
-    result: dict[str, Any], output_dir: Path, output_name: str
-) -> dict[str, Path]:
-    """Write the provider-neutral canonical bundle without rewriting top-level text."""
-    if "/" in output_name or output_name in {"", ".", ".."}:
-        raise ValueError("output name must be a plain filename")
-    segments = nonempty_segments(result)
-    result["segments"] = segments
-    if not isinstance(result.get("text"), str):
-        raise ValueError("transcript text must be a string")
-
-    destinations = {
-        extension: output_dir / f"{output_name}.{extension}"
-        for extension in ("json", "txt", "srt", "vtt", "tsv")
+def canonical_to_json(transcript: CanonicalTranscript) -> dict[str, Any]:
+    return {
+        "language": transcript.language,
+        "text": transcript.text,
+        "segments": [
+            {
+                "id": segment.id,
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text,
+                "speaker": segment.speaker,
+                "words": [
+                    {
+                        "word": word.word,
+                        "start": word.start,
+                        "end": word.end,
+                        "probability": word.probability,
+                        "speaker": word.speaker,
+                    }
+                    for word in segment.words
+                ],
+            }
+            for segment in transcript.segments
+        ],
+        "speaker_names": dict(transcript.speaker_names),
     }
-    destinations["json"].write_text(
-        json.dumps(result, ensure_ascii=False), encoding="utf-8"
-    )
-    destinations["txt"].write_text(
-        "".join(f"{labeled_text(segment)}\n" for segment in segments),
-        encoding="utf-8",
-    )
 
-    srt_lines: list[str] = []
-    vtt_lines = ["WEBVTT", ""]
-    tsv_lines = ["start\tend\ttext"]
-    for index, segment in enumerate(segments, start=1):
-        start = float(segment.get("start", 0))
-        end = float(segment.get("end", start))
-        text = labeled_text(segment, subtitle=True)
-        srt_start = format_timestamp(start, always_include_hours=True, decimal_marker=",")
-        srt_end = format_timestamp(end, always_include_hours=True, decimal_marker=",")
-        vtt_start = format_timestamp(start, always_include_hours=False, decimal_marker=".")
-        vtt_end = format_timestamp(end, always_include_hours=False, decimal_marker=".")
-        srt_lines.extend((str(index), f"{srt_start} --> {srt_end}", text, ""))
-        vtt_lines.extend((f"{vtt_start} --> {vtt_end}", text, ""))
-        plain_text = str(segment.get("text", "")).strip().replace("\t", " ")
-        tsv_lines.append(f"{round(1000 * start)}\t{round(1000 * end)}\t{plain_text}")
 
-    destinations["srt"].write_text("\n".join(srt_lines), encoding="utf-8")
-    destinations["vtt"].write_text("\n".join(vtt_lines), encoding="utf-8")
-    destinations["tsv"].write_text("\n".join(tsv_lines) + "\n", encoding="utf-8")
-    return destinations
+def atomic_write_private(path: Path, content: str) -> None:
+    """Atomically replace path with private 0600 content."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def load_canonical(path: Path, *, require_speaker_names: bool = True) -> CanonicalTranscript:
+    with path.open(encoding="utf-8") as stream:
+        payload: object = json.load(stream)
+    return parse_canonical(payload, require_speaker_names=require_speaker_names)
+
+
+def save_canonical(path: Path, transcript: CanonicalTranscript) -> CanonicalTranscript:
+    """Atomically publish canonical JSON, then reload and verify the round trip."""
+    atomic_write_private(
+        path, json.dumps(canonical_to_json(transcript), ensure_ascii=False)
+    )
+    reloaded = load_canonical(path)
+    if canonical_to_json(reloaded) != canonical_to_json(transcript):
+        raise CanonicalTranscriptError(
+            f"canonical transcript did not reload identically: {path}"
+        )
+    return reloaded

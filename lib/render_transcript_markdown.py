@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import os
-import tempfile
 from pathlib import Path
 
-from render_transcript_html import (
-    group_turns,
-    load_segments,
-    load_speaker_names,
-    timestamp,
-)
+from meeting_identity import meeting_identity
+from render_transcript_html import group_turns, timestamp
+from transcript_bundle import atomic_write_private, load_canonical
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render a WhisperX JSON transcript as agent-friendly Markdown."
+        description="Render a canonical JSON transcript as agent-friendly Markdown."
     )
     parser.add_argument("json_path", type=Path)
     parser.add_argument("markdown_path", nargs="?", type=Path)
@@ -28,54 +23,41 @@ def speaker_label(speaker: str, names: dict[str, str]) -> str:
 
 
 def render(source: Path) -> str:
-    language, segments = load_segments(source)
-    names = load_speaker_names(source)
-    turns = group_turns(segments)
+    transcript = load_canonical(source)
+    title, recorded_at, run_id = meeting_identity(source)
+    turns = group_turns(transcript.segments)
     lines = [
-        f"# {source.stem}",
+        f"# {title}",
         "",
-        f"- Language: {language}",
-        f"- Speaker turns: {len(turns)}",
+        f"- Recorded: {recorded_at}",
+        f"- Transcript run: {run_id}",
         f"- Structured source: `{source.name}`",
+        f"- Language: {transcript.language}",
+        f"- Speaker turns: {len(turns)}",
         "",
         "## Transcript",
         "",
     ]
     for turn in turns:
-        label = speaker_label(str(turn["speaker"]), names)
-        time_range = f'{timestamp(turn["start"])}–{timestamp(turn["end"])}'
-        text = " ".join(str(part).strip() for part in turn["texts"] if str(part).strip())
+        label = speaker_label(turn.speaker, transcript.speaker_names)
+        time_range = f"{timestamp(turn.start)}–{timestamp(turn.end)}"
+        text = " ".join(part.strip() for part in turn.texts if part.strip())
         lines.extend((f"### {label} — {time_range}", "", text, ""))
     return "\n".join(lines)
 
 
-def write_atomic(destination: Path, content: str) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(content)
-        os.replace(temporary_name, destination)
-    except BaseException:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+def render_markdown(source: Path, destination: Path | None = None) -> Path:
+    """Render the saved canonical transcript to Markdown atomically."""
+    target = destination if destination is not None else source.with_suffix(".md")
+    atomic_write_private(target, render(source))
+    return target
 
 
 def main() -> None:
     args = parse_args()
     source = args.json_path.expanduser().resolve()
-    destination = (
-        args.markdown_path.expanduser().resolve()
-        if args.markdown_path
-        else source.with_suffix(".agent.md")
-    )
-    write_atomic(destination, render(source))
-    print(destination)
+    destination = args.markdown_path.expanduser().resolve() if args.markdown_path else None
+    print(render_markdown(source, destination))
 
 
 if __name__ == "__main__":

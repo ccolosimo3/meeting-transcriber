@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+script_source="${BASH_SOURCE[0]}"
+while [[ -L "$script_source" ]]; do
+  script_dir="$(cd "$(dirname "$script_source")" && pwd)"
+  script_source="$(readlink "$script_source")"
+  [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
+done
+utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
+source "${utility_root}/lib/config.sh"
+source "${utility_root}/lib/format.sh"
+data_root="$(meeting_data_root)"
+open_bin="${MEETING_TRANSCRIBER_OPEN_BIN:-/usr/bin/open}"
+
+usage() {
+  printf '%s\n' \
+    'Usage: meeting open' \
+    '' \
+    'Opens the latest saved transcript in the browser without rewriting it.'
+}
+
+migration_error() {
+  printf '%s\n' "$1" >&2
+  exit 2
+}
+
+case "${1:-}" in
+  '') ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  --json)
+    migration_error '`--json` was removed; `meeting open` always opens the latest transcript. Use macOS `open <file>` for a specific historical transcript.'
+    ;;
+  --meetings-root|--transcripts-root)
+    migration_error "\`${1}\` was removed; \`meeting open\` searches the private meeting folder."
+    ;;
+  --no-open)
+    migration_error '`--no-open` was removed; run `meeting open` only when you want the transcript opened.'
+    ;;
+  *)
+    printf 'Error: meeting open accepts no arguments\n' >&2
+    exit 2
+    ;;
+esac
+
+latest="$(meeting_latest_run "$data_root" || true)"
+if [[ -z "$latest" ]]; then
+  ui_heading 'No transcript found'
+  ui_row 'Searched' "$(ui_display_path "$data_root")"
+  ui_heading 'Next'
+  ui_line 'meeting transcribe'
+  exit 2
+fi
+
+state="${latest%%$'\t'*}"
+rest="${latest#*$'\t'}"
+json_path="${rest%%$'\t'*}"
+transcript_id="${rest#*$'\t'}"
+[[ "$transcript_id" != "$rest" ]] || transcript_id=""
+html_path="${json_path%.json}.html"
+
+case "$state" in
+  cleanup-required)
+    ui_heading 'Remote cleanup required'
+    ui_row 'Transcript' "${transcript_id:-unknown}"
+    ui_line 'Remote data deletion is unconfirmed for this transcript'
+    ui_row 'Cleanup' "meeting cleanup ${json_path}"
+    ;;
+  historical-unconfirmed)
+    ui_heading 'Remote cleanup required'
+    ui_row 'Transcript' "${transcript_id:-unknown}"
+    ui_line 'This transcript predates the current app; remote deletion was never confirmed.'
+    ui_line 'Delete it in the AssemblyAI dashboard or contact AssemblyAI support with the transcript ID.'
+    ;;
+esac
+
+ui_heading 'Transcript'
+ui_row 'Read' "$(ui_display_path "$html_path")"
+"$open_bin" "$html_path"

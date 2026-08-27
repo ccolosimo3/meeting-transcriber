@@ -10,22 +10,30 @@ while [[ -L "$script_source" ]]; do
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
 source "${utility_root}/lib/config.sh"
-data_root="$(meeting_data_root)"
-meetings_root="$data_root"
+source "${utility_root}/lib/format.sh"
+meetings_root="$(meeting_data_root)"
 audio_device="${MEETING_RECORDING_DEVICE:-$(meeting_config_get recording_device 0)}"
 capture_input="${MEETING_TRANSCRIBER_CAPTURE_INPUT:-}"
-dry_run=0
 
 usage() {
   printf '%s\n' \
-    'Usage: meeting-record [--device NAME] [--output-root DIR] [--dry-run] [LABEL]' \
+    'Usage: meeting record [--device NAME_OR_INDEX] [LABEL]' \
     '' \
-    'Records the Mac microphone until you press q. A dated meeting bundle is' \
-    'created with recording.wav; a failed capture remains recording.partial.wav.'
+    'Records the Mac microphone into a private dated meeting bundle until you' \
+    'press q. A failed capture remains recording.partial.wav.' \
+    '' \
+    'Options:' \
+    '  --device NAME_OR_INDEX  Use this microphone for this capture only' \
+    '  -h, --help              Show this help'
 }
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+migration_error() {
+  printf '%s\n' "$1" >&2
   exit 2
 }
 
@@ -37,13 +45,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --output-root)
-      [[ $# -ge 2 ]] || fail '--output-root requires a value'
-      meetings_root="$2"
-      shift 2
+      migration_error '`--output-root` was removed; recordings always live under the private meeting folder.'
       ;;
     --dry-run)
-      dry_run=1
-      shift
+      migration_error '`--dry-run` was removed; run `meeting doctor` to check recording readiness.'
       ;;
     -h|--help)
       usage
@@ -86,14 +91,55 @@ fi
 status_python="${utility_root}/.venv/bin/python"
 status_renderer="${utility_root}/lib/recording_status.py"
 interactive_status=0
-if [[ -t 0 && -t 1 && -x "$status_python" && -f "$status_renderer" ]]; then
+if [[ -t 0 && -t 2 && -x "$status_python" && -f "$status_renderer" ]]; then
   interactive_status=1
 fi
+
+mkdir -p "$meetings_root"
+[[ -d "$meetings_root" && -w "$meetings_root" ]] || fail "meeting directory is not writable: $meetings_root"
+meetings_root="$(cd "$meetings_root" && pwd)"
 
 stamp="$(date '+%Y%m%d-%H%M%S')"
 bundle_dir="${meetings_root}/${stamp}-${label_slug}"
 final_path="${bundle_dir}/recording.wav"
 partial_path="${bundle_dir}/recording.partial.wav"
+[[ ! -e "$bundle_dir" ]] || fail "dated meeting bundle already exists: $bundle_dir"
+mkdir "$bundle_dir"
+
+format_duration() {
+  local total="$1"
+  local hours minutes seconds
+  hours=$((total / 3600))
+  minutes=$(((total % 3600) / 60))
+  seconds=$((total % 60))
+  if [[ "$hours" -gt 0 ]]; then
+    printf '%d:%02d:%02d' "$hours" "$minutes" "$seconds"
+  else
+    printf '%02d:%02d' "$minutes" "$seconds"
+  fi
+}
+
+# Atomically expose the finalized capture to an embedding menu, when asked.
+write_record_result() {
+  local outcome="$1"
+  [[ -n "${MEETING_TRANSCRIBER_RECORD_RESULT_FILE:-}" ]] || return 0
+  local escaped_path temporary_result
+  escaped_path="${final_path//\\/\\\\}"
+  escaped_path="${escaped_path//\"/\\\"}"
+  temporary_result="$(mktemp "${MEETING_TRANSCRIBER_RECORD_RESULT_FILE}.XXXXXX")"
+  printf '{"recording":"%s","outcome":"%s"}\n' "$escaped_path" "$outcome" \
+    > "$temporary_result"
+  mv "$temporary_result" "$MEETING_TRANSCRIBER_RECORD_RESULT_FILE"
+}
+
+ui_title
+ui_heading 'Recording'
+ui_row 'File' "$(ui_display_path "$final_path")"
+ui_row 'Microphone' "$audio_device_name"
+if [[ -t 0 ]]; then
+  ui_row 'Control' 'Press q to stop'
+fi
+printf '\n' >&2
 
 command=(
   /usr/bin/caffeinate
@@ -123,32 +169,12 @@ command+=(
   "$partial_path"
 )
 
-if [[ "$dry_run" -eq 1 ]]; then
-  printf 'Recording device: %s (%s)\n' "$audio_device_name" "$audio_device"
-  printf 'Completed file: %s\n' "$final_path"
-  printf 'Command:'
-  printf ' %q' "${command[@]}"
-  printf '\n'
-  exit 0
-fi
-
-mkdir -p "$meetings_root"
-[[ -d "$meetings_root" && -w "$meetings_root" ]] || fail "meeting directory is not writable: $meetings_root"
-[[ ! -e "$bundle_dir" ]] || fail "dated meeting bundle already exists: $bundle_dir"
-mkdir "$bundle_dir"
-
-if [[ "$interactive_status" -eq 0 ]]; then
-  printf 'Recording from: %s\n' "$audio_device_name"
-  printf 'Press q to stop and finalize the recording.\n'
-  printf 'In-progress file: %s\n' "$partial_path"
-fi
-
 interrupted=0
 trap 'interrupted=1' INT TERM
 set +e
 if [[ "$interactive_status" -eq 1 ]]; then
   "${command[@]}" | "$status_python" "$status_renderer" \
-    --microphone "$audio_device_name"
+    --microphone "$audio_device_name" >&2
   pipeline_status=("${PIPESTATUS[@]}")
   capture_status="${pipeline_status[0]}"
 else
@@ -158,14 +184,30 @@ fi
 set -e
 trap - INT TERM
 
-if [[ -s "$partial_path" ]] && "$ffprobe_bin" -v error -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 "$partial_path" >/dev/null 2>&1; then
+if [[ -s "$partial_path" ]] && duration_seconds="$("$ffprobe_bin" -v error \
+  -show_entries format=duration \
+  -of default=noprint_wrappers=1:nokey=1 "$partial_path" 2>/dev/null)"; then
   mv "$partial_path" "$final_path"
-  printf 'Recording saved: %s\n' "$final_path"
-  printf 'Next: meeting process\n'
-  if [[ "$capture_status" -ne 0 || "$interrupted" -eq 1 ]]; then
-    printf 'Note: capture was interrupted, but the audio container finalized successfully.\n' >&2
+  duration_display=""
+  duration_whole="${duration_seconds%%.*}"
+  if [[ "$duration_whole" =~ ^[0-9]+$ ]]; then
+    duration_display="$(format_duration "$duration_whole")"
   fi
+  outcome="stopped"
+  if [[ "$capture_status" -ne 0 || "$interrupted" -eq 1 ]]; then
+    outcome="interrupted"
+  fi
+  ui_heading 'Recording saved'
+  if [[ -n "$duration_display" ]]; then
+    ui_row 'Duration' "$duration_display"
+  fi
+  ui_row 'File' "$(ui_display_path "$final_path")"
+  if [[ "$outcome" == "interrupted" ]]; then
+    ui_line 'Capture was interrupted, but the audio container finalized successfully.'
+  fi
+  ui_heading 'Next'
+  ui_line 'meeting transcribe'
+  write_record_result "$outcome"
   exit 0
 fi
 

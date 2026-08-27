@@ -9,21 +9,12 @@ while [[ -L "$script_source" ]]; do
   [[ "$script_source" = /* ]] || script_source="${script_dir}/${script_source}"
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
-whisperx_bin="${MEETING_TRANSCRIBER_WHISPERX_BIN:-${utility_root}/.venv/bin/whisperx}"
+source "${utility_root}/lib/format.sh"
 python_bin="${utility_root}/.venv/bin/python"
-render_html_bin="${MEETING_TRANSCRIBER_RENDER_HTML_BIN:-${utility_root}/bin/render-transcript-html}"
-backend="mlx"
-model="turbo"
-hotwords=""
-diarize=0
 speakers=""
-local_provider=0
 
 usage() {
-  printf '%s\n' \
-    'Usage: transcribe-meeting [--local] [--diarize] [--speakers N] [--backend ENGINE]' \
-    '                          [--model MODEL]' \
-    '                          [--hotwords TEXT] INPUT OUTPUT_ROOT'
+  printf '%s\n' 'Usage: transcribe-meeting [--speakers N] INPUT OUTPUT_ROOT'
 }
 
 fail() {
@@ -31,38 +22,30 @@ fail() {
   exit 2
 }
 
+input=""
+
+# One local preflight/setup failure block: what stopped, source safety, the
+# not-applicable remote state, and exactly one recovery.
+setup_problem() {
+  local problem="$1"
+  local fix_label="$2"
+  local fix="$3"
+  ui_heading 'Setup problem'
+  ui_row 'Problem' "$problem"
+  if [[ -n "$input" ]]; then
+    ui_row 'Recording' "safe at ${input}"
+  fi
+  ui_line 'No audio left this Mac'
+  ui_row "$fix_label" "$fix"
+  exit 2
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --diarize)
-      diarize=1
-      shift
-      ;;
     --speakers)
       [[ $# -ge 2 ]] || fail '--speakers requires a positive integer'
       speakers="$2"
       shift 2
-      ;;
-    --model)
-      [[ $# -ge 2 ]] || fail '--model requires a value'
-      model="$2"
-      local_provider=1
-      shift 2
-      ;;
-    --backend)
-      [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
-      backend="$2"
-      local_provider=1
-      shift 2
-      ;;
-    --hotwords)
-      [[ $# -ge 2 ]] || fail '--hotwords requires a value'
-      hotwords="$2"
-      local_provider=1
-      shift 2
-      ;;
-    --local)
-      local_provider=1
-      shift
       ;;
     -h|--help)
       usage
@@ -83,75 +66,57 @@ output_root="$2"
 
 [[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
 [[ -z "$speakers" || "$speakers" =~ ^[1-9][0-9]*$ ]] || fail '--speakers requires a positive integer'
-[[ -z "$speakers" || "$local_provider" -eq 0 || "$diarize" -eq 1 ]] || fail '--speakers may be used only with --diarize for local transcription'
-[[ "$backend" == "mlx" || "$backend" == "whisperx" ]] || fail '--backend requires mlx or whisperx'
-diarization_token=""
-assemblyai_key=""
-if [[ "$local_provider" -eq 1 ]]; then
-  diarization_token="${HF_TOKEN:-}"
-else
-  assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
-fi
-unset HF_TOKEN
-unset ASSEMBLYAI_API_KEY
-if [[ "$local_provider" -eq 1 && "$diarize" -eq 1 && -z "$diarization_token" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
-  keychain_account="${USER:-$(id -un)}"
-  if ! diarization_token="$(security find-generic-password \
-    -a "$keychain_account" -s meeting-transcriber-hf-token -w 2>/dev/null)"; then
-    fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
-  fi
-  [[ -n "$diarization_token" ]] || fail 'the meeting-transcriber-hf-token Keychain item is empty'
-fi
-[[ "$local_provider" -eq 0 || "$diarize" -eq 0 || -n "$diarization_token" ]] || fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
-if [[ "$local_provider" -eq 0 ]]; then
-  if [[ -z "$assemblyai_key" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
-    keychain_account="${USER:-$(id -un)}"
-    if ! assemblyai_key="$(security find-generic-password \
-      -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w 2>/dev/null)"; then
-      fail 'AssemblyAI requires ASSEMBLYAI_API_KEY or the meeting-transcriber-assemblyai-key Keychain item; use --local for local transcription'
-    fi
-  fi
-  [[ -n "$assemblyai_key" ]] || fail 'AssemblyAI requires ASSEMBLYAI_API_KEY or the meeting-transcriber-assemblyai-key Keychain item; use --local for local transcription'
-  if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
-    [[ -x "$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" ]] || fail "AssemblyAI adapter executable not found: $MEETING_TRANSCRIBER_ASSEMBLYAI_BIN"
-  else
-    [[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
-    [[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] || fail 'AssemblyAI adapter is missing'
-  fi
-elif [[ "$backend" == "mlx" ]]; then
-  if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
-    [[ -x "$MEETING_TRANSCRIBER_MLX_BIN" ]] || fail "MLX adapter executable not found: $MEETING_TRANSCRIBER_MLX_BIN"
-  else
-    [[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
-    [[ -f "${utility_root}/lib/transcribe_mlx.py" ]] || fail 'MLX adapter is missing'
-  fi
-else
-  [[ -x "$whisperx_bin" ]] || fail "WhisperX executable not found: $whisperx_bin"
-fi
-[[ -x "$render_html_bin" ]] || fail "HTML renderer executable not found: $render_html_bin"
 
-ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" || fail 'Homebrew ffmpeg@7 is not installed'
-[[ -x "${ffmpeg_prefix}/bin/ffmpeg" ]] || fail "ffmpeg@7 executable not found under: $ffmpeg_prefix"
-if [[ "$local_provider" -eq 0 ]]; then
-  ffprobe_bin="${MEETING_TRANSCRIBER_FFPROBE_BIN:-${ffmpeg_prefix}/bin/ffprobe}"
-  [[ -x "$ffprobe_bin" ]] || fail "FFprobe executable not found: $ffprobe_bin"
-  input_bytes="$(stat -f '%z' "$input")"
-  if [[ "$input_bytes" -gt 2200000000 ]]; then
-    fail 'AssemblyAI accepts files up to 2.2 GB; use --local for this recording'
-  fi
-  duration="$("$ffprobe_bin" -v error -show_entries format=duration \
-    -of default=noprint_wrappers=1:nokey=1 "$input")" \
-    || fail 'FFprobe could not determine recording duration for AssemblyAI preflight'
-  [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail 'FFprobe returned an invalid recording duration'
-  awk -v duration="$duration" 'BEGIN { exit !(duration > 36000) }' \
-    && fail 'AssemblyAI accepts recordings up to 10 hours; use --local for this recording'
+# Contain the credential: it is read here, removed from the environment, and
+# exported only to the provider adapter child.
+assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+if [[ -z "$assemblyai_key" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
+  keychain_account="${USER:-$(id -un)}"
+  assemblyai_key="$(security find-generic-password \
+    -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w 2>/dev/null)" || assemblyai_key=""
+fi
+if [[ -z "$assemblyai_key" ]]; then
+  setup_problem 'No AssemblyAI API key is configured (Keychain item meeting-transcriber-assemblyai-key)' 'Fix' 'meeting setup'
+fi
+
+if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
+  [[ -x "$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" ]] \
+    || setup_problem "AssemblyAI adapter executable not found: $MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" 'Fix' 'meeting doctor'
+else
+  [[ -x "$python_bin" ]] \
+    || setup_problem "Python executable not found: $python_bin" 'Fix' 'meeting doctor'
+  [[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] \
+    || setup_problem 'AssemblyAI adapter is missing' 'Fix' 'meeting doctor'
+fi
+
+if [[ -n "${MEETING_TRANSCRIBER_FFPROBE_BIN:-}" ]]; then
+  ffprobe_bin="$MEETING_TRANSCRIBER_FFPROBE_BIN"
+else
+  ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" \
+    || setup_problem 'Homebrew ffmpeg@7 is not installed' 'Fix' 'meeting doctor'
+  ffprobe_bin="${ffmpeg_prefix}/bin/ffprobe"
+fi
+[[ -x "$ffprobe_bin" ]] \
+  || setup_problem "FFprobe executable not found: $ffprobe_bin" 'Fix' 'meeting doctor'
+
+input_bytes="$(stat -f '%z' "$input")"
+if [[ "$input_bytes" -gt 2200000000 ]]; then
+  setup_problem 'The recording is larger than the 2.2 GB AssemblyAI upload limit' \
+    'Action' 'Split or compress the recording before transcribing'
+fi
+duration="$("$ffprobe_bin" -v error -show_entries format=duration \
+  -of default=noprint_wrappers=1:nokey=1 "$input")" \
+  || setup_problem 'FFprobe could not determine the recording duration' 'Fix' 'meeting doctor'
+[[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] \
+  || setup_problem 'FFprobe returned an invalid recording duration' 'Fix' 'meeting doctor'
+if awk -v duration="$duration" 'BEGIN { exit !(duration > 36000) }'; then
+  setup_problem 'The recording is longer than the 10 hours AssemblyAI accepts' \
+    'Action' 'Split the recording before transcribing'
 fi
 
 mkdir -p "$output_root"
 [[ -d "$output_root" && -w "$output_root" ]] || fail "output root is not writable: $output_root"
-
-source_name="$(basename "$input")"
-source_stem="${source_name%.*}"
 
 if [[ -n "${MEETING_TRANSCRIBER_RUN_ID:-}" ]]; then
   [[ "$MEETING_TRANSCRIBER_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail 'MEETING_TRANSCRIBER_RUN_ID contains invalid characters'
@@ -163,95 +128,35 @@ output_dir="${output_root}/${run_id}"
 [[ ! -e "$output_dir" ]] || fail "output directory already exists: $output_dir"
 mkdir "$output_dir"
 
-export PATH="${ffmpeg_prefix}/bin:${PATH}"
-export DYLD_LIBRARY_PATH="${ffmpeg_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
-export PYANNOTE_METRICS_ENABLED=0
-
-if [[ "$local_provider" -eq 0 ]]; then
-  if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
-    command=("$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN")
-  else
-    command=("$python_bin" "${utility_root}/lib/transcribe_assemblyai.py")
-  fi
-  command+=(
-    --input "$input"
-    --output-dir "$output_dir"
-    --output-name transcript
-  )
-  if [[ -n "$speakers" ]]; then
-    command+=(--speakers "$speakers")
-  fi
-elif [[ "$backend" == "mlx" ]]; then
-  if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
-    command=("$MEETING_TRANSCRIBER_MLX_BIN")
-  else
-    command=("$python_bin" "${utility_root}/lib/transcribe_mlx.py")
-  fi
-  command+=(
-    --input "$input"
-    --model "$model"
-    --output-dir "$output_dir"
-    --output-name transcript
-  )
-  if [[ -n "$hotwords" ]]; then
-    command+=(--initial-prompt "$hotwords")
-  fi
-  if [[ "$diarize" -eq 1 ]]; then
-    command+=(--diarize)
-    if [[ -n "$speakers" ]]; then
-      command+=(--speakers "$speakers")
-    fi
-  fi
+if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
+  command=("$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN")
 else
-  command=(
-    "$whisperx_bin"
-    "$input"
-    --model "$model"
-    --device cpu
-    --compute_type int8
-    --condition_on_previous_text False
-    --output_dir "$output_dir"
-    --output_format all
-  )
-  if [[ -n "$hotwords" ]]; then
-    command+=(--hotwords "$hotwords")
-  fi
-  if [[ "$diarize" -eq 1 ]]; then
-    command+=(--diarize)
-    if [[ -n "$speakers" ]]; then
-      command+=(--min_speakers "$speakers" --max_speakers "$speakers")
-    fi
-  fi
+  command=("$python_bin" "${utility_root}/lib/transcribe_assemblyai.py")
+fi
+command+=(
+  --input "$input"
+  --output-dir "$output_dir"
+  --output-name transcript
+)
+if [[ -n "$speakers" ]]; then
+  command+=(--speakers "$speakers")
 fi
 
-if [[ "$local_provider" -eq 0 ]]; then
-  printf 'Provider: AssemblyAI\n' >&2
-else
-  printf 'Provider: local (%s engine)\n' "$backend" >&2
-fi
-if [[ "$local_provider" -eq 0 ]]; then
-  ASSEMBLYAI_API_KEY="$assemblyai_key" "${command[@]}"
-elif [[ "$diarize" -eq 1 ]]; then
-  HF_TOKEN="$diarization_token" "${command[@]}"
-else
-  "${command[@]}"
-fi
-unset diarization_token
+set +e
+ASSEMBLYAI_API_KEY="$assemblyai_key" "${command[@]}" >/dev/null
+run_status=$?
+set -e
 unset assemblyai_key
-if [[ "$local_provider" -eq 1 && "$backend" == "whisperx" ]]; then
-  for extension in json txt srt vtt tsv; do
-    source_output="${output_dir}/${source_stem}.${extension}"
-    [[ -e "$source_output" ]] || continue
-    destination_output="${output_dir}/transcript.${extension}"
-    if [[ "$source_output" != "$destination_output" ]]; then
-      mv "$source_output" "$destination_output"
-    fi
-  done
+
+if [[ "$run_status" -eq 0 || "$run_status" -eq 3 ]]; then
+  json_output="${output_dir}/transcript.json"
+  if [[ ! -s "$json_output" ]]; then
+    printf 'Error: transcription did not create the expected JSON output: %s\n' "$json_output" >&2
+    exit 1
+  fi
+  if [[ -n "${MEETING_TRANSCRIBER_RESULT_FILE:-}" ]]; then
+    printf '%s\n' "$output_dir" > "$MEETING_TRANSCRIBER_RESULT_FILE"
+  fi
+  printf '%s\n' "$json_output"
 fi
-json_output="${output_dir}/transcript.json"
-[[ -s "$json_output" ]] || fail "transcription did not create the expected JSON output: $json_output"
-"$render_html_bin" "$json_output" >/dev/null
-if [[ -n "${MEETING_TRANSCRIBER_RESULT_FILE:-}" ]]; then
-  printf '%s\n' "$output_dir" > "$MEETING_TRANSCRIBER_RESULT_FILE"
-fi
-printf '%s\n' "$output_dir"
+exit "$run_status"

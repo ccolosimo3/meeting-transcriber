@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import html
-import json
-import os
-import re
-import tempfile
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+
+from meeting_identity import meeting_identity
+from transcript_bundle import Segment, atomic_write_private, load_canonical
 
 
 PALETTE = (
@@ -22,26 +20,24 @@ PALETTE = (
     ("#4338ca", "#818cf8"),
 )
 
-BUNDLE_PATTERN = re.compile(r"^(\d{8})-(\d{6})(?:-(.+))?$")
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render a local WhisperX JSON transcript as color-coded HTML."
+        description="Render a canonical JSON transcript as color-coded HTML."
     )
     parser.add_argument("json_path", type=Path)
     parser.add_argument("html_path", nargs="?", type=Path)
     return parser.parse_args()
 
 
-def timestamp(value: Any) -> str:
+def timestamp(value: float) -> str:
     seconds = float(value or 0)
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{int(hours):02d}:{int(minutes):02d}:{seconds:06.3f}"
 
 
-def human_timestamp(value: Any) -> str:
+def human_timestamp(value: float) -> str:
     total_seconds = max(0, int(float(value or 0)))
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
@@ -60,96 +56,30 @@ def duration_label(value: float) -> str:
     return f"{hours} hr {minutes} min"
 
 
-def meeting_identity(source: Path) -> tuple[str, str, str]:
-    """Derive a human title and local date from the canonical meeting bundle."""
-    fallback_label = source.stem.replace("-", " ").replace("_", " ").strip()
-    fallback = fallback_label[:1].upper() + fallback_label[1:]
-    fallback_identity = (
-        fallback or "Meeting transcript",
-        "Date unavailable",
-        source.stem,
-    )
-    bundle_name = source.parents[2].name if len(source.parents) >= 3 else ""
-    match = BUNDLE_PATTERN.fullmatch(bundle_name)
-    if not match:
-        return fallback_identity
-
-    try:
-        recorded_at = datetime.strptime("".join(match.group(1, 2)), "%Y%m%d%H%M%S")
-    except ValueError:
-        return fallback_identity
-    slug = match.group(3) or "meeting"
-    label = slug.replace("-", " ").replace("_", " ").strip()
-    title = label[:1].upper() + label[1:]
-    hour = recorded_at.strftime("%I").lstrip("0") or "12"
-    date = (
-        f"{recorded_at.strftime('%B')} {recorded_at.day}, {recorded_at.year} "
-        f"at {hour}:{recorded_at.strftime('%M %p')}"
-    )
-    return title, date, source.parent.name
+@dataclass
+class Turn:
+    speaker: str
+    start: float
+    end: float
+    texts: list[str] = field(default_factory=list)
 
 
-def load_segments(path: Path) -> tuple[str, list[dict[str, Any]]]:
-    with path.open(encoding="utf-8") as source:
-        payload = json.load(source)
-    if not isinstance(payload, dict):
-        raise ValueError("transcript JSON must contain an object")
-    language = str(payload.get("language") or "unknown")
-    raw_segments = payload.get("segments")
-    if not isinstance(raw_segments, list) or not raw_segments:
-        raise ValueError("transcript JSON has no segments")
-
-    segments: list[dict[str, Any]] = []
-    for raw in raw_segments:
-        if not isinstance(raw, dict):
-            continue
-        text = str(raw.get("text") or "").strip()
-        if not text:
-            continue
-        segments.append(
-            {
-                "speaker": str(raw.get("speaker") or "UNASSIGNED"),
-                "start": float(raw.get("start") or 0),
-                "end": float(raw.get("end") or raw.get("start") or 0),
-                "text": text,
-            }
-        )
-    if not segments:
-        raise ValueError("transcript JSON has no nonempty text segments")
-    return language, segments
-
-
-def group_turns(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    turns: list[dict[str, Any]] = []
+def group_turns(segments: list[Segment]) -> list[Turn]:
+    turns: list[Turn] = []
     for segment in segments:
-        if turns and turns[-1]["speaker"] == segment["speaker"]:
-            turns[-1]["end"] = segment["end"]
-            turns[-1]["texts"].append(segment["text"])
+        if turns and turns[-1].speaker == segment.speaker:
+            turns[-1].end = segment.end
+            turns[-1].texts.append(segment.text)
         else:
             turns.append(
-                {
-                    "speaker": segment["speaker"],
-                    "start": segment["start"],
-                    "end": segment["end"],
-                    "texts": [segment["text"]],
-                }
+                Turn(
+                    speaker=segment.speaker,
+                    start=segment.start,
+                    end=segment.end,
+                    texts=[segment.text],
+                )
             )
     return turns
-
-
-def load_speaker_names(source: Path) -> dict[str, str]:
-    mapping_path = source.with_suffix(".speakers.json")
-    if not mapping_path.exists():
-        return {}
-    with mapping_path.open(encoding="utf-8") as mapping_source:
-        payload = json.load(mapping_source)
-    if not isinstance(payload, dict):
-        raise ValueError("speaker-name map must contain an object")
-    return {
-        str(speaker): str(name).strip()
-        for speaker, name in payload.items()
-        if str(name).strip()
-    }
 
 
 def speaker_label(speaker: str, names: dict[str, str]) -> str:
@@ -163,23 +93,22 @@ def speaker_label(speaker: str, names: dict[str, str]) -> str:
 
 
 def turn_markup(
-    turns: list[dict[str, Any]],
+    turns: list[Turn],
     names: dict[str, str],
     speaker_styles: dict[str, tuple[str, str]],
 ) -> str:
     rows: list[str] = []
     for turn in turns:
-        speaker = turn["speaker"]
-        light, dark = speaker_styles[speaker]
+        light, dark = speaker_styles[turn.speaker]
         style = f"--speaker-light:{light};--speaker-dark:{dark}"
-        label = speaker_label(speaker, names)
-        time = f'{human_timestamp(turn["start"])}–{human_timestamp(turn["end"])}'
-        copy = html.escape(" ".join(turn["texts"]))
+        label = speaker_label(turn.speaker, names)
+        time = f"{human_timestamp(turn.start)}–{human_timestamp(turn.end)}"
+        copy = html.escape(" ".join(turn.texts))
 
         rows.append(
             f'<article class="editorial-turn" style="{style}">'
             f'<header class="turn-header"><span class="speaker">{label}</span>'
-            f'<time>{time}</time></header><p>{copy}</p></article>'
+            f"<time>{time}</time></header><p>{copy}</p></article>"
         )
     return "\n".join(rows)
 
@@ -187,17 +116,17 @@ def turn_markup(
 def render(
     source: Path,
     language: str,
-    segments: list[dict[str, Any]],
+    segments: list[Segment],
     names: dict[str, str],
 ) -> str:
     turns = group_turns(segments)
-    speakers = list(dict.fromkeys(turn["speaker"] for turn in turns))
+    speakers = list(dict.fromkeys(turn.speaker for turn in turns))
     speaker_styles = {
         speaker: PALETTE[index % len(PALETTE)]
         for index, speaker in enumerate(speakers)
     }
     title, recorded_at, run_id = meeting_identity(source)
-    duration = max(float(segment["end"]) for segment in segments)
+    duration = max(segment.end for segment in segments)
 
     legend = "\n".join(
         (
@@ -362,7 +291,7 @@ def render(
         {editorial}
       </div>
       <footer class="document-footer">
-        <span>Generated locally by Meeting Transcriber</span>
+        <span>Generated by Meeting Transcriber</span>
         <span>Transcript run: {html.escape(run_id)}</span>
       </footer>
     </article>
@@ -394,32 +323,22 @@ def render(
 """
 
 
+def render_html(source: Path, destination: Path | None = None) -> Path:
+    """Render the saved canonical transcript to HTML atomically."""
+    transcript = load_canonical(source)
+    target = destination if destination is not None else source.with_suffix(".html")
+    rendered = render(
+        source, transcript.language, transcript.segments, transcript.speaker_names
+    )
+    atomic_write_private(target, rendered)
+    return target
+
+
 def main() -> None:
     args = parse_args()
     source = args.json_path.expanduser().resolve()
-    destination = (
-        args.html_path.expanduser().resolve()
-        if args.html_path
-        else source.with_suffix(".html")
-    )
-    language, segments = load_segments(source)
-    names = load_speaker_names(source)
-    rendered = render(source, language, segments, names)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(rendered)
-        os.replace(temporary_name, destination)
-    except BaseException:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
-    print(destination)
+    destination = args.html_path.expanduser().resolve() if args.html_path else None
+    print(render_html(source, destination))
 
 
 if __name__ == "__main__":

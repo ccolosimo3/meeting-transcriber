@@ -1,17 +1,19 @@
 # Meeting Transcriber
 
-Meeting transcription for macOS using AssemblyAI Universal-3.5 Pro by default,
-with MLX Whisper, WhisperX, and pyannote as an explicit local fallback.
-Record a meeting, produce a speaker-labeled transcript, assign names, and hand
-the result to Codex through one provider-neutral transcript bundle.
+A small macOS utility with one job: record a room meeting to a private local
+file, transcribe it with AssemblyAI speaker diarization, and save one canonical
+transcript with a clean browser view and an agent-friendly Markdown view.
+
+Recording always stays on your Mac and works offline. Transcription uploads the
+completed recording to AssemblyAI, then deletes the remote transcript and audio
+after the local files are saved. There is one supported transcription service
+and one complete transcription command.
 
 ## Platform support
 
-V0 supports Apple-silicon macOS only. It relies on Apple MLX acceleration,
-FFmpeg AVFoundation recording, Homebrew, macOS Keychain, Finder, and shell
-commands that do not have drop-in Windows equivalents. WhisperX and pyannote
-can form the core of a future Windows CPU/CUDA adapter, but Windows is not
-currently a supported or seamless installation target.
+macOS only. The app relies on FFmpeg AVFoundation recording, Homebrew, macOS
+Keychain, notifications, and Finder. Transcription requires an internet
+connection, an AssemblyAI API key, and a paid AssemblyAI account.
 
 ## Quick start
 
@@ -22,171 +24,146 @@ From a fresh checkout:
 meeting
 ```
 
-The installer explains its changes before running. It installs the pinned local
-toolchain, configures the microphone and separate AssemblyAI/Hugging Face
-Keychain credentials, links the `meeting` command, and installs the bundled
-Codex skill. If `~/.local/bin`
-is not on `PATH`, setup stops with the exact shell-profile line required.
+The installer explains its changes before running. It installs Homebrew `uv`
+and `ffmpeg@7`, creates a small locked Python environment
+(`uv sync --frozen --no-dev`), links the `meeting` command under
+`~/.local/bin`, and walks through microphone, AssemblyAI Keychain key, and
+`$meeting` skill setup. If `~/.local/bin` is not on `PATH`, setup stops with
+the exact shell-profile line required.
 
-The normal workflow is available from the interactive `meeting` menu or as two
-commands:
+The normal workflow is two commands (or the interactive `meeting` menu):
 
 ```bash
 meeting record "weekly sync"
 # Press q when the meeting ends.
 
-meeting process --speakers 4
+meeting transcribe
 ```
 
 While recording in an interactive terminal, the command shows the selected
-microphone, elapsed time, and a rolling waveform driven by the live input level.
-The display is visual only and does not change the captured 48 kHz mono audio.
+microphone, elapsed time, and a rolling level meter. The display is visual only
+and does not change the captured 48 kHz mono audio.
 
-`meeting process` identifies AssemblyAI before uploading the newest completed
-recording, optionally asks
-for speaker names, creates the human and agent transcript views, opens the HTML
-transcript, copies a `$meeting` Codex prompt, and posts a completion
-notification. Omit `--speakers` to let AssemblyAI estimate the count. Use
-`meeting process --local` when the recording must stay on the Mac or the managed
-provider is unavailable.
+`meeting transcribe` states the service and privacy boundary before uploading,
+lets AssemblyAI estimate the speaker count unless you pass `--speakers N`,
+saves the transcript, offers speaker naming, opens the HTML view, and posts a
+completion notification. It finishes by printing the three useful paths and the
+agent handoff line `Use $meeting to digest: <transcript.md>`.
 
 ## Commands
 
 ```text
 meeting                         Open the guided menu
 meeting record [LABEL]          Record until q is pressed
-meeting process [INPUT]         Run the complete post-meeting workflow
-meeting open                    Open the newest color-coded transcript
-meeting folder                  Open recordings and transcripts in Finder
-meeting prepare                 Prepare the newest transcript for Codex
+meeting transcribe [INPUT]      Transcribe a recording with AssemblyAI
+meeting open                    Open the latest transcript
+meeting speakers                Name or correct speakers
+meeting folder                  Open the meeting folder in Finder
 meeting setup                   Configure this Mac
-meeting doctor                  Check the installation without model work
+meeting doctor                  Check recording and transcription readiness
+meeting help                    Show the command summary
 ```
 
-Useful process options:
+One recovery-only command exists for the rare case where remote deletion could
+not be confirmed:
 
 ```text
---speakers N    Set the known speaker count
---local         Use the local MLX/Community-1 fallback
---backend ENGINE Select the local mlx or whisperx engine
---model MODEL    Select a local Whisper model (default: turbo)
---hotwords TEXT Improve local recognition of names and domain terms
---no-diarize    Use local transcription without speaker labels
---skip-names    Keep SPEAKER_XX labels
---no-open       Do not open the HTML transcript
---no-copy       Print rather than copy the Codex prompt
+meeting cleanup [TRANSCRIPT_JSON]   Confirm remote deletion for a saved transcript
 ```
 
-Run `meeting help` or `meeting <command> --help` for the complete interface.
-The earlier `meeting-*` executables remain available as compatibility and
-advanced commands.
-
-## Codex follow-up
-
-The repository includes `skills/meeting/`. The installer places it under the
-personal Codex skills directory. After processing a meeting, paste the prompt
-already copied to the clipboard:
+Retained options:
 
 ```text
-Use $meeting to digest the local transcript at: /path/to/transcript.agent.md
+record      --device NAME_OR_INDEX   Use this microphone for this capture only
+transcribe  --speakers N             Expected speaker count (omit to estimate)
+transcribe  --skip-names             Keep anonymous speaker labels
+transcribe  --no-open                Do not open the finished HTML transcript
+speakers    --no-open                Do not open the regenerated HTML transcript
+setup       --device NAME_OR_INDEX   Set the default microphone
 ```
 
-The skill creates an evidence-grounded digest first, then offers only the
-follow-up work supported by that meeting, such as focused research, repository
-grounding, a draft message, or a project charter. It does not automatically
-publish notes, contact people, create tasks, or modify a repository.
+Run `meeting help` or `meeting <command> --help` for details.
 
-## Files and privacy
+## Privacy and cost
 
-Code can be checked out anywhere. Private runtime data defaults to:
-
-```text
-~/Transcriptions/20260825-174918-weekly-sync/recording.wav
-~/Transcriptions/20260825-174918-weekly-sync/transcripts/20260825-175142/
-```
-
-Configuration defaults to:
-
-```text
-~/.config/meeting-transcriber/config
-```
-
-Override the meeting-bundle root with `MEETING_DATA_DIR` and the configuration
-root with `MEETING_CONFIG_DIR`.
-
-Run `meeting folder` to open `~/Transcriptions` in Finder. Keeping this private
-data outside `~/meeting-transcriber` prevents recordings and generated
-transcripts from entering the source repository.
-
-- The default prerecorded path uploads the recording to AssemblyAI's US REST
-  service and uses Universal-3.5 Pro with speaker diarization, formatting, and
-  automatic language detection. Provider billing, training opt-out, and
-  retention settings remain owned by the AssemblyAI account.
+- Recording is always local. A recording is never uploaded automatically; only
+  `meeting transcribe` sends audio to AssemblyAI.
+- Transcription uploads the recording to AssemblyAI's US REST service and uses
+  the Universal-3.5 Pro model with speaker diarization, formatting, and
+  automatic language detection. This is a managed, paid service: provider
+  billing, training opt-out, and retention settings are owned by your
+  AssemblyAI account. There is no offline transcription mode.
+- After the local transcript is saved, the app deletes the remote transcript
+  and uploaded audio and records the confirmed or unconfirmed outcome in a
+  private receipt. An unconfirmed deletion is reported prominently with a
+  single `meeting cleanup` recovery command; the local transcript remains
+  usable either way.
 - The AssemblyAI API key is stored in macOS Keychain under service
-  `meeting-transcriber-assemblyai-key`. A one-run `ASSEMBLYAI_API_KEY`
-  environment override is also supported.
-- After a known-ID job finishes or fails, the utility attempts to delete the
-  AssemblyAI transcript and its uploaded audio. It records confirmed or
-  unconfirmed cleanup in private `transcript.assemblyai.json`; an unconfirmed
-  deletion stops before opening, notification, or reporting `Done` and names the
-  job ID for dashboard cleanup.
-- `--local` keeps transcription, alignment, and Community-1 diarization on the
-  Mac after model files are available. MLX Turbo uses the Apple GPU;
-  `--backend whisperx` selects the local CPU fallback.
-- Model files may be downloaded or resolved from their upstream hosts.
-- The Hugging Face token is stored in macOS Keychain under service
-  `meeting-transcriber-hf-token`; it is not stored in the checkout.
-- Pyannote telemetry is disabled for transcription runs.
-- Giving a transcript to Codex is a separate, deliberate disclosure governed by
-  that Codex workspace's data controls.
+  `meeting-transcriber-assemblyai-key` and reaches only the provider request —
+  never renderers, notifications, command lines, or saved files. A one-run
+  `ASSEMBLYAI_API_KEY` environment override is also supported.
+- Giving a transcript to an agent is a separate, deliberate disclosure governed
+  by that workspace's data controls.
 - Record only with participant consent. Recordings and transcripts are retained
-  until the user removes them.
-- Runtime directories use mode `0700` and generated private files use `0600`.
-  Rerunning `meeting setup` repairs older recording and transcript permissions.
+  until you remove them.
+- Meeting directories use mode `0700` and generated files use `0600`.
+  Rerunning `meeting setup` repairs older permissions.
 
-## Meeting bundles
+## Files
 
-Each recording creates one dated meeting bundle containing `recording.wav`.
-Each transcription creates an immutable dated run beneath that bundle, so
-rerunning with another model or speaker count never duplicates the recording or
-silently replaces earlier evidence:
+Code can be checked out anywhere. Private runtime data defaults to
+`~/Transcriptions`; configuration defaults to
+`~/.config/meeting-transcriber/config`. Run `meeting folder` to open the data
+root in Finder.
+
+Each recording creates one dated meeting bundle. Each transcription creates one
+immutable dated run beneath it:
 
 ```text
 ~/Transcriptions/
-└── 20260825-174918-weekly-sync/
+└── 20260826-100000-weekly-sync/
     ├── recording.wav
     └── transcripts/
-        └── 20260825-175142/
+        └── 20260826-105401/
             ├── transcript.json
-            ├── transcript.txt
-            ├── transcript.srt
-            ├── transcript.vtt
-            ├── transcript.tsv
-            ├── transcript.assemblyai.json
+            ├── transcript.md
             ├── transcript.html
-            ├── transcript.speakers.json
-            └── transcript.agent.md
+            └── .assemblyai.json    (hidden private provider receipt)
 ```
 
-Managed runs contain the private AssemblyAI lifecycle receipt shown above;
-local runs do not. Both providers otherwise publish the same canonical output
-contract. Explicit external audio passed to `meeting transcribe` is copied into
-a new meeting bundle; the original file is not changed. The selected provider
-supplies structured data that is converted into JSON, text, subtitle, and table
-formats. This
-project adds:
+- `transcript.json` — the canonical structured transcript: language, text,
+  speaker-labeled segments, word-level timings, and your saved speaker display
+  names. Both views regenerate from it.
+- `transcript.md` — the agent-friendly view with the meeting title, recorded
+  date, timestamps, and display names.
+- `transcript.html` — the self-contained reading view with speaker colors,
+  search, print styling, and a light/dark preference.
+- `.assemblyai.json` — a private operational receipt holding only the provider
+  job evidence (model, transcript ID, lifecycle timestamps, and deletion
+  state). It never contains transcript text or credentials.
 
-- `.html` — compact, responsive transcript for reading, with speaker colors,
-  human-friendly timestamps, print styling, and a durable light/dark preference;
-- `.speakers.json` — local mapping from anonymous labels to display names; and
-- `.agent.md` — compact named transcript with timestamps for an agent.
+The recording is never modified or deleted by transcription, and existing
+transcript runs are never replaced. External audio passed to
+`meeting transcribe` is first copied into a new private bundle; the original
+file is not changed.
 
-When diarization is enabled, the `.txt`, `.srt`, and `.vtt` views retain each
-phrase segment's `SPEAKER_XX` label. JSON also keeps word-level timing and
-speaker metadata for downstream tools; TSV stays a plain timing/text table.
+Transcript bundles created by earlier versions of this app (with `.txt`,
+`.srt`, `.vtt`, `.tsv`, `.agent.md`, `.speakers.json`, or
+`transcript.assemblyai.json` files) remain readable: `meeting open` opens their
+saved HTML without rewriting anything. They are not migrated; transcribe the
+recording again if you need editable embedded speaker names.
 
-The bundled recording is never overwritten and existing provider or local
-transcript runs are not silently replaced.
+## The $meeting skill
+
+The repository includes `skills/meeting/`; setup installs it under the personal
+Codex skills directory. After transcribing, hand the printed line to an agent:
+
+```text
+Use $meeting to digest: /path/to/transcript.md
+```
+
+The skill creates an evidence-grounded digest first, then offers only the
+follow-up work supported by that meeting.
 
 ## Troubleshooting
 
@@ -196,28 +173,23 @@ Start with:
 meeting doctor
 ```
 
-It checks Homebrew, uv, FFmpeg 7, the locked Python environment, PyAV/TorchCodec
-library alignment, the configured microphone, credential availability, data
-directories, and the Codex skill without transcribing audio, loading a model, or
-making a provider request. A missing AssemblyAI key is a warning because a
-local-only installation remains supported.
+It reports separate Recording and Transcription readiness. A missing AssemblyAI
+key blocks transcription but recording remains available.
 
 Known limitations:
 
-- Room acoustics and microphone placement set the quality ceiling.
-- Overlapping speech and distant speakers can reduce diarization accuracy.
-- Speaker labels are anonymous until a person maps them to names.
-- The managed path is pinned to Universal-3.5 Pro. Its documented language set
-  is English, Spanish, French, German, Italian, Portuguese, Arabic, Danish,
-  Dutch, Finnish, Hebrew, Hindi, Japanese, Mandarin, Norwegian, Swedish,
-  Turkish, and Vietnamese. Use `--local` for an unsupported language rather
-  than expecting a silent model fallback. See AssemblyAI's
+- Room acoustics and microphone placement set the quality ceiling; overlapping
+  or distant speakers reduce diarization accuracy.
+- Speaker labels are anonymous until you map them with `meeting speakers`.
+- The service is pinned to Universal-3.5 Pro. Its documented language set is
+  English, Spanish, French, German, Italian, Portuguese, Arabic, Danish, Dutch,
+  Finnish, Hebrew, Hindi, Japanese, Mandarin, Norwegian, Swedish, Turkish, and
+  Vietnamese. See AssemblyAI's
   [Universal-3.5 Pro overview](https://www.assemblyai.com/blog/universal-3-5-pro-code-switching-contextual-prompting).
-- AssemblyAI inputs are limited to 2.2 GB and 10 hours. The managed path rejects
-  larger or longer recordings before upload and points to `--local`.
-- MLX acceleration requires an Apple-silicon Mac. If the MLX path fails, rerun
-  the same input with `meeting process --local --backend whisperx` to use CPU
-  Turbo. Provider failures never trigger this fallback automatically.
+- AssemblyAI accepts recordings up to 2.2 GB and 10 hours; larger or longer
+  recordings are rejected before upload.
+- Transcription cannot continue through an AssemblyAI outage. The recording is
+  safe locally; transcribe it later.
 
-Development architecture, dependency rationale, and verification details live
-in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Development architecture and verification details live in
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
