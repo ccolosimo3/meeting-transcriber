@@ -88,29 +88,29 @@ PY
 
   expect_prelaunch_failure missing-input "$marker" \
     env MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
-    --backend whisperx --model tiny.en \
+    --local --backend whisperx --model tiny.en \
     "${artifact_dir}/does not exist.wav" "$output_root"
   expect_prelaunch_failure speakers-without-diarize "$marker" \
     env MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
-    --backend whisperx --model tiny.en --speakers 2 \
+    --local --backend whisperx --model tiny.en --speakers 2 \
     "$source_file" "$output_root"
   expect_prelaunch_failure missing-token "$marker" \
     env -u HF_TOKEN MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
     MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
-    --backend whisperx --model tiny.en --diarize \
+    --local --backend whisperx --model tiny.en --diarize \
     "$source_file" "$output_root"
 
   local collision_dir="${output_root}/collision"
   mkdir "$collision_dir"
   expect_prelaunch_failure collision "$marker" \
     env MEETING_TRANSCRIBER_RUN_ID=collision MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" \
-    "$wrapper" --backend whisperx --model tiny.en "$source_file" "$output_root"
+    "$wrapper" --local --backend whisperx --model tiny.en "$source_file" "$output_root"
 
   local sentinel='non-secret-sentinel-value'
   local stub_output
   stub_output="$(HF_TOKEN="$sentinel" MEETING_TRANSCRIBER_RUN_ID=stub-run \
     MEETING_TRANSCRIBER_WHISPERX_BIN="$stub" "$wrapper" \
-    --backend whisperx --model tiny.en --diarize --speakers 2 \
+    --local --backend whisperx --model tiny.en --diarize --speakers 2 \
     "$source_file" "$output_root")"
   [[ -e "$marker" ]] || { printf 'Error: stub did not launch\n' >&2; exit 1; }
   grep -Fxq present "$env_file"
@@ -125,7 +125,7 @@ PY
   local mlx_stub_output
   mlx_stub_output="$(STUB_ARGV="$mlx_argv" MEETING_TRANSCRIBER_RUN_ID=mlx-stub \
     MEETING_TRANSCRIBER_MLX_BIN="$mlx_stub" "$wrapper" \
-    --backend mlx --model turbo "$source_file" "$output_root")"
+    --local --backend mlx --model turbo "$source_file" "$output_root")"
   [[ "$mlx_stub_output" == *"${output_root}/mlx-stub"* ]] || {
     printf 'Error: MLX stub did not report the expected output directory\n' >&2
     exit 1
@@ -137,7 +137,7 @@ PY
   local start_seconds end_seconds real_output
   start_seconds="$SECONDS"
   real_output="$(MEETING_TRANSCRIBER_RUN_ID=real-run "$wrapper" \
-    --backend mlx --model turbo "$source_file" "$output_root")"
+    --local --backend mlx --model turbo "$source_file" "$output_root")"
   end_seconds="$SECONDS"
   local real_dir="${output_root}/real-run"
   [[ "$real_output" == *"$real_dir"* ]] || {
@@ -193,7 +193,7 @@ diarization() {
   mkdir -p "$output_root"
   printf 'Diarization credential source: inherited HF_TOKEN or macOS Keychain\n'
   MEETING_TRANSCRIBER_RUN_ID=diarization "$wrapper" \
-    --backend mlx --model turbo --diarize --speakers 2 \
+    --local --backend mlx --model turbo --diarize --speakers 2 \
     "$source_file" "$output_root"
   run_dir="${output_root}/diarization"
   "$utility_root/.venv/bin/python" - "${run_dir}/transcript.json" <<'PY'

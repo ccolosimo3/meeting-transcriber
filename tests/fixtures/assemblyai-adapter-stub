@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+: "${STUB_ASSEMBLYAI_ARGV:?}" "${STUB_ASSEMBLYAI_ENV:?}"
+printf '%s\n' "$@" > "$STUB_ASSEMBLYAI_ARGV"
+if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then
+  printf 'present\n' > "$STUB_ASSEMBLYAI_ENV"
+else
+  printf 'absent\n' > "$STUB_ASSEMBLYAI_ENV"
+fi
+output_dir=""
+output_name=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-dir) output_dir="$2"; shift 2 ;;
+    --output-name) output_name="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+: "${output_dir:?}" "${output_name:?}"
+printf '%s' '{"language":"en","text":"interface smoke","segments":[{"id":0,"speaker":"SPEAKER_00","start":0,"end":1,"text":"interface smoke","words":[{"word":"interface","start":0,"end":0.5,"probability":0.99,"speaker":"SPEAKER_00"}]}]}' > "${output_dir}/${output_name}.json"
+printf '%s\n' '[SPEAKER_00]: interface smoke' > "${output_dir}/${output_name}.txt"
+printf '%s\n' '1' '00:00:00,000 --> 00:00:01,000' '[SPEAKER_00]: interface smoke' > "${output_dir}/${output_name}.srt"
+printf '%s\n' 'WEBVTT' '' '00:00.000 --> 00:01.000' '[SPEAKER_00]: interface smoke' > "${output_dir}/${output_name}.vtt"
+printf '%s\n' $'start\tend\ttext' $'0\t1000\tinterface smoke' > "${output_dir}/${output_name}.tsv"
+printf '%s' '{"provider":"assemblyai","requested_model":"universal-3-5-pro","state":"published","deletion":{"confirmed":true}}' > "${output_dir}/${output_name}.assemblyai.json"
+printf '%s\n' "${output_dir}/${output_name}.json"

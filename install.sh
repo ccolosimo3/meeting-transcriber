@@ -34,9 +34,10 @@ printf '%s\n' \
   '  - install uv-managed Python 3.13' \
   '  - create a locked .venv in this checkout' \
   '  - link the meeting command under ~/.local/bin' \
-  '  - configure local data and the bundled Codex skill' \
+  '  - configure AssemblyAI/local credentials, local data, and the Codex skill' \
   '' \
-  'It does not upload recordings or store a token in this repository.'
+  'The normal path uploads recordings to AssemblyAI; --local keeps processing local.' \
+  'Credentials are stored in macOS Keychain, never in this repository.'
 
 if [[ "$assume_yes" -eq 0 ]]; then
   [[ -t 0 ]] || { printf 'Error: rerun interactively or pass --yes\n' >&2; exit 2; }

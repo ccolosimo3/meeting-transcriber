@@ -42,6 +42,10 @@ meeting_notify() { printf '%s\n' "$1" >> "$STUB_NOTIFY_LOG"; }
 set -euo pipefail
 printf '%s\0' "$@" > "$STUB_TRANSCRIBE_ARGV"
 mkdir -p "$STUB_OUTPUT_DIR"
+if [[ "${STUB_TRANSCRIBE_FAIL:-0}" -eq 1 ]]; then
+  printf 'provider failed\n' >&2
+  exit 7
+fi
 if [[ "${STUB_CANONICAL_JSON:-1}" -eq 1 ]]; then
   printf '{"segments":[]}' > "$STUB_OUTPUT_DIR/transcript.json"
 fi
@@ -110,6 +114,7 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
             [str(self.output_dir / "transcript.json")],
         )
         self.assertIn("Done. Transcript bundle:", result.stdout)
+        self.assertIn("Provider: AssemblyAI", result.stdout)
         self.assertEqual(
             self.notify_log.read_text(encoding="utf-8").strip(),
             "Transcript ready: transcript-run",
@@ -140,10 +145,41 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
                 str(self.input_path),
             ],
         )
+        self.assertIn("Provider: local", result.stdout)
         self.assertEqual(
             self._arguments(self.prepare_log),
             ["--no-copy", str(self.output_dir / "transcript.json")],
         )
+
+    def test_explicit_local_routes_without_changing_provider_neutral_options(self) -> None:
+        result = self._run(
+            "--local",
+            "--speakers",
+            "2",
+            "--skip-names",
+            "--no-open",
+            str(self.input_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self._arguments(self.argv_log),
+            ["--local", "--speakers", "2", str(self.input_path)],
+        )
+        self.assertIn("Provider: local", result.stdout)
+
+    def test_provider_failure_stops_before_prepare_notify_and_done(self) -> None:
+        result = self._run(
+            "--skip-names",
+            "--no-open",
+            str(self.input_path),
+            STUB_TRANSCRIBE_FAIL="1",
+        )
+
+        self.assertEqual(result.returncode, 7)
+        self.assertFalse(self.prepare_log.exists())
+        self.assertFalse(self.notify_log.exists())
+        self.assertNotIn("Done. Transcript bundle:", result.stdout)
 
     def test_missing_canonical_json_stops_before_completion(self) -> None:
         result = self._run(

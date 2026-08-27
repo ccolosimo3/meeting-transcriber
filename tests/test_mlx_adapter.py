@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -12,9 +13,56 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from render_transcript_markdown import render  # noqa: E402
 from transcribe_mlx import finalize_transcript, write_outputs  # noqa: E402
+from transcript_bundle import format_timestamp  # noqa: E402
 
 
 class MlxAdapterTests(unittest.TestCase):
+    def test_shared_formatter_preserves_fractional_and_hour_plus_bytes(self) -> None:
+        self.assertEqual(format_timestamp(1.234), "00:01.234")
+        self.assertEqual(
+            format_timestamp(3661.234, always_include_hours=True, decimal_marker=","),
+            "01:01:01,234",
+        )
+        result = {
+            "language": "en",
+            "text": "Hour-plus segment.",
+            "segments": [
+                {
+                    "start": 3661.234,
+                    "end": 3662.346,
+                    "text": " Hour-plus segment.",
+                    "words": [],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            output_dir = Path(temporary_dir)
+            write_outputs(result, output_dir, "transcript")
+            self.assertEqual(
+                (output_dir / "transcript.srt").read_text(encoding="utf-8"),
+                "1\n01:01:01,234 --> 01:01:02,346\nHour-plus segment.\n",
+            )
+            self.assertEqual(
+                (output_dir / "transcript.vtt").read_text(encoding="utf-8"),
+                "WEBVTT\n\n01:01:01.234 --> 01:01:02.346\nHour-plus segment.\n",
+            )
+
+    def test_shared_writer_import_does_not_load_local_model_stack(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys, transcript_bundle; "
+                "assert not any(name == 'mlx' or name.startswith('mlx.') "
+                "for name in sys.modules)",
+            ],
+            cwd=PROJECT_ROOT / "lib",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_word_level_jitter_does_not_split_a_phrase_turn(self) -> None:
         assigned = {
             "language": "en",

@@ -15,14 +15,16 @@ config_root="$(meeting_config_root)"
 config_file="$(meeting_config_file)"
 recording_device=""
 skip_token=0
+skip_assemblyai_key=0
 skip_skill=0
 
 usage() {
   printf '%s\n' \
-    'Usage: meeting setup [--device NAME_OR_INDEX] [--skip-token] [--skip-skill]' \
+    'Usage: meeting setup [--device NAME_OR_INDEX] [--skip-assemblyai-key]' \
+    '                     [--skip-token] [--skip-skill]' \
     '' \
     'Creates local data/configuration directories, selects a microphone,' \
-    'offers secure Keychain token setup, installs the bundled Codex skill,' \
+    'offers secure provider/local Keychain setup, installs the bundled Codex skill,' \
     'and finishes with meeting doctor.'
 }
 
@@ -40,6 +42,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-token)
       skip_token=1
+      shift
+      ;;
+    --skip-assemblyai-key)
+      skip_assemblyai_key=1
       shift
       ;;
     --skip-skill)
@@ -122,8 +128,35 @@ else
   command_path_ready=1
 fi
 
+keychain_account="${USER:-$(id -un)}"
+printf '%s\n' \
+  '' \
+  'The normal transcription path uploads recordings to AssemblyAI.' \
+  'Billing, training opt-out, and retention settings are owned by your AssemblyAI account.'
+if [[ "$skip_assemblyai_key" -eq 0 ]]; then
+  if security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
+    printf 'AssemblyAI API key: already configured in Keychain\n'
+  elif [[ -t 0 ]]; then
+    printf 'Store an AssemblyAI API key in Keychain now? [y/N] '
+    read -r assemblyai_reply || true
+    case "$assemblyai_reply" in
+      y|Y|yes|YES)
+        printf 'Keychain will prompt securely for the API key.\n'
+        security add-generic-password -U -a "$keychain_account" \
+          -s meeting-transcriber-assemblyai-key -w
+        ;;
+      *)
+        printf 'Skipped AssemblyAI key setup. Use meeting process --local or configure the key later.\n'
+        ;;
+    esac
+  else
+    printf 'AssemblyAI key is not configured. Use meeting process --local or rerun setup interactively.\n' >&2
+  fi
+else
+  printf 'Skipped AssemblyAI key setup. Use meeting process --local or configure the key later.\n' >&2
+fi
+
 if [[ "$skip_token" -eq 0 ]]; then
-  keychain_account="${USER:-$(id -un)}"
   if security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
     printf 'Hugging Face token: already configured in Keychain\n'
   elif [[ -t 0 ]]; then
@@ -136,7 +169,7 @@ if [[ "$skip_token" -eq 0 ]]; then
           -s meeting-transcriber-hf-token -w
         ;;
       *)
-        printf 'Skipped token setup. Diarization will require --no-diarize until configured.\n'
+        printf 'Skipped Hugging Face token setup. Local diarization will require setup or --no-diarize.\n'
         ;;
     esac
   fi
