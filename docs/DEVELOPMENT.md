@@ -119,9 +119,10 @@ Each run atomically persists the hidden mode-`0600` receipt
   `confirmed: false` with bounded attempt/error metadata. Exit code 3 from the
   adapter and both shell layers means "usable transcript; cleanup required".
 - `meeting cleanup` is recovery-only: it validates the regular non-symlink
-  canonical transcript and adjacent receipt through the shared current-run
-  classifier, including exact published inventory, canonical schema, provider,
-  model/status/lifecycle evidence, transcript ID, and deletion state,
+  canonical transcript and adjacent receipt through the current-schema run
+  validator, including the complete set of managed run files (extra unrelated
+  files are tolerated), canonical schema, provider, model/status/lifecycle
+  evidence, transcript ID, and deletion state,
   issues bounded DELETE attempts, and performs the terminal false-to-true
   transition with re-compaction and reload. A DELETE 404 confirms cleanup only
   when the receipt independently proves the same transcript ID was returned by
