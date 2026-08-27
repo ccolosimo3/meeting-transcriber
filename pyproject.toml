@@ -1,14 +1,12 @@
 [project]
 name = "meeting-transcriber"
 version = "0.1.0"
-description = "Private local MLX Whisper and pyannote meeting transcription utility"
+description = "AssemblyAI meeting recording and transcription utility for macOS"
 requires-python = ">=3.13,<3.14"
-dependencies = [
-  # Build against Homebrew FFmpeg 7 so PyAV and TorchCodec share one library family.
-  "av==14.4.0",
-  "mlx-whisper==0.4.3",
-  "whisperx==3.8.6",
-]
+dependencies = []
+
+[dependency-groups]
+dev = ["aiohttp==3.14.3"]
 
 [tool.uv]
 package = false

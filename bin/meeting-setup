@@ -14,22 +14,23 @@ data_root="$(meeting_data_root)"
 config_root="$(meeting_config_root)"
 config_file="$(meeting_config_file)"
 recording_device=""
-skip_token=0
-skip_assemblyai_key=0
-skip_skill=0
 
 usage() {
   printf '%s\n' \
-    'Usage: meeting setup [--device NAME_OR_INDEX] [--skip-assemblyai-key]' \
-    '                     [--skip-token] [--skip-skill]' \
+    'Usage: meeting setup [--device NAME_OR_INDEX]' \
     '' \
     'Creates local data/configuration directories, selects a microphone,' \
-    'offers secure provider/local Keychain setup, installs the bundled Codex skill,' \
-    'and finishes with meeting doctor.'
+    'offers secure AssemblyAI Keychain setup, installs the bundled $meeting' \
+    'skill, and finishes with meeting doctor.'
 }
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
+  exit 2
+}
+
+migration_error() {
+  printf '%s\n' "$1" >&2
   exit 2
 }
 
@@ -41,16 +42,13 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --skip-token)
-      skip_token=1
-      shift
+      migration_error '`--skip-token` was removed; Hugging Face tokens are no longer used.'
       ;;
     --skip-assemblyai-key)
-      skip_assemblyai_key=1
-      shift
+      migration_error '`--skip-assemblyai-key` was removed; interactive setup asks before storing a key.'
       ;;
     --skip-skill)
-      skip_skill=1
-      shift
+      migration_error '`--skip-skill` was removed; interactive setup asks before installing the skill.'
       ;;
     -h|--help)
       usage
@@ -62,6 +60,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Setup has no machine-readable stdout; all of its human status is stderr.
+exec >&2
+
 mkdir -p "$config_root" "$data_root" "${HOME}/.local/bin"
 chmod 700 "$config_root" "$data_root"
 while IFS= read -r -d '' private_directory; do
@@ -69,7 +70,7 @@ while IFS= read -r -d '' private_directory; do
 done < <(find "$data_root" -type d -print0)
 while IFS= read -r -d '' private_file; do
   chmod 600 "$private_file"
-done < <(find "$data_root" -type f -print0)
+done < <(find "$data_root" ! -type d ! -type l -print0)
 
 current_device="$(meeting_config_get recording_device 0)"
 if [[ -z "$recording_device" && -t 0 ]]; then
@@ -84,7 +85,6 @@ if [[ -z "$recording_device" && -t 0 ]]; then
 fi
 recording_device="${recording_device:-$current_device}"
 
-umask 077
 temporary_config="$(mktemp "${config_root}/.config.XXXXXX")"
 printf 'recording_device=%s\n' "$recording_device" > "$temporary_config"
 mv "$temporary_config" "$config_file"
@@ -128,68 +128,60 @@ else
   command_path_ready=1
 fi
 
-keychain_account="${USER:-$(id -un)}"
 printf '%s\n' \
   '' \
-  'The normal transcription path uploads recordings to AssemblyAI.' \
-  'Billing, training opt-out, and retention settings are owned by your AssemblyAI account.'
-if [[ "$skip_assemblyai_key" -eq 0 ]]; then
-  if security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
-    printf 'AssemblyAI API key: already configured in Keychain\n'
-  elif [[ -t 0 ]]; then
-    printf 'Store an AssemblyAI API key in Keychain now? [y/N] '
-    read -r assemblyai_reply || true
-    case "$assemblyai_reply" in
-      y|Y|yes|YES)
-        printf 'Keychain will prompt securely for the API key.\n'
-        security add-generic-password -U -a "$keychain_account" \
-          -s meeting-transcriber-assemblyai-key -w
-        ;;
-      *)
-        printf 'Skipped AssemblyAI key setup. Use meeting process --local or configure the key later.\n'
-        ;;
-    esac
-  else
-    printf 'AssemblyAI key is not configured. Use meeting process --local or rerun setup interactively.\n' >&2
-  fi
+  'Transcription uploads recordings to AssemblyAI, then deletes the remote' \
+  'copies after local files are saved. Billing, training opt-out, and retention' \
+  'settings are owned by your paid AssemblyAI account. Recording works without' \
+  'a key; transcription does not.'
+keychain_account="${USER:-$(id -un)}"
+if [[ "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" == "1" ]]; then
+  printf 'Keychain access is disabled for this run; skipping AssemblyAI key setup.\n' >&2
+elif security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
+  printf 'AssemblyAI API key: already configured in Keychain\n'
+elif [[ -t 0 ]]; then
+  printf 'Store an AssemblyAI API key in Keychain now? [y/N] '
+  read -r assemblyai_reply || true
+  case "$assemblyai_reply" in
+    y|Y|yes|YES)
+      printf 'Keychain will prompt securely for the API key.\n'
+      security add-generic-password -U -a "$keychain_account" \
+        -s meeting-transcriber-assemblyai-key -w
+      ;;
+    *)
+      printf 'Skipped AssemblyAI key setup. Recording still works; rerun meeting setup before transcribing.\n'
+      ;;
+  esac
 else
-  printf 'Skipped AssemblyAI key setup. Use meeting process --local or configure the key later.\n' >&2
+  printf 'AssemblyAI key is not configured. Recording still works; rerun setup interactively before transcribing.\n' >&2
 fi
 
-if [[ "$skip_token" -eq 0 ]]; then
-  if security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
-    printf 'Hugging Face token: already configured in Keychain\n'
-  elif [[ -t 0 ]]; then
-    printf 'Store a Hugging Face token in Keychain now? [y/N] '
-    read -r token_reply || true
-    case "$token_reply" in
-      y|Y|yes|YES)
-        printf 'Keychain will prompt securely for the token.\n'
-        security add-generic-password -U -a "$keychain_account" \
-          -s meeting-transcriber-hf-token -w
-        ;;
-      *)
-        printf 'Skipped Hugging Face token setup. Local diarization will require setup or --no-diarize.\n'
-        ;;
+if [[ -d "${utility_root}/skills/meeting" ]]; then
+  install_skill=1
+  if [[ -t 0 ]]; then
+    printf 'Install the bundled $meeting skill for Codex? [Y/n] '
+    read -r skill_reply || true
+    case "${skill_reply:-y}" in
+      y|Y|yes|YES) ;;
+      *) install_skill=0 ;;
     esac
   fi
-fi
-
-if [[ "$skip_skill" -eq 0 && -d "${utility_root}/skills/meeting" ]]; then
-  skill_parent="${HOME}/.codex/skills"
-  installed_skill="${skill_parent}/meeting"
-  if [[ ! -e "$installed_skill" ]]; then
-    mkdir -p "$skill_parent"
-    ditto "${utility_root}/skills/meeting" "$installed_skill"
-    printf 'Installed Codex skill: %s\n' "$installed_skill"
-  elif diff -qr "${utility_root}/skills/meeting" "$installed_skill" >/dev/null 2>&1; then
-    printf 'Codex skill already up to date: %s\n' "$installed_skill"
-  else
-    printf 'Bundled and installed meeting skills differ; leaving the installed copy untouched.\n' >&2
-    printf 'Review them before replacing: %s\n' "$installed_skill" >&2
+  if [[ "$install_skill" -eq 1 ]]; then
+    skill_parent="${HOME}/.codex/skills"
+    installed_skill="${skill_parent}/meeting"
+    if [[ ! -e "$installed_skill" ]]; then
+      mkdir -p "$skill_parent"
+      ditto "${utility_root}/skills/meeting" "$installed_skill"
+      printf 'Installed Codex skill: %s\n' "$installed_skill"
+    elif diff -qr "${utility_root}/skills/meeting" "$installed_skill" >/dev/null 2>&1; then
+      printf 'Codex skill already up to date: %s\n' "$installed_skill"
+    else
+      printf 'Bundled and installed meeting skills differ; leaving the installed copy untouched.\n' >&2
+      printf 'Review them before replacing: %s\n' "$installed_skill" >&2
+    fi
   fi
 fi
 
 printf '\n'
-"${utility_root}/bin/meeting-doctor"
+"${utility_root}/bin/meeting-doctor" || true
 [[ "$command_path_ready" -eq 1 ]] || exit 1

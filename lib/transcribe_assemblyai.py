@@ -12,13 +12,26 @@ import time
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
-from transcript_bundle import write_outputs
+from render_transcript_html import render_html
+from render_transcript_markdown import render_markdown
+from transcript_bundle import (
+    CanonicalTranscript,
+    CanonicalTranscriptError,
+    Segment,
+    TimedWord,
+    save_canonical,
+)
 
 
 API_BASE_URL = "https://api.assemblyai.com"
 REQUESTED_MODEL = "universal-3-5-pro"
+RECEIPT_NAME = ".assemblyai.json"
+HISTORICAL_RECEIPT_NAME = "transcript.assemblyai.json"
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 TRANSIENT_ATTEMPTS = 3
+SUPPORT_ACTION = "Contact AssemblyAI support"
+
+COMPACT_TIMESTAMP_KEYS = ("created_at", "submitted_at", "completed_at", "published_at")
 
 
 class ProviderError(RuntimeError):
@@ -39,10 +52,31 @@ class ProviderProtocolError(ProviderError):
     pass
 
 
+class ModelMismatchError(ValueError):
+    def __init__(self, reported: object):
+        super().__init__(
+            f"AssemblyAI reported model {reported!r}, expected {REQUESTED_MODEL}"
+        )
+        self.reported = reported
+
+
+class CleanupTargetError(RuntimeError):
+    """The cleanup target is invalid; nothing was mutated."""
+
+
 def utc_now() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def format_elapsed(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, remainder_seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{remainder_seconds:02d}"
+    return f"{minutes:02d}:{remainder_seconds:02d}"
 
 
 def atomic_write_json(path: Path, value: dict[str, Any]) -> dict[str, Any]:
@@ -73,15 +107,6 @@ def atomic_write_json(path: Path, value: dict[str, Any]) -> dict[str, Any]:
     return loaded
 
 
-def receipt_provider_response(response: dict[str, Any]) -> dict[str, Any]:
-    """Retain provider diagnostics without durable uploaded-audio locators."""
-    return {
-        key: value
-        for key, value in response.items()
-        if key not in {"audio_url", "upload_url"}
-    }
-
-
 def _finite_number(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"AssemblyAI completion has invalid {field}")
@@ -91,13 +116,9 @@ def _finite_number(value: Any, field: str) -> float:
     return number
 
 
-def convert_response(response: dict[str, Any]) -> dict[str, Any]:
+def convert_response(response: dict[str, Any]) -> CanonicalTranscript:
     if response.get("speech_model_used") != REQUESTED_MODEL:
-        reported = response.get("speech_model_used")
-        raise ValueError(
-            f"AssemblyAI reported model {reported!r}, expected {REQUESTED_MODEL}; "
-            "retry with --local if the managed model is unavailable"
-        )
+        raise ModelMismatchError(response.get("speech_model_used"))
     text = response.get("text")
     language = response.get("language_code")
     if not isinstance(text, str) or not text.strip():
@@ -123,7 +144,7 @@ def convert_response(response: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("AssemblyAI completion has no nonempty utterances")
 
     timed_word_count = 0
-    segments: list[dict[str, Any]] = []
+    segments: list[Segment] = []
     for index, utterance in enumerate(usable_utterances):
         start_ms = _finite_number(utterance.get("start"), "utterance start")
         end_ms = _finite_number(utterance.get("end"), "utterance end")
@@ -133,7 +154,7 @@ def convert_response(response: dict[str, Any]) -> dict[str, Any]:
         words_value = utterance.get("words")
         if not isinstance(words_value, list):
             raise ValueError("AssemblyAI utterance has no word list")
-        words: list[dict[str, Any]] = []
+        words: list[TimedWord] = []
         for provider_word in words_value:
             if not isinstance(provider_word, dict):
                 raise ValueError("AssemblyAI completion has an invalid word")
@@ -153,28 +174,30 @@ def convert_response(response: dict[str, Any]) -> dict[str, Any]:
             if word_start_ms < 0 or word_end_ms < word_start_ms:
                 raise ValueError("AssemblyAI completion has invalid word timestamps")
             words.append(
-                {
-                    "word": word_text,
-                    "start": word_start_ms / 1000,
-                    "end": word_end_ms / 1000,
-                    "probability": confidence,
-                    "speaker": speaker_map[str(word_speaker)],
-                }
+                TimedWord(
+                    word=word_text,
+                    start=word_start_ms / 1000,
+                    end=word_end_ms / 1000,
+                    probability=confidence,
+                    speaker=speaker_map[str(word_speaker)],
+                )
             )
             timed_word_count += 1
         segments.append(
-            {
-                "id": index,
-                "start": start_ms / 1000,
-                "end": end_ms / 1000,
-                "text": str(utterance["text"]),
-                "speaker": speaker_map[provider_speaker],
-                "words": words,
-            }
+            Segment(
+                id=index,
+                start=start_ms / 1000,
+                end=end_ms / 1000,
+                text=str(utterance["text"]),
+                speaker=speaker_map[provider_speaker],
+                words=words,
+            )
         )
     if timed_word_count == 0:
         raise ValueError("AssemblyAI completion has no timed words")
-    return {"language": language, "text": text, "segments": segments}
+    return CanonicalTranscript(
+        language=language, text=text, segments=segments, speaker_names={}
+    )
 
 
 class AssemblyAIAdapter:
@@ -197,14 +220,22 @@ class AssemblyAIAdapter:
         self.poll_interval = poll_interval
         self.transient_attempts = transient_attempts
         self.stderr = stderr
-        self.started = time.monotonic()
+        self.phase_started = time.monotonic()
         self.receipt_path: Path | None = None
         self.receipt: dict[str, Any] = {}
         self.transcript_id: str | None = None
 
-    def _progress(self, message: str) -> None:
-        elapsed = int(time.monotonic() - self.started)
-        print(f"AssemblyAI: {message} (elapsed {elapsed}s)", file=self.stderr, flush=True)
+    def _start_phase(self) -> None:
+        self.phase_started = time.monotonic()
+
+    def _finish_phase(self, message: str, suffix: str | None = None) -> None:
+        if suffix is None:
+            suffix = format_elapsed(time.monotonic() - self.phase_started)
+        line = f"  {message:<45}  {suffix}".rstrip()
+        print(line, file=self.stderr, flush=True)
+
+    def _note(self, message: str) -> None:
+        print(f"  {message}", file=self.stderr, flush=True)
 
     def _connection(self) -> http.client.HTTPConnection:
         port = self.parsed_base.port
@@ -288,9 +319,6 @@ class AssemblyAIAdapter:
         timestamps = dict(self.receipt.get("timestamps", {}))
         timestamps.setdefault("created_at", utc_now())
         timestamps[f"{state}_at"] = utc_now()
-        provider_response = updates.get("provider_response")
-        if isinstance(provider_response, dict):
-            updates["provider_response"] = receipt_provider_response(provider_response)
         receipt = {
             **self.receipt,
             "provider": "assemblyai",
@@ -301,6 +329,33 @@ class AssemblyAIAdapter:
         }
         self.receipt = atomic_write_json(self.receipt_path, receipt)
         return self.receipt
+
+    def _save_published(self, used_model: str) -> None:
+        """Compact the receipt down to durable lifecycle evidence."""
+        if self.receipt_path is None:
+            raise RuntimeError("receipt path is not configured")
+        timestamps = dict(self.receipt.get("timestamps", {}))
+        timestamps["published_at"] = utc_now()
+        receipt = {
+            "provider": "assemblyai",
+            "requested_model": REQUESTED_MODEL,
+            "used_model": used_model,
+            "transcript_id": self.transcript_id,
+            "state": "published",
+            "provider_status": "completed",
+            "timestamps": {
+                key: timestamps[key]
+                for key in COMPACT_TIMESTAMP_KEYS
+                if key in timestamps
+            },
+        }
+        self.receipt = atomic_write_json(self.receipt_path, receipt)
+
+    def _update_deletion(self, **fields: Any) -> None:
+        if self.receipt_path is None:
+            raise RuntimeError("receipt path is not configured")
+        receipt = {**self.receipt, "deletion": fields}
+        self.receipt = atomic_write_json(self.receipt_path, receipt)
 
     @staticmethod
     def _transient(error: ProviderError) -> bool:
@@ -325,7 +380,10 @@ class AssemblyAIAdapter:
                 if not self._transient(error) or transient_count >= self.transient_attempts - 1:
                     raise
                 transient_count += 1
-                self._progress(f"poll retry {transient_count}/{self.transient_attempts - 1}")
+                self._note(
+                    f"retrying transcript status check "
+                    f"({transient_count} of {self.transient_attempts - 1})"
+                )
                 time.sleep(self.poll_interval)
                 continue
             status = response.get("status")
@@ -336,7 +394,6 @@ class AssemblyAIAdapter:
                         transcript_id=self.transcript_id,
                         provider_status=status,
                     )
-                    self._progress(str(status))
                     last_status = str(status)
                 time.sleep(self.poll_interval)
                 continue
@@ -346,75 +403,62 @@ class AssemblyAIAdapter:
 
     def _delete(self) -> bool:
         assert self.transcript_id is not None
+        self._start_phase()
         last_error = "unknown deletion failure"
+        attempts = 0
         for attempt in range(1, self.transient_attempts + 1):
+            attempts = attempt
             try:
                 self._json_request(
                     "DELETE",
                     f"/v2/transcript/{self.transcript_id}",
                     "delete",
                 )
-                self._save(
-                    self.receipt.get("state", "unknown"),
-                    transcript_id=self.transcript_id,
-                    deletion={"confirmed": True, "confirmed_at": utc_now()},
+                self._update_deletion(confirmed=True, confirmed_at=utc_now())
+                self._finish_phase(
+                    "Deleting remote transcript and audio...", suffix="done"
                 )
-                self._progress("remote transcript and uploaded audio deleted")
                 return True
             except ProviderError as error:
                 last_error = str(error)
                 if not self._transient(error) or attempt == self.transient_attempts:
                     break
-                self._progress(f"delete retry {attempt}/{self.transient_attempts - 1}")
+                self._note(
+                    f"retrying remote deletion ({attempt} of {self.transient_attempts - 1})"
+                )
                 time.sleep(self.poll_interval)
-        self._save(
-            self.receipt.get("state", "unknown"),
-            transcript_id=self.transcript_id,
-            deletion={"confirmed": False, "last_error": last_error},
+        self._update_deletion(
+            confirmed=False,
+            attempts=attempts,
+            last_error=last_error,
+            last_attempt_at=utc_now(),
         )
-        print(
-            f"Warning: AssemblyAI deletion is unconfirmed for transcript "
-            f"{self.transcript_id}; transcript/audio may remain remotely. "
-            "Delete it in the AssemblyAI dashboard.",
-            file=self.stderr,
-        )
+        self._finish_phase("Deleting remote transcript and audio...", suffix="failed")
         return False
 
     def run(
         self, audio: Path, output_dir: Path, output_name: str, speakers: int | None
-    ) -> Path:
-        self.receipt_path = output_dir / f"{output_name}.assemblyai.json"
-        self._progress(f"uploading {audio.name}")
+    ) -> tuple[Path, bool]:
+        """Transcribe audio and return (canonical JSON path, deletion confirmed)."""
+        self.receipt_path = output_dir / RECEIPT_NAME
+        self._start_phase()
         try:
             upload_response = self._upload(audio)
         except (ProviderTransportError, ProviderProtocolError) as error:
             self._save("unknown_after_upload", error=str(error))
-            print(
-                "Warning: the upload outcome is unknown; partial remote audio may exist.",
-                file=self.stderr,
-            )
             raise
         except ProviderHTTPError as error:
             if error.status >= 500:
                 self._save("unknown_after_upload", error=str(error))
-                print(
-                    "Warning: the upload outcome is unknown after a provider error; "
-                    "partial remote audio may exist.",
-                    file=self.stderr,
-                )
             else:
                 self._save("upload_rejected", error=str(error))
             raise
         upload_url = upload_response.get("upload_url")
         if not isinstance(upload_url, str) or not upload_url:
             self._save("unknown_after_upload", error="upload response had no upload_url")
-            print(
-                "Warning: upload succeeded but its reference was malformed; remote audio may exist.",
-                file=self.stderr,
-            )
             raise ProviderError("AssemblyAI upload response had no upload_url")
         self._save("upload_succeeded")
-        self._progress("upload complete; submitting one transcription job")
+        self._finish_phase("Uploading recording...")
 
         request: dict[str, Any] = {
             "audio_url": upload_url,
@@ -426,44 +470,24 @@ class AssemblyAIAdapter:
         }
         if speakers is not None:
             request["speakers_expected"] = speakers
+        self._start_phase()
         try:
             submission = self._json_request(
                 "POST", "/v2/transcript", "submission", request
             )
         except (ProviderTransportError, ProviderProtocolError) as error:
             self._save("unknown_after_submit", error=str(error))
-            print(
-                "Warning: submission outcome is unknown; uploaded audio and an unknown "
-                "billable job may remain. The submission was not retried.",
-                file=self.stderr,
-            )
             raise
         except ProviderHTTPError as error:
             if error.status >= 500:
                 self._save("unknown_after_submit", error=str(error))
-                print(
-                    "Warning: submission outcome is unknown after a provider error; "
-                    "uploaded audio and an unknown billable job may remain. The "
-                    "submission was not retried.",
-                    file=self.stderr,
-                )
             else:
                 self._save("upload_succeeded", submission_error=str(error))
-                print(
-                    "Warning: submission was rejected; uploaded audio may remain for the "
-                    "provider retention window.",
-                    file=self.stderr,
-                )
             raise
         transcript_id = submission.get("id")
         if not isinstance(transcript_id, str) or not transcript_id:
             self._save(
                 "unknown_after_submit", error="submission response had no transcript ID"
-            )
-            print(
-                "Warning: submission returned no ID; uploaded audio and an unknown "
-                "billable job may remain.",
-                file=self.stderr,
             )
             raise ProviderError("AssemblyAI submission response had no transcript ID")
         self.transcript_id = transcript_id
@@ -471,39 +495,37 @@ class AssemblyAIAdapter:
             self._save(
                 "submitted",
                 transcript_id=transcript_id,
-                provider_status=submission.get("status"),
+                provider_status=str(submission.get("status") or "submitted"),
             )
-            self._progress(f"submitted transcript {transcript_id}")
             completed = self._poll()
             provider_status = completed.get("status")
             if provider_status == "error":
                 self._save(
                     "provider_error",
-                    provider_status=provider_status,
-                    provider_response=completed,
+                    provider_status="error",
+                    provider_error=str(completed.get("error", "unknown error"))[:500],
                 )
                 raise ProviderError(
                     f"AssemblyAI transcription failed: {completed.get('error', 'unknown error')}"
                 )
-            self._save(
-                "completed",
-                provider_status=provider_status,
-                provider_response=completed,
-            )
+            self._finish_phase("Transcribing and identifying speakers...")
+            used_model = str(completed.get("speech_model_used") or "unknown")
+            self._save("completed", provider_status="completed", used_model=used_model)
             try:
                 canonical = convert_response(completed)
-                write_outputs(canonical, output_dir, output_name)
                 canonical_path = output_dir / f"{output_name}.json"
-                with canonical_path.open(encoding="utf-8") as stream:
-                    reloaded = json.load(stream)
-                if reloaded != canonical:
-                    raise ValueError("canonical transcript did not reload identically")
-                self._save("published", provider_response=completed)
+                save_canonical(canonical_path, canonical)
+                markdown_path = render_markdown(canonical_path)
+                html_path = render_html(canonical_path)
+                for view in (markdown_path, html_path):
+                    if not view.is_file() or view.stat().st_size == 0:
+                        raise ValueError(f"transcript view was not saved: {view}")
+                self._save_published(used_model)
+                self._finish_phase("Saving local transcript...", suffix="")
             except BaseException as error:
                 self._save(
                     "publication_failed",
-                    provider_response=completed,
-                    publication_error=f"{type(error).__name__}: {error}",
+                    publication_error=f"{type(error).__name__}: {error}"[:500],
                 )
                 raise
         except BaseException as error:
@@ -519,7 +541,7 @@ class AssemblyAIAdapter:
                         self._save(
                             "poll_failed",
                             transcript_id=self.transcript_id,
-                            lifecycle_error=f"{type(error).__name__}: {error}",
+                            lifecycle_error=f"{type(error).__name__}: {error}"[:500],
                         )
             except Exception as receipt_error:
                 print(
@@ -532,60 +554,386 @@ class AssemblyAIAdapter:
             except Exception as cleanup_error:
                 print(
                     f"Warning: AssemblyAI cleanup could not be recorded for transcript "
-                    f"{self.transcript_id}: {cleanup_error}. Check the AssemblyAI dashboard.",
+                    f"{self.transcript_id}: {cleanup_error}.",
                     file=self.stderr,
                 )
             raise
 
-        if not self._delete():
+        # After publication the transcript is usable no matter what happens to
+        # remote deletion: any escape from the final DELETE (including Ctrl-C)
+        # is the cleanup-required outcome, never a hard failure.
+        try:
+            confirmed = self._delete()
+        except BaseException as error:
+            confirmed = False
+            try:
+                self._update_deletion(
+                    confirmed=False,
+                    last_error=f"{type(error).__name__}: {error}"[:500],
+                    last_attempt_at=utc_now(),
+                )
+                self._finish_phase(
+                    "Deleting remote transcript and audio...", suffix="failed"
+                )
+            except Exception:
+                pass
+        return output_dir / f"{output_name}.json", confirmed
+
+    def _qualified_absent_after_delete(self) -> bool:
+        """A 404 confirms cleanup only with independent submit+terminal evidence."""
+        timestamps = self.receipt.get("timestamps")
+        if not isinstance(timestamps, dict):
+            return False
+        return (
+            isinstance(self.receipt.get("transcript_id"), str)
+            and isinstance(timestamps.get("submitted_at"), str)
+            and self.receipt.get("provider_status") == "completed"
+            and isinstance(timestamps.get("completed_at"), str)
+        )
+
+    def _compact_cleanup_confirmed(self, attempts: int, via_absent: bool) -> None:
+        if self.receipt_path is None:
+            raise RuntimeError("receipt path is not configured")
+        timestamps = self.receipt.get("timestamps")
+        deletion: dict[str, Any] = {
+            "confirmed": True,
+            "confirmed_at": utc_now(),
+            "attempts": attempts,
+        }
+        if via_absent:
+            deletion["confirmed_via"] = "absent_after_delete"
+        receipt = {
+            "provider": "assemblyai",
+            "requested_model": self.receipt.get("requested_model", REQUESTED_MODEL),
+            "used_model": self.receipt.get("used_model"),
+            "transcript_id": self.transcript_id,
+            "state": "published",
+            "provider_status": self.receipt.get("provider_status"),
+            "timestamps": {
+                key: timestamps[key]
+                for key in COMPACT_TIMESTAMP_KEYS
+                if isinstance(timestamps, dict) and key in timestamps
+            },
+            "deletion": deletion,
+        }
+        self.receipt = atomic_write_json(self.receipt_path, receipt)
+        if not isinstance(self.receipt.get("deletion"), dict) or (
+            self.receipt["deletion"].get("confirmed") is not True
+        ):
             raise ProviderError(
-                f"AssemblyAI deletion is unconfirmed for transcript {self.transcript_id}"
+                f"cleanup receipt did not reload as confirmed: {self.receipt_path}"
             )
-        return output_dir / f"{output_name}.json"
+
+    def cleanup(self, canonical_path: Path) -> int:
+        """Recovery-only remote deletion for one published run. Never uploads."""
+        assert self.receipt_path is not None and self.transcript_id is not None
+        deletion = self.receipt.get("deletion")
+        if isinstance(deletion, dict) and deletion.get("confirmed") is True:
+            print(
+                "Remote cleanup is already confirmed; nothing to do.",
+                file=self.stderr,
+            )
+            print(canonical_path)
+            return 0
+
+        last_error = "unknown deletion failure"
+        attempts = 0
+        confirmed = False
+        via_absent = False
+        for attempt in range(1, self.transient_attempts + 1):
+            attempts = attempt
+            try:
+                self._json_request(
+                    "DELETE",
+                    f"/v2/transcript/{self.transcript_id}",
+                    "delete",
+                )
+                confirmed = True
+                break
+            except ProviderHTTPError as error:
+                last_error = str(error)
+                if error.status == 404:
+                    if self._qualified_absent_after_delete():
+                        confirmed = True
+                        via_absent = True
+                    else:
+                        last_error = (
+                            f"AssemblyAI delete returned HTTP 404 without receipt "
+                            f"evidence that transcript {self.transcript_id} existed"
+                        )
+                    break
+                if not self._transient(error) or attempt == self.transient_attempts:
+                    break
+                self._note(
+                    f"retrying remote deletion ({attempt} of {self.transient_attempts - 1})"
+                )
+                time.sleep(self.poll_interval)
+            except ProviderError as error:
+                last_error = str(error)
+                if not self._transient(error) or attempt == self.transient_attempts:
+                    break
+                self._note(
+                    f"retrying remote deletion ({attempt} of {self.transient_attempts - 1})"
+                )
+                time.sleep(self.poll_interval)
+
+        if confirmed:
+            self._compact_cleanup_confirmed(attempts, via_absent)
+            print("Remote cleanup complete", file=self.stderr)
+            print(canonical_path)
+            return 0
+
+        self._update_deletion(
+            confirmed=False,
+            attempts=attempts,
+            last_error=last_error[:500],
+            last_attempt_at=utc_now(),
+        )
+        created_at = ""
+        timestamps = self.receipt.get("timestamps")
+        if isinstance(timestamps, dict) and isinstance(timestamps.get("created_at"), str):
+            created_at = timestamps["created_at"]
+        print("", file=self.stderr)
+        print("Remote cleanup failed", file=self.stderr)
+        print(
+            f"  Remote data deletion remains unconfirmed for transcript "
+            f"{self.transcript_id}",
+            file=self.stderr,
+        )
+        print(
+            f"  Action      {SUPPORT_ACTION} with transcript {self.transcript_id} "
+            f"and receipt timestamp {created_at or 'unavailable'}",
+            file=self.stderr,
+        )
+        return 1
+
+
+def resolve_cleanup_target(canonical_path: Path) -> tuple[Path, dict[str, Any], str]:
+    """Validate a cleanup target without mutating anything."""
+    if not canonical_path.is_file():
+        raise CleanupTargetError(f"transcript JSON does not exist: {canonical_path}")
+    run_dir = canonical_path.parent
+    receipt_path = run_dir / RECEIPT_NAME
+    if not receipt_path.is_file() or receipt_path.is_symlink():
+        if (run_dir / HISTORICAL_RECEIPT_NAME).is_file():
+            raise CleanupTargetError(
+                "this transcript predates the current app; its old receipt is kept "
+                "as-is and is not managed by meeting cleanup"
+            )
+        raise CleanupTargetError(
+            f"no AssemblyAI receipt was found next to: {canonical_path}"
+        )
+    try:
+        with receipt_path.open(encoding="utf-8") as stream:
+            receipt: object = json.load(stream)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise CleanupTargetError(f"the AssemblyAI receipt is unreadable: {error}") from error
+    if not isinstance(receipt, dict):
+        raise CleanupTargetError("the AssemblyAI receipt is malformed")
+    if receipt.get("state") != "published":
+        raise CleanupTargetError(
+            "this run was never published locally; meeting cleanup only reconciles "
+            "published transcripts"
+        )
+    transcript_id = receipt.get("transcript_id")
+    if not isinstance(transcript_id, str) or not transcript_id:
+        raise CleanupTargetError("the AssemblyAI receipt has no transcript ID")
+    return receipt_path, receipt, transcript_id
+
+
+def _receipt_created_at(receipt: dict[str, Any]) -> str:
+    timestamps = receipt.get("timestamps")
+    if isinstance(timestamps, dict) and isinstance(timestamps.get("created_at"), str):
+        return timestamps["created_at"]
+    return "unavailable"
+
+
+def failure_block(
+    adapter: AssemblyAIAdapter, audio: Path, error: BaseException
+) -> list[str]:
+    """One failure block, one recommended action, chosen by remote state."""
+    receipt = adapter.receipt
+    state = receipt.get("state")
+    deletion = receipt.get("deletion")
+    deletion_confirmed = isinstance(deletion, dict) and deletion.get("confirmed") is True
+    transcript_id = adapter.transcript_id
+    created_at = _receipt_created_at(receipt)
+
+    if isinstance(error, KeyboardInterrupt):
+        problem = "Transcription was interrupted"
+    elif isinstance(error, ModelMismatchError):
+        problem = (
+            f"AssemblyAI used model {error.reported!r} instead of {REQUESTED_MODEL}"
+        )
+    elif state == "upload_rejected":
+        problem = "AssemblyAI rejected the audio upload"
+    elif state == "unknown_after_upload":
+        problem = "The audio upload outcome is unknown"
+    elif state == "upload_succeeded" and "submission_error" in receipt:
+        problem = "AssemblyAI rejected the transcription request"
+    elif state == "unknown_after_submit":
+        problem = "The transcription request outcome is unknown"
+    elif state == "provider_error":
+        problem = "AssemblyAI could not transcribe the recording"
+    elif state == "publication_failed":
+        problem = "The transcript could not be saved locally"
+    else:
+        problem = "AssemblyAI did not finish the transcript"
+
+    lines = ["", "Transcription stopped", f"  Problem     {problem}"]
+    lines.append(f"  Recording   safe at {audio}")
+
+    if isinstance(error, ModelMismatchError):
+        if deletion_confirmed:
+            lines.append("  Remote transcript and audio deletion is confirmed")
+        elif transcript_id:
+            lines.append(
+                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
+            )
+        lines.append(
+            f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
+            f"and reported model {error.reported!r}"
+        )
+        return lines
+
+    if state == "upload_rejected":
+        lines.append("  No audio or transcript was stored remotely")
+        lines.append(f"  Retry       meeting transcribe {audio}")
+        return lines
+
+    if transcript_id:
+        if deletion_confirmed:
+            lines.append("  Remote transcript and audio deletion is confirmed")
+            lines.append(f"  Retry       meeting transcribe {audio}")
+        else:
+            lines.append(
+                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
+            )
+            lines.append(
+                f"  Action      {SUPPORT_ACTION} with transcript {transcript_id} "
+                f"and receipt timestamp {created_at} before retrying"
+            )
+        return lines
+
+    lines.append("  Uploaded audio may remain remotely; no transcript ID is known")
+    lines.append(
+        f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
+        f"before retrying"
+    )
+    return lines
+
+
+def cleanup_required_block(
+    audio: Path, canonical_path: Path, transcript_id: str | None
+) -> list[str]:
+    run_dir = canonical_path.parent
+    identifier = transcript_id or "unknown"
+    return [
+        "",
+        "Transcript saved; cleanup required",
+        f"  Recording   safe at {audio}",
+        f"  Remote data deletion unconfirmed for transcript {identifier}",
+        f"  Read        {run_dir / 'transcript.html'}",
+        f"  Agent       {run_dir / 'transcript.md'}",
+        f"  Data        {canonical_path}",
+        f"  Cleanup     meeting cleanup {canonical_path}",
+    ]
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Transcribe prerecorded audio with AssemblyAI Universal-3.5 Pro."
     )
-    parser.add_argument("--input", required=True, type=Path)
-    parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--output-name", required=True)
+    parser.add_argument("--input", type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--output-name")
     parser.add_argument("--speakers", type=int)
+    parser.add_argument(
+        "--cleanup",
+        type=Path,
+        metavar="TRANSCRIPT_JSON",
+        help="recovery-only remote deletion for one published run",
+    )
     return parser.parse_args()
+
+
+def _build_adapter(api_key: str) -> AssemblyAIAdapter:
+    base_url = os.environ.get("MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE", API_BASE_URL)
+    poll_interval = float(os.environ.get("MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL", "3"))
+    return AssemblyAIAdapter(api_key=api_key, base_url=base_url, poll_interval=poll_interval)
 
 
 def main() -> int:
     args = parse_args()
     os.umask(0o077)
+    api_key = os.environ.get("ASSEMBLYAI_API_KEY", "")
+    if not api_key:
+        print("Error: ASSEMBLYAI_API_KEY is required", file=sys.stderr)
+        return 2
+
+    if args.cleanup is not None:
+        if args.input or args.output_dir or args.output_name or args.speakers:
+            print("Error: --cleanup does not accept other arguments", file=sys.stderr)
+            return 2
+        canonical_path = args.cleanup.expanduser().resolve()
+        try:
+            receipt_path, receipt, transcript_id = resolve_cleanup_target(canonical_path)
+        except CleanupTargetError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 2
+        adapter = _build_adapter(api_key)
+        adapter.receipt_path = receipt_path
+        adapter.receipt = receipt
+        adapter.transcript_id = transcript_id
+        try:
+            return adapter.cleanup(canonical_path)
+        except KeyboardInterrupt:
+            print("Error: cleanup interrupted", file=sys.stderr)
+            return 130
+        except (ProviderError, ValueError, OSError) as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 1
+
+    if not args.input or not args.output_dir or not args.output_name:
+        print(
+            "Error: --input, --output-dir, and --output-name are required",
+            file=sys.stderr,
+        )
+        return 2
     audio = args.input.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     if not audio.is_file() or not os.access(audio, os.R_OK):
-        raise SystemExit(f"input is not a readable file: {audio}")
+        print(f"Error: input is not a readable file: {audio}", file=sys.stderr)
+        return 2
     if not output_dir.is_dir() or not os.access(output_dir, os.W_OK):
-        raise SystemExit(f"output directory is not writable: {output_dir}")
+        print(f"Error: output directory is not writable: {output_dir}", file=sys.stderr)
+        return 2
     if args.speakers is not None and args.speakers < 1:
-        raise SystemExit("--speakers must be positive")
+        print("Error: --speakers must be positive", file=sys.stderr)
+        return 2
     if "/" in args.output_name or args.output_name in {"", ".", ".."}:
-        raise SystemExit("--output-name must be a plain filename")
-    api_key = os.environ.get("ASSEMBLYAI_API_KEY", "")
-    if not api_key:
-        raise SystemExit("ASSEMBLYAI_API_KEY is required")
-    base_url = os.environ.get("MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE", API_BASE_URL)
-    poll_interval = float(os.environ.get("MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL", "3"))
-    adapter = AssemblyAIAdapter(
-        api_key=api_key, base_url=base_url, poll_interval=poll_interval
-    )
+        print("Error: --output-name must be a plain filename", file=sys.stderr)
+        return 2
+    adapter = _build_adapter(api_key)
     try:
-        canonical_path = adapter.run(audio, output_dir, args.output_name, args.speakers)
-    except KeyboardInterrupt:
-        print("Error: AssemblyAI transcription interrupted", file=sys.stderr)
+        canonical_path, deletion_confirmed = adapter.run(
+            audio, output_dir, args.output_name, args.speakers
+        )
+    except KeyboardInterrupt as error:
+        for line in failure_block(adapter, audio, error):
+            print(line, file=sys.stderr)
         return 130
-    except (ProviderError, ValueError, OSError) as error:
-        print(f"Error: {error}", file=sys.stderr)
+    except (ProviderError, CanonicalTranscriptError, ValueError, OSError) as error:
+        for line in failure_block(adapter, audio, error):
+            print(line, file=sys.stderr)
         return 1
+    if deletion_confirmed:
+        print(canonical_path)
+        return 0
+    for line in cleanup_required_block(audio, canonical_path, adapter.transcript_id):
+        print(line, file=sys.stderr)
     print(canonical_path)
-    return 0
+    return 3
 
 
 if __name__ == "__main__":

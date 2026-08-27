@@ -5,6 +5,7 @@ import base64
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -25,12 +26,27 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from render_transcript_html import render  # noqa: E402
+from transcript_bundle import Segment  # noqa: E402
 
 
 CHROME_CANDIDATES = (
     Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
     Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
 )
+
+
+def browser_prerequisites_available() -> bool:
+    return aiohttp is not None and any(
+        candidate.is_file() for candidate in CHROME_CANDIDATES
+    )
+
+
+if os.environ.get("MEETING_REQUIRE_BROWSER") == "1" and not browser_prerequisites_available():
+    raise RuntimeError(
+        "MEETING_REQUIRE_BROWSER=1 but the browser gate prerequisites are missing: "
+        "the dev-group aiohttp dependency and a local Google Chrome or Chromium "
+        "at one of the two supported paths are required"
+    )
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -84,7 +100,7 @@ class CdpPage:
 
 
 @unittest.skipUnless(
-    aiohttp is not None and any(candidate.is_file() for candidate in CHROME_CANDIDATES),
+    browser_prerequisites_available(),
     "requires aiohttp and a local Chromium browser for rendered HTML verification",
 )
 class HtmlBrowserTests(unittest.TestCase):
@@ -100,18 +116,20 @@ class HtmlBrowserTests(unittest.TestCase):
             source,
             "en",
             [
-                {
-                    "speaker": "SPEAKER_00",
-                    "start": 0,
-                    "end": 75,
-                    "text": "Review the launch plan and compatibility work.",
-                },
-                {
-                    "speaker": "SPEAKER_01",
-                    "start": 76,
-                    "end": 185,
-                    "text": "I will own the release checklist.",
-                },
+                Segment(
+                    id=0,
+                    start=0,
+                    end=75,
+                    text="Review the launch plan and compatibility work.",
+                    speaker="SPEAKER_00",
+                ),
+                Segment(
+                    id=1,
+                    start=76,
+                    end=185,
+                    text="I will own the release checklist.",
+                    speaker="SPEAKER_01",
+                ),
             ],
             {"SPEAKER_00": "Alex", "SPEAKER_01": "Morgan"},
         )

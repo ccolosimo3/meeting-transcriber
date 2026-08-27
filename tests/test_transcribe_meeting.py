@@ -14,20 +14,11 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
-        self.fake_bin = self.root / "bin"
-        self.ffmpeg_prefix = self.root / "ffmpeg"
-        (self.ffmpeg_prefix / "bin").mkdir(parents=True)
-        self.fake_bin.mkdir()
         self.adapter_marker = self.root / "adapter-launched"
         self.output_root = self.root / "output"
         self.input_path = self.root / "recording.wav"
         self.input_path.write_bytes(b"audio")
-        self._write_executable(
-            self.fake_bin / "brew",
-            f"#!/usr/bin/env bash\nprintf '%s\\n' '{self.ffmpeg_prefix}'\n",
-        )
-        self._write_executable(self.ffmpeg_prefix / "bin" / "ffmpeg", "#!/bin/sh\nexit 0\n")
-        self.ffprobe = self.ffmpeg_prefix / "bin" / "ffprobe"
+        self.ffprobe = self.root / "ffprobe"
         self._write_executable(
             self.ffprobe,
             "#!/usr/bin/env bash\nprintf '%s\\n' \"${STUB_DURATION:-1.0}\"\n",
@@ -37,8 +28,6 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
             self.adapter,
             f"#!/usr/bin/env bash\ntouch '{self.adapter_marker}'\nexit 99\n",
         )
-        self.renderer = self.root / "renderer"
-        self._write_executable(self.renderer, "#!/bin/sh\nexit 0\n")
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
@@ -52,11 +41,9 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         environment = os.environ.copy()
         environment.update(
             {
-                "PATH": f"{self.fake_bin}:{environment['PATH']}",
                 "ASSEMBLYAI_API_KEY": "test-key",
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_BIN": str(self.adapter),
                 "MEETING_TRANSCRIBER_FFPROBE_BIN": str(self.ffprobe),
-                "MEETING_TRANSCRIBER_RENDER_HTML_BIN": str(self.renderer),
                 "MEETING_TRANSCRIBER_RUN_ID": "preflight",
             }
         )
@@ -80,17 +67,18 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         result = self._run(STUB_DURATION="not-a-number")
         self.assertEqual(result.returncode, 2)
         self.assertIn("2.2 GB", result.stderr)
-        self.assertIn("--local", result.stderr)
+        self.assertIn("Recording   safe at", result.stderr)
+        self.assertNotIn("--local", result.stderr)
         self.assertFalse(self.adapter_marker.exists())
 
     def test_duration_limit_stops_before_upload(self) -> None:
         result = self._run(STUB_DURATION="36000.001")
         self.assertEqual(result.returncode, 2)
         self.assertIn("10 hours", result.stderr)
-        self.assertIn("--local", result.stderr)
+        self.assertNotIn("--local", result.stderr)
         self.assertFalse(self.adapter_marker.exists())
 
-    def test_missing_default_credential_stops_before_preflight_or_upload(self) -> None:
+    def test_missing_credential_stops_before_preflight_or_upload(self) -> None:
         result = self._run(
             ASSEMBLYAI_API_KEY="",
             MEETING_TRANSCRIBER_DISABLE_KEYCHAIN="1",
@@ -98,7 +86,16 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("meeting-transcriber-assemblyai-key", result.stderr)
-        self.assertIn("--local", result.stderr)
+        self.assertIn("meeting setup", result.stderr)
+        self.assertNotIn("--local", result.stderr)
+        self.assertFalse(self.adapter_marker.exists())
+
+    def test_run_collision_stops_before_launching_the_adapter(self) -> None:
+        self.output_root.mkdir()
+        (self.output_root / "preflight").mkdir()
+        result = self._run()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("already exists", result.stderr)
         self.assertFalse(self.adapter_marker.exists())
 
 

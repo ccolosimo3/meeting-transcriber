@@ -7,9 +7,14 @@ real_home="$HOME"
 original_path="$PATH"
 artifact_root="${project_root}/tests/artifacts/$(date '+%Y%m%d-%H%M%S')-$$"
 test_home="${artifact_root}/home"
-data_root="${artifact_root}/data"
+data_root="${artifact_root}/meeting data"
 config_root="${artifact_root}/config"
 mkdir -p "$test_home" "$data_root"
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 1
+}
 
 # Setup must repair loose permissions throughout existing meeting bundles.
 preexisting_bundle="${data_root}/20260825-200000-preexisting"
@@ -23,56 +28,60 @@ export PATH="${test_home}/.local/bin:${PATH}"
 export MEETING_DATA_DIR="$data_root"
 export MEETING_CONFIG_DIR="$config_root"
 export MEETING_NOTIFICATIONS=0
-export MEETING_TRANSCRIBER_MLX_BIN="${project_root}/tests/fixtures/mlx-adapter-stub"
-export MEETING_TRANSCRIBER_WHISPERX_BIN="${project_root}/tests/fixtures/whisperx-stub"
 export MEETING_TRANSCRIBER_ASSEMBLYAI_BIN="${project_root}/tests/fixtures/assemblyai-adapter-stub"
 export MEETING_TRANSCRIBER_FFPROBE_BIN="${project_root}/tests/fixtures/ffprobe-duration-stub"
-export MEETING_TRANSCRIBER_RENDER_HTML_BIN="${project_root}/tests/fixtures/render-html-stub"
-export MEETING_TRANSCRIBER_RUN_ID=interface-test
-export STUB_ARGV="${artifact_root}/stub-argv.txt"
-export STUB_ENV="${artifact_root}/stub-env.txt"
-export STUB_RENDER_ENV="${artifact_root}/render-env.txt"
-export STUB_RENDER_ASSEMBLYAI_ENV="${artifact_root}/render-assemblyai-env.txt"
 export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-argv.txt"
 export STUB_ASSEMBLYAI_ENV="${artifact_root}/assemblyai-env.txt"
-export STUB_LOCAL_ASSEMBLYAI_ENV="${artifact_root}/local-assemblyai-env.txt"
-export REAL_HTML_RENDERER="${project_root}/bin/render-transcript-html"
+open_stub="${artifact_root}/open-stub"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$@" > "$STUB_OPEN_ARGV"' > "$open_stub"
+chmod +x "$open_stub"
+export MEETING_TRANSCRIBER_OPEN_BIN="$open_stub"
+export STUB_OPEN_ARGV="${artifact_root}/open-argv.txt"
 # Keep Homebrew's read-only discovery out of the isolated test home.
 export HOMEBREW_CACHE="${real_home}/Library/Caches/Homebrew"
 
-"${project_root}/bin/meeting" setup --device 0 --skip-assemblyai-key --skip-token --skip-skill \
-  > "${artifact_root}/setup.txt"
+MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 "${project_root}/bin/meeting" setup --device 0 \
+  > "${artifact_root}/setup.txt" 2>&1 || true
+grep -Fq 'Configuration:' "${artifact_root}/setup.txt"
 [[ "$(command -v meeting)" == "${test_home}/.local/bin/meeting" ]]
 [[ "$(stat -f '%Lp' "$preexisting_bundle")" == "700" ]]
 [[ "$(stat -f '%Lp' "${preexisting_bundle}/recording.wav")" == "600" ]]
+if grep -Eq 'Hugging Face|hf-token|MLX|mlx|WhisperX|whisperx|pyannote' "${artifact_root}/setup.txt"; then
+  fail 'setup still mentions the removed local transcription stack'
+fi
 touch -t 202608252000 "${preexisting_bundle}/recording.wav"
 
+# A stubbed Keychain hit must be reported without displaying the key.
 security_stub="${test_home}/.local/bin/security"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'if [[ "$*" == *"meeting-transcriber-assemblyai-key"* ]]; then printf "configured-test-key\n"; exit 0; fi' \
   'exit 44' > "$security_stub"
 chmod +x "$security_stub"
-"${project_root}/bin/meeting" setup --device 0 --skip-token --skip-skill \
-  > "${artifact_root}/setup-key-present.txt"
+"${project_root}/bin/meeting" setup --device 0 \
+  > "${artifact_root}/setup-key-present.txt" 2>&1 || true
 grep -Fq 'AssemblyAI API key: already configured in Keychain' \
   "${artifact_root}/setup-key-present.txt"
 if grep -Fq 'configured-test-key' "${artifact_root}/setup-key-present.txt"; then
-  printf 'Error: setup displayed the AssemblyAI key\n' >&2
-  exit 1
+  fail 'setup displayed the AssemblyAI key'
 fi
 
-env -u ASSEMBLYAI_API_KEY -u HF_TOKEN \
-  MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 meeting doctor \
-  > "${artifact_root}/doctor-missing-credentials.txt"
-grep -Fq 'No AssemblyAI API key' "${artifact_root}/doctor-missing-credentials.txt"
-grep -Fq 'meeting process --local' "${artifact_root}/doctor-missing-credentials.txt"
-grep -Fq 'Doctor passed' "${artifact_root}/doctor-missing-credentials.txt"
-ASSEMBLYAI_API_KEY=environment-test-key HF_TOKEN=environment-test-token \
-  MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 meeting doctor \
-  > "${artifact_root}/doctor-environment-credentials.txt"
-grep -Fq 'AssemblyAI API key is available' \
-  "${artifact_root}/doctor-environment-credentials.txt"
+# Doctor: recording readiness passes while a missing key blocks transcription.
+if env -u ASSEMBLYAI_API_KEY MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 meeting doctor \
+  > "${artifact_root}/doctor-missing-key.txt" 2>&1; then
+  fail 'doctor passed without an AssemblyAI key'
+fi
+grep -Fq 'No AssemblyAI API key' "${artifact_root}/doctor-missing-key.txt"
+grep -Fq 'Recording remains available' "${artifact_root}/doctor-missing-key.txt"
+grep -Fq 'Recording is ready.' "${artifact_root}/doctor-missing-key.txt"
+grep -Fq 'Transcription is not ready.' "${artifact_root}/doctor-missing-key.txt"
+if grep -Eq 'Hugging Face|MLX|PyAV|TorchCodec|WhisperX|pyannote' "${artifact_root}/doctor-missing-key.txt"; then
+  fail 'doctor still checks the removed local transcription stack'
+fi
+ASSEMBLYAI_API_KEY=environment-test-key MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
+  meeting doctor > "${artifact_root}/doctor-with-key.txt" 2>&1 \
+  || fail 'doctor failed with an AssemblyAI key present'
+grep -Fq 'AssemblyAI API key is available' "${artifact_root}/doctor-with-key.txt"
 
 # A live link to another installation must be preserved but rejected.
 conflict_home="${artifact_root}/conflict-home"
@@ -82,10 +91,10 @@ if HOME="$conflict_home" \
   PATH="${conflict_home}/.local/bin:${original_path}" \
   MEETING_DATA_DIR="${artifact_root}/conflict-data" \
   MEETING_CONFIG_DIR="${artifact_root}/conflict-config" \
-  "${project_root}/bin/meeting" setup --device 0 --skip-assemblyai-key --skip-token --skip-skill \
+  MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
+  "${project_root}/bin/meeting" setup --device 0 \
   > "${artifact_root}/conflict-setup.txt" 2>&1; then
-  printf 'Error: setup accepted a meeting link to another installation\n' >&2
-  exit 1
+  fail 'setup accepted a meeting link to another installation'
 fi
 [[ "$(realpath "${conflict_home}/.local/bin/meeting")" == "/usr/bin/true" ]]
 
@@ -98,240 +107,170 @@ printf 'newer' > "$latest_recording"
 chmod 600 "${older_bundle}/recording.wav" "$latest_recording"
 touch -t 202608252100 "${older_bundle}/recording.wav"
 touch -t 202608252101 "$latest_recording"
+latest_sha_before="$(shasum -a 256 "$latest_recording" | awk '{print $1}')"
 
-# Deliberately loosen the caller default; the utility must still create private output.
-touch "${artifact_root}/process.txt"
-chmod 600 "${artifact_root}/process.txt"
+# The public no-input command deterministically selects the newest recording,
+# produces exactly the four-file bundle, and contains the credential — even
+# when the caller's umask is deliberately loose.
 umask 022
+export MEETING_TRANSCRIBER_RUN_ID=20260826-121000
 ASSEMBLYAI_API_KEY=non-secret-assemblyai-sentinel \
-  "${project_root}/bin/meeting" process --skip-names --no-open --no-copy \
-  > "${artifact_root}/process.txt"
+  meeting transcribe --skip-names --no-open \
+  > "${artifact_root}/transcribe-stdout.txt" 2> "${artifact_root}/transcribe-stderr.txt"
+umask 077
 
-[[ "$(sed -n '1p' "$STUB_ASSEMBLYAI_ARGV")" == "--input" ]]
-[[ "$(sed -n '2p' "$STUB_ASSEMBLYAI_ARGV")" == "$latest_recording" ]]
+run_dir="${latest_bundle}/transcripts/20260826-121000"
+json_path="${run_dir}/transcript.json"
+[[ "$(cat "${artifact_root}/transcribe-stdout.txt")" == "$json_path" ]]
+[[ "$(wc -l < "${artifact_root}/transcribe-stdout.txt" | tr -d ' ')" == "1" ]]
+grep -Fq -- '--input' "$STUB_ASSEMBLYAI_ARGV"
+grep -Fxq "$latest_recording" "$STUB_ASSEMBLYAI_ARGV"
 grep -Fxq present "$STUB_ASSEMBLYAI_ENV"
-output_dir="${latest_bundle}/transcripts/interface-test"
-output_stem="${output_dir}/transcript"
-for extension in json txt srt vtt tsv html agent.md assemblyai.json; do
-  [[ -s "${output_stem}.${extension}" ]]
+if grep -Eq 'Transcribe this recording\?|Name the detected speakers' \
+  "${artifact_root}/transcribe-stderr.txt"; then
+  fail 'noninteractive transcribe prompted'
+fi
+[[ ! -e "$STUB_OPEN_ARGV" ]]
+for artifact in transcript.json transcript.md transcript.html .assemblyai.json; do
+  [[ -s "${run_dir}/${artifact}" ]] || fail "missing run artifact: ${artifact}"
 done
-grep -Fq '[SPEAKER_00]: interface smoke' "${output_stem}.txt"
-grep -Fq '[SPEAKER_00]: interface smoke' "${output_stem}.srt"
-grep -Fq '[SPEAKER_00]: interface smoke' "${output_stem}.vtt"
-grep -Fq 'SPEAKER_00' "${output_stem}.html"
-grep -Fq 'SPEAKER_00' "${output_stem}.agent.md"
-grep -Fxq absent "$STUB_RENDER_ENV"
+[[ "$(find "$run_dir" -mindepth 1 | wc -l | tr -d ' ')" == "4" ]]
+for legacy in transcript.txt transcript.srt transcript.vtt transcript.tsv \
+  transcript.agent.md transcript.speakers.json transcript.assemblyai.json; do
+  [[ ! -e "${run_dir}/${legacy}" ]] || fail "legacy output was generated: ${legacy}"
+done
+[[ "$(shasum -a 256 "$latest_recording" | awk '{print $1}')" == "$latest_sha_before" ]]
 if grep -Fq 'non-secret-assemblyai-sentinel' "$STUB_ASSEMBLYAI_ARGV" \
-  || grep -R -Fq 'non-secret-assemblyai-sentinel' "$output_dir"; then
-  printf 'Error: AssemblyAI credential escaped into argv or transcript output\n' >&2
-  exit 1
+  || grep -R -Fq 'non-secret-assemblyai-sentinel' "$run_dir" \
+  || grep -Fq 'non-secret-assemblyai-sentinel' "${artifact_root}/transcribe-stdout.txt" \
+  || grep -Fq 'non-secret-assemblyai-sentinel' "${artifact_root}/transcribe-stderr.txt"; then
+  fail 'AssemblyAI credential escaped into argv, output, or terminal text'
 fi
+[[ "$(stat -f '%Lp' "$run_dir")" == "700" ]]
 
-# The no-input advanced command preserves latest-recording discovery and uses
-# the managed provider without inheriting an MLX backend/model.
-export MEETING_TRANSCRIBER_RUN_ID=interface-latest-provider
-export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-latest-argv.txt"
-ASSEMBLYAI_API_KEY=another-non-secret-sentinel \
-  "${project_root}/bin/meeting" transcribe > "${artifact_root}/latest-provider.txt"
-[[ "$(sed -n '2p' "$STUB_ASSEMBLYAI_ARGV")" == "$latest_recording" ]]
-if grep -Eq -- '--backend|--model|--local' "$STUB_ASSEMBLYAI_ARGV"; then
-  printf 'Error: default latest transcription inherited local arguments\n' >&2
-  exit 1
-fi
-latest_provider_dir="${latest_bundle}/transcripts/interface-latest-provider"
-for extension in json txt srt vtt tsv html assemblyai.json; do
-  [[ -s "${latest_provider_dir}/transcript.${extension}" ]]
-done
-[[ "$(find "$latest_provider_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')" == "7" ]]
-
-# The default command fails before preflight/upload when its managed credential
-# is absent, while retaining explicit local recovery guidance.
-export MEETING_TRANSCRIBER_RUN_ID=interface-missing-key
+# Missing credential stops before preflight or the provider stub.
+export MEETING_TRANSCRIBER_RUN_ID=20260826-121500
 export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-missing-key-argv.txt"
 if env -u ASSEMBLYAI_API_KEY MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
-  "${project_root}/bin/meeting" transcribe "$latest_recording" \
+  meeting transcribe "$latest_recording" \
   > "${artifact_root}/missing-key.txt" 2>&1; then
-  printf 'Error: default transcription accepted a missing AssemblyAI key\n' >&2
-  exit 1
+  fail 'transcribe accepted a missing AssemblyAI key'
 fi
 [[ ! -e "$STUB_ASSEMBLYAI_ARGV" ]]
-grep -Fq -- '--local' "${artifact_root}/missing-key.txt"
+grep -Fq 'meeting setup' "${artifact_root}/missing-key.txt"
+if grep -Fq -- '--local' "${artifact_root}/missing-key.txt"; then
+  fail 'missing-key guidance still mentions removed local transcription'
+fi
 
-# Reusing a transcript run id must fail before launching an engine or changing
-# the existing evidence.
-export MEETING_TRANSCRIBER_RUN_ID=interface-test
-existing_json_sha="$(shasum -a 256 "${output_stem}.json" | awk '{print $1}')"
-export STUB_ARGV="${artifact_root}/collision-argv.txt"
-if "${project_root}/bin/meeting" transcribe --no-diarize "$latest_recording" \
+# Reusing a transcript run id must fail before launching the provider and
+# without changing existing evidence.
+export MEETING_TRANSCRIBER_RUN_ID=20260826-121000
+existing_json_sha="$(shasum -a 256 "$json_path" | awk '{print $1}')"
+export STUB_ASSEMBLYAI_ARGV="${artifact_root}/collision-argv.txt"
+if ASSEMBLYAI_API_KEY=x meeting transcribe "$latest_recording" \
   > "${artifact_root}/collision.txt" 2>&1; then
-  printf 'Error: an existing transcript run was silently replaced\n' >&2
-  exit 1
+  fail 'an existing transcript run was silently replaced'
 fi
-[[ ! -e "$STUB_ARGV" ]]
-[[ "$(shasum -a 256 "${output_stem}.json" | awk '{print $1}')" == "$existing_json_sha" ]]
-
-# A diarization credential reaches only the transcription child, never argv or
-# the later HTML-rendering child.
-export MEETING_TRANSCRIBER_RUN_ID=interface-diarized
-export STUB_ARGV="${artifact_root}/mlx-diarized-argv.txt"
-ASSEMBLYAI_API_KEY=local-leak-sentinel HF_TOKEN=non-secret-sentinel \
-  "${project_root}/bin/meeting" transcribe --local --speakers 2 \
-  "$latest_recording" \
-  > "${artifact_root}/mlx-diarized.txt"
-grep -Fxq present "$STUB_ENV"
-grep -Fxq absent "$STUB_LOCAL_ASSEMBLYAI_ENV"
-grep -Fxq absent "$STUB_RENDER_ENV"
-grep -Fxq absent "$STUB_RENDER_ASSEMBLYAI_ENV"
-if grep -Fq 'non-secret-sentinel' "$STUB_ARGV" \
-  || grep -Fq 'local-leak-sentinel' "$STUB_ARGV" \
-  || grep -R -Fq 'non-secret-sentinel' "${latest_bundle}/transcripts/interface-diarized" \
-  || grep -R -Fq 'local-leak-sentinel' "${latest_bundle}/transcripts/interface-diarized"; then
-  printf 'Error: diarization credential escaped into argv or transcript output\n' >&2
-  exit 1
-fi
-
-# Local tuning flags retain their legacy meaning even without an explicit
-# --local flag; they must never cross the provider boundary.
-export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-legacy-local-argv.txt"
-export MEETING_TRANSCRIBER_RUN_ID=interface-model-implies-local
-export STUB_ARGV="${artifact_root}/model-implies-local-argv.txt"
-HF_TOKEN=non-secret-sentinel "${project_root}/bin/meeting" transcribe --model turbo \
-  "$latest_recording" > "${artifact_root}/model-implies-local.txt"
-grep -Fxq -- '--model' "$STUB_ARGV"
-grep -Fxq -- 'turbo' "$STUB_ARGV"
-export MEETING_TRANSCRIBER_RUN_ID=interface-hotwords-imply-local
-export STUB_ARGV="${artifact_root}/hotwords-imply-local-argv.txt"
-HF_TOKEN=non-secret-sentinel "${project_root}/bin/meeting" transcribe \
-  --hotwords 'Townchest names' "$latest_recording" \
-  > "${artifact_root}/hotwords-imply-local.txt"
-grep -Fxq -- '--initial-prompt' "$STUB_ARGV"
-grep -Fxq -- 'Townchest names' "$STUB_ARGV"
 [[ ! -e "$STUB_ASSEMBLYAI_ARGV" ]]
+[[ "$(shasum -a 256 "$json_path" | awk '{print $1}')" == "$existing_json_sha" ]]
 
-# CPU Turbo remains an explicit fallback and retains the existing WhisperX path.
-export MEETING_TRANSCRIBER_RUN_ID=interface-cpu
-export STUB_ARGV="${artifact_root}/whisperx-argv.txt"
-"${project_root}/bin/meeting" transcribe --backend whisperx --no-diarize \
-  "$latest_recording" \
-  > "${artifact_root}/cpu-fallback.txt"
-[[ "$(sed -n '1p' "$STUB_ARGV")" == "$latest_recording" ]]
-grep -Fxq -- '--model' "$STUB_ARGV"
-grep -Fxq -- 'turbo' "$STUB_ARGV"
-grep -Fxq -- '--device' "$STUB_ARGV"
-grep -Fxq -- 'cpu' "$STUB_ARGV"
-[[ -s "${latest_bundle}/transcripts/interface-cpu/transcript.json" ]]
-cpu_output_dir="${latest_bundle}/transcripts/interface-cpu"
-for extension in json txt srt vtt tsv html; do
-  [[ -s "${cpu_output_dir}/transcript.${extension}" ]]
-done
-[[ "$(find "$cpu_output_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')" == "6" ]]
-
-# A source already named transcript must not trigger a self-move in the CPU
-# output normalizer.
-cpu_self_input="${artifact_root}/transcript.wav"
-cpu_self_output_root="${artifact_root}/cpu-self-output"
-printf 'cpu self-move' > "$cpu_self_input"
-export MEETING_TRANSCRIBER_RUN_ID=interface-cpu-self
-export STUB_ARGV="${artifact_root}/whisperx-self-argv.txt"
-"${project_root}/bin/meeting" transcribe --backend whisperx --no-diarize \
-  --output-root "$cpu_self_output_root" "$cpu_self_input" \
-  > "${artifact_root}/cpu-self.txt"
-cpu_self_output_dir="${cpu_self_output_root}/interface-cpu-self"
-for extension in json txt srt vtt tsv html; do
-  [[ -s "${cpu_self_output_dir}/transcript.${extension}" ]]
-done
-[[ "$(find "$cpu_self_output_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')" == "6" ]]
-
-# An alternate meeting root and an extensionless canonical recording must stay
-# together rather than being re-imported into the configured default root.
-alternate_meetings_root="${artifact_root}/alternate-meetings"
-alternate_bundle="${alternate_meetings_root}/20260825-220000-extensionless"
-mkdir -p "$alternate_bundle"
-alternate_recording="${alternate_bundle}/recording"
-printf 'extensionless' > "$alternate_recording"
-chmod 600 "$alternate_recording"
-default_bundle_count_before="$(find "$data_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
-export MEETING_TRANSCRIBER_RUN_ID=interface-alternate-root
-export STUB_ARGV="${artifact_root}/mlx-alternate-root-argv.txt"
-"${project_root}/bin/meeting" process --meetings-root "$alternate_meetings_root" \
-  --no-diarize --skip-names --no-open --no-copy \
-  > "${artifact_root}/alternate-root.txt"
-[[ -s "${alternate_bundle}/transcripts/interface-alternate-root/transcript.json" ]]
-[[ "$(find "$data_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" == "$default_bundle_count_before" ]]
-
-# An explicit external recording is imported into its own bundle without
-# modifying the source, then receives a canonical transcript run.
-external_parent="${artifact_root}/external-source"
+# An explicit external recording — in a path with spaces — is imported into its
+# own private bundle without modifying the source.
+external_parent="${artifact_root}/external source"
 mkdir "$external_parent"
-external_recording="${external_parent}/recording.m4a"
+external_recording="${external_parent}/My Meeting.m4a"
 printf 'external' > "$external_recording"
 external_sha="$(shasum -a 256 "$external_recording" | awk '{print $1}')"
-export MEETING_TRANSCRIBER_RUN_ID=interface-import
-export MEETING_TRANSCRIBER_BUNDLE_ID=interface-import-bundle
-export STUB_ARGV="${artifact_root}/mlx-import-argv.txt"
-"${project_root}/bin/meeting" transcribe --no-diarize "$external_recording" \
-  > "${artifact_root}/import.txt"
-imported_recording="${data_root}/interface-import-bundle-recording/recording.m4a"
-[[ -n "$imported_recording" ]]
+export MEETING_TRANSCRIBER_RUN_ID=20260826-122000
+export MEETING_TRANSCRIBER_BUNDLE_ID=20260826-121900
+export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-import-argv.txt"
+ASSEMBLYAI_API_KEY=x meeting transcribe --skip-names --no-open "$external_recording" \
+  > "${artifact_root}/import-stdout.txt" 2> "${artifact_root}/import-stderr.txt"
+imported_bundle="${data_root}/20260826-121900-My-Meeting"
+imported_recording="${imported_bundle}/recording.m4a"
+[[ -f "$imported_recording" ]]
 [[ "$(shasum -a 256 "$imported_recording" | awk '{print $1}')" == "$external_sha" ]]
 [[ "$(shasum -a 256 "$external_recording" | awk '{print $1}')" == "$external_sha" ]]
-[[ -s "$(dirname "$imported_recording")/transcripts/interface-import/transcript.json" ]]
-unset MEETING_TRANSCRIBER_BUNDLE_ID
+import_run_dir="${imported_bundle}/transcripts/20260826-122000"
+[[ -s "${import_run_dir}/transcript.json" ]]
+[[ "$(cat "${artifact_root}/import-stdout.txt")" == "${import_run_dir}/transcript.json" ]]
 
 # A canonical-looking symlink must be copied into a new private bundle instead
 # of being treated as the bundle's owned recording.
-symlink_meetings_root="${artifact_root}/symlink-meetings"
-symlink_bundle="${symlink_meetings_root}/20260825-230000-symlink"
+symlink_bundle="${data_root}/20260825-230000-symlink"
 symlink_source="${artifact_root}/symlink-source.wav"
 mkdir -p "$symlink_bundle"
 printf 'symlink source' > "$symlink_source"
 symlink_source_sha="$(shasum -a 256 "$symlink_source" | awk '{print $1}')"
 ln -s "$symlink_source" "${symlink_bundle}/recording.wav"
-export MEETING_TRANSCRIBER_RUN_ID=interface-symlink
-export STUB_ARGV="${artifact_root}/mlx-symlink-argv.txt"
-MEETING_DATA_DIR="$symlink_meetings_root" \
-  MEETING_TRANSCRIBER_BUNDLE_ID=symlink-import \
-  "${project_root}/bin/meeting" transcribe --no-diarize \
-  "${symlink_bundle}/recording.wav" > "${artifact_root}/symlink-import.txt"
-symlink_imported_recording="${symlink_meetings_root}/symlink-import-recording/recording.wav"
-[[ -f "$symlink_imported_recording" && ! -L "$symlink_imported_recording" ]]
-[[ "$(shasum -a 256 "$symlink_imported_recording" | awk '{print $1}')" == "$symlink_source_sha" ]]
-[[ "$(shasum -a 256 "$symlink_source" | awk '{print $1}')" == "$symlink_source_sha" ]]
+export MEETING_TRANSCRIBER_RUN_ID=20260826-122500
+export MEETING_TRANSCRIBER_BUNDLE_ID=20260826-122400
+export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-symlink-argv.txt"
+ASSEMBLYAI_API_KEY=x meeting transcribe --skip-names --no-open \
+  "${symlink_bundle}/recording.wav" > /dev/null 2>&1
+symlink_imported="${data_root}/20260826-122400-recording/recording.wav"
+[[ -f "$symlink_imported" && ! -L "$symlink_imported" ]]
+[[ "$(shasum -a 256 "$symlink_imported" | awk '{print $1}')" == "$symlink_source_sha" ]]
 [[ ! -e "${symlink_bundle}/transcripts" ]]
-[[ -s "${symlink_meetings_root}/symlink-import-recording/transcripts/interface-symlink/transcript.json" ]]
+unset MEETING_TRANSCRIBER_BUNDLE_ID
 
+# Latest discovery selects the newest usable run and opens the saved HTML.
+meeting open > "${artifact_root}/open.txt" 2>&1
+[[ "$(cat "$STUB_OPEN_ARGV")" == "${data_root}/20260826-122400-recording/transcripts/20260826-122500/transcript.html" ]]
+if grep -Fq 'Remote cleanup required' "${artifact_root}/open.txt"; then
+  fail 'a clean run was reported as cleanup-required'
+fi
+
+# Interactive speaker naming updates only the embedded names and atomically
+# regenerates both views through the real Python seam.
+name_json="${import_run_dir}/transcript.json"
+receipt_sha_before="$(shasum -a 256 "${import_run_dir}/.assemblyai.json" | awk '{print $1}')"
+printf 'Casey\n\n' | "${project_root}/.venv/bin/python" \
+  "${project_root}/lib/set_speaker_names.py" "$name_json" \
+  > /dev/null 2> "${artifact_root}/naming.txt"
+grep -Fq '"SPEAKER_00": "Casey"' <("${project_root}/.venv/bin/python" -c \
+  'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["speaker_names"], indent=1))' \
+  "$name_json")
+grep -Fq 'Casey (SPEAKER_00)' "${import_run_dir}/transcript.md"
+grep -Fq 'Casey' "${import_run_dir}/transcript.html"
+grep -Fq 'My Meeting' "${import_run_dir}/transcript.md" \
+  || grep -Fq 'My meeting' "${import_run_dir}/transcript.md"
+[[ "$(shasum -a 256 "${import_run_dir}/.assemblyai.json" | awk '{print $1}')" == "$receipt_sha_before" ]]
+[[ ! -e "${import_run_dir}/transcript.speakers.json" ]]
+[[ "$(find "$import_run_dir" -mindepth 1 | wc -l | tr -d ' ')" == "4" ]]
+
+# A publication whose remote deletion is unconfirmed exits 3, prints the sole
+# canonical path, stays selectable, and is flagged for cleanup — never retried.
+export MEETING_TRANSCRIBER_RUN_ID=20260826-123000
+export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-exit3-argv.txt"
+set +e
+STUB_ASSEMBLYAI_EXIT3=1 ASSEMBLYAI_API_KEY=x meeting transcribe \
+  --skip-names --no-open "$latest_recording" \
+  > "${artifact_root}/exit3-stdout.txt" 2> "${artifact_root}/exit3-stderr.txt"
+exit3_status=$?
+set -e
+[[ "$exit3_status" == "3" ]] || fail "cleanup-required publication exited ${exit3_status}, not 3"
+exit3_run="${latest_bundle}/transcripts/20260826-123000"
+[[ "$(cat "${artifact_root}/exit3-stdout.txt")" == "${exit3_run}/transcript.json" ]]
+[[ "$(wc -l < "${artifact_root}/exit3-stdout.txt" | tr -d ' ')" == "1" ]]
+rm -f "$STUB_OPEN_ARGV"
+meeting open > "${artifact_root}/open-cleanup.txt" 2>&1
+[[ "$(cat "$STUB_OPEN_ARGV")" == "${exit3_run}/transcript.html" ]]
+grep -Fq 'Remote cleanup required' "${artifact_root}/open-cleanup.txt"
+grep -Fq "meeting cleanup ${exit3_run}/transcript.json" "${artifact_root}/open-cleanup.txt"
+if grep -Fq 'Retry' "${artifact_root}/open-cleanup.txt"; then
+  fail 'cleanup-required open output suggested a retry'
+fi
+
+# Every bundle path stays private even though the caller loosened its umask.
 while IFS= read -r -d '' private_path; do
   mode="$(stat -f '%Lp' "$private_path")"
   if [[ -d "$private_path" ]]; then
-    [[ "$mode" == "700" ]] || {
-      printf 'Error: expected directory mode 700, got %s: %s\n' "$mode" "$private_path" >&2
-      exit 1
-    }
+    [[ "$mode" == "700" ]] || fail "expected directory mode 700, got ${mode}: ${private_path}"
   else
-    [[ "$mode" == "600" ]] || {
-      printf 'Error: expected file mode 600, got %s: %s\n' "$mode" "$private_path" >&2
-      exit 1
-    }
+    [[ "$mode" == "600" ]] || fail "expected file mode 600, got ${mode}: ${private_path}"
   fi
-done < <(find "$data_root" -print0)
-
-# Both development verification modes remain provider-free through the real
-# meeting verify -> verify-install -> transcribe-meeting wrapper boundary.
-provider_fail_stub="${artifact_root}/provider-must-not-run"
-provider_fail_marker="${artifact_root}/provider-verify-launched"
-printf '%s\n' '#!/usr/bin/env bash' "touch '$provider_fail_marker'" 'exit 98' > "$provider_fail_stub"
-chmod +x "$provider_fail_stub"
-export MEETING_TRANSCRIBER_ASSEMBLYAI_BIN="$provider_fail_stub"
-export MEETING_TRANSCRIBER_MLX_BIN="${project_root}/tests/fixtures/mlx-adapter-stub"
-export MEETING_TRANSCRIBER_RENDER_HTML_BIN="${project_root}/tests/fixtures/render-html-stub"
-export MEETING_VERIFICATION_DIR="${artifact_root}/verification"
-export STUB_ARGV="${artifact_root}/verify-mlx-argv.txt"
-"${project_root}/bin/meeting" verify smoke > "${artifact_root}/verify-smoke.txt"
-HF_TOKEN=non-secret-sentinel \
-  "${project_root}/bin/meeting" verify diarization > "${artifact_root}/verify-diarization.txt"
-[[ ! -e "$provider_fail_marker" ]]
-grep -Fq 'Smoke verification: PASS' "${artifact_root}/verify-smoke.txt"
-grep -Fq 'Diarization verification: PASS' "${artifact_root}/verify-diarization.txt"
+done < <(find "$data_root" ! -type l -print0)
 
 printf 'Interface smoke: PASS\n'
 printf 'Artifacts retained: %s\n' "$artifact_root"
