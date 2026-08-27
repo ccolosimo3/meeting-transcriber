@@ -163,7 +163,9 @@ if [[ "$status" != "0" && "$status" != "3" ]]; then
   exit "$status"
 fi
 mkdir -p "$STUB_OUTPUT_DIR"
-cp "$STUB_CANONICAL_SOURCE" "$STUB_OUTPUT_DIR/transcript.json"
+if [[ "${STUB_OMIT_CANONICAL:-0}" != "1" ]]; then
+  cp "$STUB_CANONICAL_SOURCE" "$STUB_OUTPUT_DIR/transcript.json"
+fi
 printf '# stub\n' > "$STUB_OUTPUT_DIR/transcript.md"
 printf '<!doctype html>\n' > "$STUB_OUTPUT_DIR/transcript.html"
 printf '{"state":"published"}' > "$STUB_OUTPUT_DIR/.assemblyai.json"
@@ -308,6 +310,18 @@ fi
             self.notify_log.read_text(encoding="utf-8").strip(),
             "Transcript saved; cleanup required",
         )
+        self.assertFalse(self.speakers_log.exists())
+        self.assertFalse(self.open_log.exists())
+
+    def test_missing_canonical_json_from_the_run_owner_stops_the_flow(self) -> None:
+        result = self._run(
+            str(self.recording), STUB_OMIT_CANONICAL="1"
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("canonical transcript JSON is missing", result.stderr)
+        self.assertFalse(self.notify_log.exists())
         self.assertFalse(self.speakers_log.exists())
         self.assertFalse(self.open_log.exists())
 
@@ -903,6 +917,22 @@ class CleanupCommandTests(unittest.TestCase):
                 [request["method"] for request in server.requests], ["DELETE"]
             )
 
+    def test_explicit_transcript_path_routes_to_the_same_transition(self) -> None:
+        with running_server({"delete_statuses": [200]}) as (server, base_url):
+            result = self._run_cleanup(base_url, str(self.pending_json))
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                result.stdout.strip().splitlines(), [str(self.pending_json.resolve())]
+            )
+            self.assertEqual(
+                [request["method"] for request in server.requests], ["DELETE"]
+            )
+        receipt = json.loads(
+            (self.pending_run / ".assemblyai.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(receipt["deletion"]["confirmed"])
+
     def test_missing_key_stops_before_any_request_or_mutation(self) -> None:
         receipt_sha = file_sha(self.pending_run / ".assemblyai.json")
         with running_server({}) as (server, base_url):
@@ -992,6 +1022,22 @@ esac
         self.assertNotIn("Transcribe this recording now?", stderr)
         self.assertIn(str(self.recording_path), stderr)
         self.assertFalse(self.transcribe_log.exists())
+
+    def test_menu_offers_only_the_canonical_surface(self) -> None:
+        returncode, _, stderr = self._run_menu("stopped", b"7\n")
+
+        self.assertEqual(returncode, 0, stderr)
+        for entry in (
+            "1  Record a meeting",
+            "2  Transcribe the latest recording",
+            "3  Open the latest transcript",
+            "4  Name or correct speakers",
+            "5  Open the meeting folder",
+            "6  Check setup",
+            "7  Exit",
+        ):
+            self.assertIn(entry, stderr)
+        self.assertNotIn("cleanup", stderr)
 
     def test_failed_capture_never_offers_transcription(self) -> None:
         returncode, _, stderr = self._run_menu("fail", b"1\n\n7\n")

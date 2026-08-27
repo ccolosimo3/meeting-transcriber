@@ -57,7 +57,7 @@ meeting                         Open the guided menu
 meeting record [LABEL]          Record until q is pressed
 meeting transcribe [INPUT]      Transcribe a recording with AssemblyAI
 meeting open                    Open the latest transcript
-meeting speakers                Name or correct speakers
+meeting speakers [TRANSCRIPT_JSON]  Name or correct speakers
 meeting folder                  Open the meeting folder in Finder
 meeting setup                   Configure this Mac
 meeting doctor                  Check recording and transcription readiness

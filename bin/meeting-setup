@@ -60,6 +60,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Setup has no machine-readable stdout; all of its human status is stderr.
+exec >&2
+
 mkdir -p "$config_root" "$data_root" "${HOME}/.local/bin"
 chmod 700 "$config_root" "$data_root"
 while IFS= read -r -d '' private_directory; do
