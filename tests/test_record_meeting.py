@@ -66,6 +66,15 @@ class RecordMeetingTests(unittest.TestCase):
         output_root = root / "meetings"
         capture_argv = root / "capture-argv"
         capture_key_leak = root / "capture-key-leak"
+        bootstrap_key_leak = root / "bootstrap-key-leak"
+
+        self._write_executable(
+            tools_dir / "dirname",
+            r'''#!/usr/bin/env bash
+[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || touch "$STUB_BOOTSTRAP_KEY_LEAK"
+exec /usr/bin/dirname "$@"
+''',
+        )
 
         self._write_executable(
             tools_dir / "brew",
@@ -97,6 +106,7 @@ exit "${STUB_CAPTURE_STATUS:-0}"
                 "STUB_CAPTURE_STATUS": capture_status or ("0" if valid else "1"),
                 "STUB_CAPTURE_ARGV": str(capture_argv),
                 "STUB_CAPTURE_KEY_LEAK": str(capture_key_leak),
+                "STUB_BOOTSTRAP_KEY_LEAK": str(bootstrap_key_leak),
                 "STUB_PROBE_STATUS": "0" if valid else "1",
                 "MEETING_RECORDING_DEVICE": "0",
                 "ASSEMBLYAI_API_KEY": "recorder-key-sentinel",
@@ -114,6 +124,7 @@ exit "${STUB_CAPTURE_STATUS:-0}"
             check=False,
         )
         self.assertFalse(capture_key_leak.exists())
+        self.assertFalse(bootstrap_key_leak.exists())
         return result, output_root, capture_argv, record_result
 
     def test_noninteractive_capture_still_finalizes_one_recording(self) -> None:

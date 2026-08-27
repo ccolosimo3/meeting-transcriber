@@ -918,6 +918,15 @@ class AssemblyAIAdapterTests(unittest.TestCase):
                 assemblyai.resolve_cleanup_target(crafted_json)
             self.assertEqual(file_sha(crafted / ".assemblyai.json"), crafted_receipt_sha)
 
+            crafted_id = root / "crafted-id" / "transcripts" / "r"
+            crafted_id_json = write_published_run(
+                crafted_id,
+                deletion={"confirmed": False},
+                receipt_overrides={"transcript_id": "../upload"},
+            )
+            with self.assertRaisesRegex(assemblyai.CleanupTargetError, "transcript ID"):
+                assemblyai.resolve_cleanup_target(crafted_id_json)
+
             extra = root / "extra" / "transcripts" / "r"
             extra_json = write_published_run(extra, deletion={"confirmed": False})
             (extra / "crafted.txt").write_text("unexpected", encoding="utf-8")

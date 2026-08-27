@@ -22,13 +22,19 @@ class CredentialFileTests(unittest.TestCase):
         self.env_file = self.root / ".env"
 
     def run_shell(
-        self, body: str, *arguments: str, key: str | None = None
+        self,
+        body: str,
+        *arguments: str,
+        key: str | None = None,
+        path_prefix: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         if key is None:
             environment.pop("ASSEMBLYAI_API_KEY", None)
         else:
             environment["ASSEMBLYAI_API_KEY"] = key
+        if path_prefix is not None:
+            environment["PATH"] = f"{path_prefix}:{environment['PATH']}"
         return subprocess.run(
             [
                 "/bin/bash", "-c", 'source "$1"; ' + body, "test",
@@ -93,6 +99,71 @@ class CredentialFileTests(unittest.TestCase):
         result = self.run_shell('meeting_store_assemblyai_key replacement')
         self.assertEqual(result.returncode, 2)
         self.assertEqual(target.read_text(encoding="utf-8"), "unrelated\n")
+
+    def test_temporary_file_failure_is_truthful_and_preserves_existing_key(self) -> None:
+        self.env_file.write_text("ASSEMBLYAI_API_KEY=old-value\n", encoding="utf-8")
+        self.env_file.chmod(0o600)
+        before = self.env_file.read_bytes()
+        tools = self.root / "tools"
+        tools.mkdir()
+        failing_mktemp = tools / "mktemp"
+        failing_mktemp.write_text("#!/usr/bin/env bash\nexit 71\n", encoding="utf-8")
+        failing_mktemp.chmod(0o755)
+        result = self.run_shell(
+            'meeting_store_assemblyai_key replacement', path_prefix=tools
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.env_file.read_bytes(), before)
+        self.assertEqual(list(self.root.glob(".env.*")), [])
+
+    def test_installer_children_never_inherit_a_process_override(self) -> None:
+        install_root = self.root / "install-root"
+        (install_root / "bin").mkdir(parents=True)
+        shutil.copy2(PROJECT_ROOT / "install.sh", install_root / "install.sh")
+        leak_marker = self.root / "installer-key-leak"
+        tools = self.root / "installer-tools"
+        tools.mkdir()
+        for name in ("brew", "uv"):
+            tool = tools / name
+            tool.write_text(
+                '#!/usr/bin/env bash\n'
+                '[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || touch "$STUB_INSTALL_KEY_LEAK"\n',
+                encoding="utf-8",
+            )
+            tool.chmod(0o755)
+        uname = tools / "uname"
+        uname.write_text(
+            '#!/usr/bin/env bash\n'
+            '[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || touch "$STUB_INSTALL_KEY_LEAK"\n'
+            'printf "Darwin\\n"\n',
+            encoding="utf-8",
+        )
+        uname.chmod(0o755)
+        setup = install_root / "bin" / "meeting-setup"
+        setup.write_text(
+            '#!/usr/bin/env bash\n'
+            '[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || touch "$STUB_INSTALL_KEY_LEAK"\n',
+            encoding="utf-8",
+        )
+        setup.chmod(0o755)
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ASSEMBLYAI_API_KEY": SENTINEL,
+                "PATH": f"{tools}:{environment['PATH']}",
+                "STUB_INSTALL_KEY_LEAK": str(leak_marker),
+            }
+        )
+        result = subprocess.run(
+            ["/bin/bash", str(install_root / "install.sh"), "--yes"],
+            text=True,
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(leak_marker.exists())
+        self.assert_secret_absent(result)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The installer never needs a provider credential. Remove any inherited
+# one-command override before even platform/tool discovery can launch a child.
+# shellcheck disable=SC2034
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+unset meeting_entry_assemblyai_key
+
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 assume_yes=0
 

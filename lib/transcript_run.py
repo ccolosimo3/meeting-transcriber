@@ -16,6 +16,7 @@ discovery; it never mutates anything.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -26,6 +27,7 @@ RECEIPT_NAME = ".assemblyai.json"
 HISTORICAL_RECEIPT_NAME = "transcript.assemblyai.json"
 MANAGED_INVENTORY = {"transcript.json", "transcript.md", "transcript.html", RECEIPT_NAME}
 MANAGED_MODEL = "universal-3-5-pro"
+TRANSCRIPT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 
 
 class ManagedRunError(ValueError):
@@ -88,7 +90,7 @@ def validate_managed_run(run_dir: Path) -> tuple[Path, Path, dict[str, object], 
         raise ManagedRunError("the receipt model does not match the managed model")
     if receipt.get("provider_status") != "completed":
         raise ManagedRunError("the receipt provider lifecycle is not complete")
-    if not isinstance(transcript_id, str) or not transcript_id:
+    if not isinstance(transcript_id, str) or not TRANSCRIPT_ID_PATTERN.fullmatch(transcript_id):
         raise ManagedRunError("the AssemblyAI receipt has no transcript ID")
     if not isinstance(timestamps, dict) or not all(
         isinstance(timestamps.get(key), str) and bool(timestamps.get(key))

@@ -133,7 +133,7 @@ class TranscribeOrchestrationTests(unittest.TestCase):
         write_executable(
             self.lib_dir / "config.sh",
             r"""#!/usr/bin/env bash
-meeting_inherited_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+meeting_inherited_assemblyai_key="${meeting_entry_assemblyai_key:-${ASSEMBLYAI_API_KEY:-}}"
 unset ASSEMBLYAI_API_KEY
 meeting_data_root() { printf '%s\n' "$MEETING_DATA_DIR"; }
 meeting_python_bin() { printf '%s\n' "$STUB_PYTHON_BIN"; }
@@ -974,6 +974,19 @@ class CleanupCommandTests(unittest.TestCase):
             self.assertEqual(server.requests, [])
         self.assertEqual(result.returncode, 2)
         self.assertIn("provider", result.stderr)
+        self.assertEqual(file_sha(receipt_path), receipt_sha)
+
+    def test_crafted_transcript_id_stops_before_any_request_or_mutation(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["transcript_id"] = "../upload"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_sha = file_sha(receipt_path)
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(base_url, str(self.pending_json))
+            self.assertEqual(server.requests, [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("transcript ID", result.stderr)
         self.assertEqual(file_sha(receipt_path), receipt_sha)
 
 

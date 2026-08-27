@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
-_meeting_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Capture an inherited one-command override before this shell launches any
 # helper. The captured value is deliberately not exported.
-meeting_inherited_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+meeting_inherited_assemblyai_key="${meeting_entry_assemblyai_key:-${ASSEMBLYAI_API_KEY:-}}"
 unset ASSEMBLYAI_API_KEY
+_meeting_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 meeting_env_file() {
   printf '%s/.env\n' "$(cd "${_meeting_lib_dir}/.." && pwd)"
@@ -67,11 +66,19 @@ meeting_store_assemblyai_key() {
     fi
     meeting_inherited_assemblyai_key="$inherited_key"
   fi
-  temporary="$(mktemp "${env_file}.XXXXXX")"
-  chmod 600 "$temporary"
-  printf 'ASSEMBLYAI_API_KEY=%s\n' "$key" > "$temporary"
-  mv "$temporary" "$env_file"
-  chmod 600 "$env_file"
+  temporary="$(mktemp "${env_file}.XXXXXX")" || return 2
+  if ! chmod 600 "$temporary"; then
+    rm -f "$temporary"
+    return 2
+  fi
+  if ! printf 'ASSEMBLYAI_API_KEY=%s\n' "$key" > "$temporary"; then
+    rm -f "$temporary"
+    return 2
+  fi
+  if ! mv "$temporary" "$env_file"; then
+    rm -f "$temporary"
+    return 2
+  fi
 }
 
 meeting_data_root() {
