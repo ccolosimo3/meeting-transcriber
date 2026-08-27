@@ -165,6 +165,34 @@ class CredentialFileTests(unittest.TestCase):
         self.assertFalse(leak_marker.exists())
         self.assert_secret_absent(result)
 
+    def test_doctor_does_not_trust_an_ambient_override_flag(self) -> None:
+        app_root = self.root / "doctor-app"
+        (app_root / "bin").mkdir(parents=True)
+        (app_root / "lib").mkdir()
+        shutil.copy2(PROJECT_ROOT / "bin" / "meeting-doctor", app_root / "bin")
+        shutil.copy2(PROJECT_ROOT / "bin" / "meeting", app_root / "bin")
+        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", app_root / "lib")
+        (app_root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
+        environment = os.environ.copy()
+        environment.pop("ASSEMBLYAI_API_KEY", None)
+        environment.update(
+            {
+                "HOME": str(self.root / "doctor-home"),
+                "MEETING_DATA_DIR": str(self.root / "doctor-data"),
+                "MEETING_CONFIG_DIR": str(self.root / "doctor-config"),
+                "MEETING_TRANSCRIBER_KEY_OVERRIDE_PRESENT": "1",
+            }
+        )
+        result = subprocess.run(
+            ["/bin/bash", str(app_root / "bin" / "meeting-doctor")],
+            text=True,
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        self.assertIn("No AssemblyAI API key", result.stderr)
+        self.assertNotIn("available from the one-command environment override", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

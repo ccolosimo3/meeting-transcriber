@@ -111,12 +111,24 @@ def classify(run_dir: Path) -> tuple[str, Path, str | None] | None:
     receipt_path = run_dir / RECEIPT_NAME
 
     if receipt_path.exists() or receipt_path.is_symlink():
+        markdown_path = run_dir / "transcript.md"
+        html_path = run_dir / "transcript.html"
+        required = (json_path, markdown_path, html_path, receipt_path)
+        if not all(_regular_file(path) for path in required):
+            return None
+        if markdown_path.stat().st_size == 0 or html_path.stat().st_size == 0:
+            return None
         try:
-            json_path, _, receipt, identifier = validate_managed_run(run_dir)
-        except ManagedRunError:
+            load_canonical(json_path)
+        except (CanonicalTranscriptError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        receipt = _load_receipt(receipt_path)
+        if receipt is None or receipt.get("state") != "published":
             return None
         if _deletion_confirmed(receipt):
             return ("clean", json_path, None)
+        transcript_id = receipt.get("transcript_id")
+        identifier = transcript_id if isinstance(transcript_id, str) else None
         return ("cleanup-required", json_path, identifier)
 
     html_path = run_dir / "transcript.html"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -14,6 +15,12 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
+        (self.root / "bin").mkdir()
+        (self.root / "lib").mkdir()
+        shutil.copy2(PROJECT_ROOT / "bin" / "transcribe-meeting", self.root / "bin")
+        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", self.root / "lib")
+        shutil.copy2(PROJECT_ROOT / "lib" / "format.sh", self.root / "lib")
+        (self.root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         self.adapter_marker = self.root / "adapter-launched"
         self.output_root = self.root / "output"
         self.input_path = self.root / "recording.wav"
@@ -55,7 +62,7 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         return subprocess.run(
             [
                 "/bin/bash",
-                str(PROJECT_ROOT / "bin" / "transcribe-meeting"),
+                str(self.root / "bin" / "transcribe-meeting"),
                 str(self.input_path),
                 str(self.output_root),
             ],

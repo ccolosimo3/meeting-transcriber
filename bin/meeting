@@ -22,7 +22,8 @@ run_provider_command() {
 
 run_doctor_command() {
   if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
-    MEETING_TRANSCRIBER_KEY_OVERRIDE_PRESENT=1 exec "$@"
+    exec 9<<< 'meeting-override-present'
+    MEETING_TRANSCRIBER_KEY_OVERRIDE_FD=9 exec "$@"
   fi
   exec "$@"
 }

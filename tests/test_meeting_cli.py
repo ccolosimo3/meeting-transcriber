@@ -688,6 +688,18 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self._opened_path(), str(run / "transcript.html"))
         self.assertIn("Remote cleanup required", result.stderr)
 
+    def test_extra_file_does_not_hide_a_published_run_from_discovery(self) -> None:
+        run = self._make_new_run(
+            "20260826-100000-a", "20260826-110000", deletion="unconfirmed"
+        )
+        (run / ".DS_Store").write_bytes(b"finder metadata")
+
+        result = self._run_open()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._opened_path(), str(run / "transcript.html"))
+        self.assertIn("Remote cleanup required", result.stderr)
+
     def test_newer_partial_and_pre_publication_runs_are_skipped(self) -> None:
         expected = self._make_new_run("20260826-100000-a", "20260826-110000")
         self._make_new_run(
@@ -853,6 +865,11 @@ class CleanupCommandTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.root = Path(self.temporary_directory.name)
+        self.app_root = self.root / "app"
+        (self.app_root / "bin").mkdir(parents=True)
+        shutil.copy2(PROJECT_ROOT / "bin" / "meeting-cleanup", self.app_root / "bin")
+        shutil.copytree(PROJECT_ROOT / "lib", self.app_root / "lib")
+        (self.app_root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         self.meetings_root = self.root / "meetings"
         clean_run = (
             self.meetings_root / "20260826-120000-newer" / "transcripts" / "20260826-130000"
@@ -886,7 +903,7 @@ class CleanupCommandTests(unittest.TestCase):
             if value == "":
                 environment.pop(key)
         return subprocess.run(
-            ["/bin/bash", str(PROJECT_ROOT / "bin" / "meeting-cleanup"), *arguments],
+            ["/bin/bash", str(self.app_root / "bin" / "meeting-cleanup"), *arguments],
             text=True,
             capture_output=True,
             env=environment,
@@ -987,6 +1004,18 @@ class CleanupCommandTests(unittest.TestCase):
             self.assertEqual(server.requests, [])
         self.assertEqual(result.returncode, 2)
         self.assertIn("transcript ID", result.stderr)
+        self.assertEqual(file_sha(receipt_path), receipt_sha)
+
+    def test_extra_file_is_discovered_but_refused_before_cleanup_request(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        receipt_sha = file_sha(receipt_path)
+        (self.pending_run / ".DS_Store").write_bytes(b"finder metadata")
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(base_url)
+            self.assertEqual(server.requests, [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("inventory", result.stderr)
+        self.assertNotIn("No transcript requires cleanup", result.stderr)
         self.assertEqual(file_sha(receipt_path), receipt_sha)
 
 

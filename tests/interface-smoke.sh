@@ -2,14 +2,20 @@
 set -euo pipefail
 umask 077
 
-project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 real_home="$HOME"
 original_path="$PATH"
-artifact_root="${project_root}/tests/artifacts/$(date '+%Y%m%d-%H%M%S')-$$"
+artifact_root="${source_project_root}/tests/artifacts/$(date '+%Y%m%d-%H%M%S')-$$"
+project_root="${artifact_root}/app"
 test_home="${artifact_root}/home"
 data_root="${artifact_root}/meeting data"
 config_root="${artifact_root}/config"
-mkdir -p "$test_home" "$data_root"
+mkdir -p "$test_home" "$data_root" "$project_root"
+cp -R "${source_project_root}/bin" "${source_project_root}/lib" \
+  "${source_project_root}/skills" "$project_root/"
+mkdir -p "${project_root}/tests"
+cp -R "${source_project_root}/tests/fixtures" "${project_root}/tests/"
+ln -s "${source_project_root}/.venv" "${project_root}/.venv"
 
 fail() {
   printf 'Error: %s\n' "$1" >&2
