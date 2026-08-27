@@ -1,0 +1,3 @@
+# Single-quoted strings deliberately carry literal backticks and $meeting in
+# user-facing help and migration messages.
+disable=SC2016

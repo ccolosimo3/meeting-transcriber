@@ -40,9 +40,9 @@ bad() {
 
 printf 'Meeting Transcriber doctor\n' >&2
 
-[[ "$(uname -s)" == "Darwin" ]] && ok 'macOS detected' || bad 'this utility supports macOS only'
-command -v brew >/dev/null 2>&1 && ok 'Homebrew is available' || bad 'Homebrew is not installed'
-command -v uv >/dev/null 2>&1 && ok "$(uv --version)" || bad 'uv is not installed'
+if [[ "$(uname -s)" == "Darwin" ]]; then ok 'macOS detected'; else bad 'this utility supports macOS only'; fi
+if command -v brew >/dev/null 2>&1; then ok 'Homebrew is available'; else bad 'Homebrew is not installed'; fi
+if command -v uv >/dev/null 2>&1; then ok "$(uv --version)"; else bad 'uv is not installed'; fi
 
 command_link="${HOME}/.local/bin/meeting"
 resolved_meeting="$(command -v meeting 2>/dev/null || true)"
@@ -72,14 +72,14 @@ section=recording
 
 ffmpeg_prefix=""
 if command -v brew >/dev/null 2>&1 && ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" && [[ -x "${ffmpeg_prefix}/bin/ffmpeg" && -x "${ffmpeg_prefix}/bin/ffprobe" ]]; then
-  ok "$(${ffmpeg_prefix}/bin/ffmpeg -version | sed -n '1p')"
+  ok "$("${ffmpeg_prefix}/bin/ffmpeg" -version | sed -n '1p')"
 else
   ffmpeg_prefix=""
   bad 'Homebrew ffmpeg@7 is not installed'
 fi
 
 if [[ -n "$ffmpeg_prefix" ]]; then
-  device_listing="$(${ffmpeg_prefix}/bin/ffmpeg -hide_banner -f avfoundation -list_devices true -i '' 2>&1 \
+  device_listing="$("${ffmpeg_prefix}/bin/ffmpeg" -hide_banner -f avfoundation -list_devices true -i '' 2>&1 \
     | sed -n '/AVFoundation audio devices:/,$p' || true)"
   if [[ "$configured_device" =~ ^[0-9]+$ ]]; then
     device_pattern="[$configured_device]"
@@ -120,7 +120,7 @@ printf '\nTranscription\n' >&2
 section=transcription
 
 if [[ -x "${utility_root}/.venv/bin/python" && -f "${utility_root}/lib/transcribe_assemblyai.py" ]]; then
-  if python_version="$(${utility_root}/.venv/bin/python --version 2>&1)"; then
+  if python_version="$("${utility_root}/.venv/bin/python" --version 2>&1)"; then
     ok "Python environment: ${python_version}"
   else
     bad "Python environment is broken; run uv sync --frozen --no-dev in ${utility_root}"
