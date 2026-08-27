@@ -52,7 +52,9 @@ and dispatch to one owner per command:
 - `bin/meeting-open` opens the latest usable run's saved HTML without
   rewriting anything and surfaces the cleanup-required warning.
 - `bin/meeting-cleanup` resolves the recovery target and contains the
-  credential before invoking the adapter's cleanup mode.
+  credential before invoking the adapter's cleanup mode. Cleanup target proof
+  reuses `lib/transcript_run.py`'s current-schema run validator before the
+  adapter can issue DELETE.
 - `bin/meeting-setup` and `bin/meeting-doctor` own configuration and the
   Recording/Transcription readiness report.
 - `lib/format.sh` is the shared terminal formatting helper; human status goes
@@ -80,17 +82,23 @@ dependency group, used by the Chromium DevTools browser test.
   `aiohttp` for the browser gate.
 
 `pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`,
-recordings, transcripts, local configuration, or Keychain material.
+recordings, transcripts, local configuration, or the checkout-root `.env`.
 
 ## Provider lifecycle and credential boundary
 
 The managed path uses `https://api.assemblyai.com`, places the raw API key only
 in the adapter child's `Authorization` header, and pins
-`speech_models: ["universal-3-5-pro"]`. The shell layers read
-`ASSEMBLYAI_API_KEY` or the `meeting-transcriber-assemblyai-key` Keychain item,
-unset the inherited value, and export it only to the provider child; speaker,
-renderer, notification, and open children never see it, and it never appears in
-argv or output artifacts.
+`speech_models: ["universal-3-5-pro"]`. The checkout-root `.env` is the only
+persistent credential store and must contain exactly one literal
+`ASSEMBLYAI_API_KEY=<value>` assignment in a regular non-symlink mode-`0600`
+file. Shell code parses it as data; it never sources or exports the file. A
+process-level override has priority. Every executable captures and unsets an
+inherited value immediately, and only the adapter child receives the selected
+key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
+doctor/setup, notification, and menu-helper children never inherit it. The
+no-argument menu retains its captured override only as a private shell variable
+until a later transcription selection. The key never appears in argv or output
+artifacts.
 
 Each run atomically persists the hidden mode-`0600` receipt
 `.assemblyai.json` in the run directory:
@@ -110,7 +118,11 @@ Each run atomically persists the hidden mode-`0600` receipt
   ID). A confirmed DELETE records `deletion.confirmed: true`; a failure records
   `confirmed: false` with bounded attempt/error metadata. Exit code 3 from the
   adapter and both shell layers means "usable transcript; cleanup required".
-- `meeting cleanup` is recovery-only: it validates the published receipt,
+- `meeting cleanup` is recovery-only: it validates the regular non-symlink
+  canonical transcript and adjacent receipt through the current-schema run
+  validator, including the complete set of managed run files (extra unrelated
+  files are tolerated), canonical schema, provider, model/status/lifecycle
+  evidence, transcript ID, and deletion state,
   issues bounded DELETE attempts, and performs the terminal false-to-true
   transition with re-compaction and reload. A DELETE 404 confirms cleanup only
   when the receipt independently proves the same transcript ID was returned by

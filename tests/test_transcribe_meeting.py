@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -14,19 +15,28 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
+        (self.root / "bin").mkdir()
+        (self.root / "lib").mkdir()
+        shutil.copy2(PROJECT_ROOT / "bin" / "transcribe-meeting", self.root / "bin")
+        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", self.root / "lib")
+        shutil.copy2(PROJECT_ROOT / "lib" / "format.sh", self.root / "lib")
+        (self.root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         self.adapter_marker = self.root / "adapter-launched"
         self.output_root = self.root / "output"
         self.input_path = self.root / "recording.wav"
         self.input_path.write_bytes(b"audio")
         self.ffprobe = self.root / "ffprobe"
+        self.ffprobe_key_marker = self.root / "ffprobe-key-leak"
         self._write_executable(
             self.ffprobe,
-            "#!/usr/bin/env bash\nprintf '%s\\n' \"${STUB_DURATION:-1.0}\"\n",
+            "#!/usr/bin/env bash\n"
+            "[[ -z \"${ASSEMBLYAI_API_KEY:-}\" ]] || touch \"$STUB_FFPROBE_KEY_MARKER\"\n"
+            "printf '%s\\n' \"${STUB_DURATION:-1.0}\"\n",
         )
         self.adapter = self.root / "assemblyai-adapter"
         self._write_executable(
             self.adapter,
-            f"#!/usr/bin/env bash\ntouch '{self.adapter_marker}'\nexit 99\n",
+            f"#!/usr/bin/env bash\n[[ -n \"${{ASSEMBLYAI_API_KEY:-}}\" ]] && touch '{self.adapter_marker}'\nexit 99\n",
         )
 
     def tearDown(self) -> None:
@@ -45,13 +55,14 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_BIN": str(self.adapter),
                 "MEETING_TRANSCRIBER_FFPROBE_BIN": str(self.ffprobe),
                 "MEETING_TRANSCRIBER_RUN_ID": "preflight",
+                "STUB_FFPROBE_KEY_MARKER": str(self.ffprobe_key_marker),
             }
         )
         environment.update(overrides)
         return subprocess.run(
             [
                 "/bin/bash",
-                str(PROJECT_ROOT / "bin" / "transcribe-meeting"),
+                str(self.root / "bin" / "transcribe-meeting"),
                 str(self.input_path),
                 str(self.output_root),
             ],
@@ -81,11 +92,10 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
     def test_missing_credential_stops_before_preflight_or_upload(self) -> None:
         result = self._run(
             ASSEMBLYAI_API_KEY="",
-            MEETING_TRANSCRIBER_DISABLE_KEYCHAIN="1",
             STUB_DURATION="not-a-number",
         )
         self.assertEqual(result.returncode, 2)
-        self.assertIn("meeting-transcriber-assemblyai-key", result.stderr)
+        self.assertIn(".env", result.stderr)
         self.assertIn("meeting setup", result.stderr)
         self.assertNotIn("--local", result.stderr)
         self.assertFalse(self.adapter_marker.exists())
@@ -97,6 +107,12 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("already exists", result.stderr)
         self.assertFalse(self.adapter_marker.exists())
+
+    def test_only_provider_adapter_inherits_the_key(self) -> None:
+        result = self._run()
+        self.assertEqual(result.returncode, 99)
+        self.assertTrue(self.adapter_marker.exists())
+        self.assertFalse(self.ffprobe_key_marker.exists())
 
 
 if __name__ == "__main__":

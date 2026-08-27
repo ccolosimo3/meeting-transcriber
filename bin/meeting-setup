@@ -2,6 +2,9 @@
 set -euo pipefail
 umask 077
 
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
 script_source="${BASH_SOURCE[0]}"
 while [[ -L "$script_source" ]]; do
   script_dir="$(cd "$(dirname "$script_source")" && pwd)"
@@ -20,7 +23,7 @@ usage() {
     'Usage: meeting setup [--device NAME_OR_INDEX]' \
     '' \
     'Creates local data/configuration directories, selects a microphone,' \
-    'offers secure AssemblyAI Keychain setup, installs the bundled $meeting' \
+    'offers secure AssemblyAI .env setup, installs the bundled $meeting' \
     'skill, and finishes with meeting doctor.'
 }
 
@@ -134,26 +137,36 @@ printf '%s\n' \
   'copies after local files are saved. Billing, training opt-out, and retention' \
   'settings are owned by your paid AssemblyAI account. Recording works without' \
   'a key; transcription does not.'
-keychain_account="${USER:-$(id -un)}"
-if [[ "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" == "1" ]]; then
-  printf 'Keychain access is disabled for this run; skipping AssemblyAI key setup.\n' >&2
-elif security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
-  printf 'AssemblyAI API key: already configured in Keychain\n'
+env_file="$(meeting_env_file)"
+if meeting_load_assemblyai_key && [[ -z "$meeting_inherited_assemblyai_key" ]]; then
+  printf 'AssemblyAI API key: already stored in %s\n' "$env_file"
+elif [[ -n "$meeting_assemblyai_key_error" ]]; then
+  printf 'Error: %s\n' "$meeting_assemblyai_key_error"
+  printf 'The existing file was not changed. Move unrelated content elsewhere or repair it to exactly:\n'
+  printf '  ASSEMBLYAI_API_KEY=<value>\n'
+  exit 2
 elif [[ -t 0 ]]; then
-  printf 'Store an AssemblyAI API key in Keychain now? [y/N] '
+  printf 'Store an AssemblyAI API key in %s now? [y/N] ' "$env_file"
   read -r assemblyai_reply || true
   case "$assemblyai_reply" in
     y|Y|yes|YES)
-      printf 'Keychain will prompt securely for the API key.\n'
-      security add-generic-password -U -a "$keychain_account" \
-        -s meeting-transcriber-assemblyai-key -w
+      printf 'AssemblyAI API key (input hidden): '
+      IFS= read -r -s assemblyai_key || true
+      printf '\n'
+      [[ -n "$assemblyai_key" ]] || { printf 'Error: API key cannot be empty.\n'; exit 2; }
+      if ! meeting_store_assemblyai_key "$assemblyai_key"; then
+        printf 'Error: could not safely replace %s; it was left unchanged.\n' "$env_file"
+        exit 2
+      fi
+      assemblyai_key=""
+      printf 'AssemblyAI API key stored in %s with mode 0600\n' "$env_file"
       ;;
     *)
       printf 'Skipped AssemblyAI key setup. Recording still works; rerun meeting setup before transcribing.\n'
       ;;
   esac
 else
-  printf 'AssemblyAI key is not configured. Recording still works; rerun setup interactively before transcribing.\n' >&2
+  printf 'AssemblyAI key is not configured at %s. Recording still works; rerun setup interactively before transcribing.\n' "$env_file" >&2
 fi
 
 if [[ -d "${utility_root}/skills/meeting" ]]; then

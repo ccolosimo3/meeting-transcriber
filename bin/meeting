@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
 script_source="${BASH_SOURCE[0]}"
 while [[ -L "$script_source" ]]; do
   script_dir="$(cd "$(dirname "$script_source")" && pwd)"
@@ -9,6 +12,21 @@ while [[ -L "$script_source" ]]; do
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
 source "${utility_root}/lib/config.sh"
+
+run_provider_command() {
+  if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
+    ASSEMBLYAI_API_KEY="$meeting_inherited_assemblyai_key" exec "$@"
+  fi
+  exec "$@"
+}
+
+run_doctor_command() {
+  if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
+    exec 9<<< 'meeting-override-present'
+    MEETING_TRANSCRIBER_KEY_OVERRIDE_FD=9 exec "$@"
+  fi
+  exec "$@"
+}
 
 usage() {
   printf '%s\n' \
@@ -66,7 +84,7 @@ menu_record() {
     printf 'Transcribe this recording now? [Y/n] ' >&2
     read -r reply || reply='n'
     case "${reply:-y}" in
-      y|Y|yes|YES) exec "${utility_root}/bin/meeting-transcribe" "$recording" ;;
+      y|Y|yes|YES) run_provider_command "${utility_root}/bin/meeting-transcribe" "$recording" ;;
       *) printf 'Saved. Run meeting transcribe when you are ready.\n' >&2 ;;
     esac
   elif [[ -n "$recording" ]]; then
@@ -94,11 +112,11 @@ interactive_menu() {
     read -r choice || choice=7
     case "${choice:-7}" in
       1) menu_record ;;
-      2) exec "${utility_root}/bin/meeting-transcribe" ;;
+      2) run_provider_command "${utility_root}/bin/meeting-transcribe" ;;
       3) exec "${utility_root}/bin/meeting-open" ;;
       4) exec "${utility_root}/bin/meeting-speakers" ;;
       5) exec "${utility_root}/bin/meeting-folder" ;;
-      6) exec "${utility_root}/bin/meeting-doctor" ;;
+      6) run_doctor_command "${utility_root}/bin/meeting-doctor" ;;
       7) exit 0 ;;
       *) printf 'Unknown option: %s\n\n' "$choice" >&2 ;;
     esac
@@ -118,13 +136,13 @@ subcommand="$1"
 shift
 case "$subcommand" in
   record) exec "${utility_root}/bin/record-meeting" "$@" ;;
-  transcribe) exec "${utility_root}/bin/meeting-transcribe" "$@" ;;
+  transcribe) run_provider_command "${utility_root}/bin/meeting-transcribe" "$@" ;;
   open) exec "${utility_root}/bin/meeting-open" "$@" ;;
   speakers) exec "${utility_root}/bin/meeting-speakers" "$@" ;;
   folder) exec "${utility_root}/bin/meeting-folder" "$@" ;;
   setup) exec "${utility_root}/bin/meeting-setup" "$@" ;;
-  doctor) exec "${utility_root}/bin/meeting-doctor" "$@" ;;
-  cleanup) exec "${utility_root}/bin/meeting-cleanup" "$@" ;;
+  doctor) run_doctor_command "${utility_root}/bin/meeting-doctor" "$@" ;;
+  cleanup) run_provider_command "${utility_root}/bin/meeting-cleanup" "$@" ;;
   help|-h|--help)
     [[ $# -eq 0 ]] || { printf 'Error: meeting help accepts no arguments\n' >&2; exit 2; }
     usage

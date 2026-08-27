@@ -133,6 +133,8 @@ class TranscribeOrchestrationTests(unittest.TestCase):
         write_executable(
             self.lib_dir / "config.sh",
             r"""#!/usr/bin/env bash
+meeting_inherited_assemblyai_key="${meeting_entry_assemblyai_key:-${ASSEMBLYAI_API_KEY:-}}"
+unset ASSEMBLYAI_API_KEY
 meeting_data_root() { printf '%s\n' "$MEETING_DATA_DIR"; }
 meeting_python_bin() { printf '%s\n' "$STUB_PYTHON_BIN"; }
 meeting_latest_recording() {
@@ -596,6 +598,7 @@ class DiscoveryTests(unittest.TestCase):
                 "created_at": "2026-08-26T10:00:00Z",
                 "submitted_at": "2026-08-26T10:01:00Z",
                 "completed_at": "2026-08-26T10:02:00Z",
+                "published_at": "2026-08-26T10:02:01Z",
             },
         }
         if deletion == "confirmed":
@@ -678,6 +681,18 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_published_receipt_without_deletion_field_is_cleanup_required(self) -> None:
         run = self._make_new_run("20260826-100000-a", "20260826-110000", deletion=None)
+
+        result = self._run_open()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._opened_path(), str(run / "transcript.html"))
+        self.assertIn("Remote cleanup required", result.stderr)
+
+    def test_extra_file_does_not_hide_a_published_run_from_discovery(self) -> None:
+        run = self._make_new_run(
+            "20260826-100000-a", "20260826-110000", deletion="unconfirmed"
+        )
+        (run / ".DS_Store").write_bytes(b"finder metadata")
 
         result = self._run_open()
 
@@ -850,6 +865,11 @@ class CleanupCommandTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.root = Path(self.temporary_directory.name)
+        self.app_root = self.root / "app"
+        (self.app_root / "bin").mkdir(parents=True)
+        shutil.copy2(PROJECT_ROOT / "bin" / "meeting-cleanup", self.app_root / "bin")
+        shutil.copytree(PROJECT_ROOT / "lib", self.app_root / "lib")
+        (self.app_root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         self.meetings_root = self.root / "meetings"
         clean_run = (
             self.meetings_root / "20260826-120000-newer" / "transcripts" / "20260826-130000"
@@ -883,7 +903,7 @@ class CleanupCommandTests(unittest.TestCase):
             if value == "":
                 environment.pop(key)
         return subprocess.run(
-            ["/bin/bash", str(PROJECT_ROOT / "bin" / "meeting-cleanup"), *arguments],
+            ["/bin/bash", str(self.app_root / "bin" / "meeting-cleanup"), *arguments],
             text=True,
             capture_output=True,
             env=environment,
@@ -952,7 +972,6 @@ class CleanupCommandTests(unittest.TestCase):
             result = self._run_cleanup(
                 base_url,
                 ASSEMBLYAI_API_KEY="",
-                MEETING_TRANSCRIBER_DISABLE_KEYCHAIN="1",
             )
             self.assertEqual(server.requests, [])
 
@@ -960,6 +979,43 @@ class CleanupCommandTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("meeting setup", result.stderr)
         self.assertEqual(file_sha(self.pending_run / ".assemblyai.json"), receipt_sha)
+
+    def test_crafted_receipt_stops_before_any_request_or_mutation(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["provider"] = "crafted-provider"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_sha = file_sha(receipt_path)
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(base_url, str(self.pending_json))
+            self.assertEqual(server.requests, [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("provider", result.stderr)
+        self.assertEqual(file_sha(receipt_path), receipt_sha)
+
+    def test_crafted_transcript_id_stops_before_any_request_or_mutation(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["transcript_id"] = "../upload"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_sha = file_sha(receipt_path)
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(base_url, str(self.pending_json))
+            self.assertEqual(server.requests, [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("transcript ID", result.stderr)
+        self.assertEqual(file_sha(receipt_path), receipt_sha)
+
+    def test_extra_file_does_not_block_cleanup_of_a_valid_managed_run(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        (self.pending_run / ".DS_Store").write_bytes(b"finder metadata")
+        with running_server({"delete_statuses": [200]}) as (server, base_url):
+            result = self._run_cleanup(base_url)
+            self.assertEqual([request["method"] for request in server.requests], ["DELETE"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertTrue(receipt["deletion"]["confirmed"])
+        self.assertNotIn("No transcript requires cleanup", result.stderr)
 
 
 class MenuRecorderResultTests(unittest.TestCase):
@@ -1010,6 +1066,7 @@ esac
                 "STUB_RECORD_MODE": mode,
                 "STUB_RECORDING_PATH": str(self.recording_path),
                 "STUB_MENU_TRANSCRIBE_ARGV": str(self.transcribe_log),
+                "ASSEMBLYAI_API_KEY": "menu-key-sentinel",
             }
         )
         return run_pty(
@@ -1027,6 +1084,39 @@ esac
             if item
         ]
         self.assertEqual(arguments, [str(self.recording_path)])
+
+    def test_menu_keeps_override_private_until_transcription(self) -> None:
+        recorder_key_log = self.root / "recorder-key"
+        transcriber_key_log = self.root / "transcriber-key"
+        write_executable(
+            self.bin_dir / "record-meeting",
+            r'''#!/usr/bin/env bash
+[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || printf 'leaked\n' > "$STUB_RECORDER_KEY_LOG"
+printf '{"recording":"%s","outcome":"stopped"}\n' "$STUB_RECORDING_PATH" > "$MEETING_TRANSCRIBER_RECORD_RESULT_FILE"
+''',
+        )
+        write_executable(
+            self.bin_dir / "meeting-transcribe",
+            r'''#!/usr/bin/env bash
+[[ "${ASSEMBLYAI_API_KEY:-}" == "menu-key-sentinel" ]] && printf 'received\n' > "$STUB_TRANSCRIBER_KEY_LOG"
+''',
+        )
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ASSEMBLYAI_API_KEY": "menu-key-sentinel",
+                "STUB_RECORDING_PATH": str(self.recording_path),
+                "STUB_RECORDER_KEY_LOG": str(recorder_key_log),
+                "STUB_TRANSCRIBER_KEY_LOG": str(transcriber_key_log),
+            }
+        )
+        returncode, stdout, stderr = run_pty(
+            ["/bin/bash", str(self.bin_dir / "meeting")], b"1\n\ny\n", environment
+        )
+        self.assertEqual(returncode, 0, stderr)
+        self.assertFalse(recorder_key_log.exists())
+        self.assertEqual(transcriber_key_log.read_text().strip(), "received")
+        self.assertNotIn("menu-key-sentinel", stdout + stderr)
 
     def test_interrupted_capture_reports_the_saved_path_without_upload(self) -> None:
         returncode, _, stderr = self._run_menu("interrupted", b"1\n\n7\n")

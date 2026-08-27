@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The installer never needs a provider credential. Remove any inherited
+# one-command override before even platform/tool discovery can launch a child.
+# shellcheck disable=SC2034
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+unset meeting_entry_assemblyai_key
+
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 assume_yes=0
 
@@ -34,12 +41,12 @@ printf '%s\n' \
   '  - install uv-managed Python 3.13' \
   '  - create a small locked .venv in this checkout' \
   '  - link the meeting command under ~/.local/bin' \
-  '  - configure the microphone, AssemblyAI Keychain key, local data, and the $meeting skill' \
+  '  - configure the microphone, AssemblyAI .env key, local data, and the $meeting skill' \
   '' \
   'Transcription uploads recordings to AssemblyAI and requires a paid AssemblyAI' \
   'account; the remote copies are deleted after local files are saved.' \
-  'Recording always stays local. Credentials are stored in macOS Keychain,' \
-  'never in this repository.'
+  'Recording always stays local. The credential is stored only in this checkout' \
+  'root .env file, which remains untracked and private (mode 0600).'
 
 if [[ "$assume_yes" -eq 0 ]]; then
   [[ -t 0 ]] || { printf 'Error: rerun interactively or pass --yes\n' >&2; exit 2; }

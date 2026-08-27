@@ -2,6 +2,9 @@
 set -euo pipefail
 umask 077
 
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
 script_source="${BASH_SOURCE[0]}"
 while [[ -L "$script_source" ]]; do
   script_dir="$(cd "$(dirname "$script_source")" && pwd)"
@@ -173,8 +176,7 @@ run_command+=("$input" "$output_root")
 
 # The credential reaches only the provider run; every later child is spawned
 # without it.
-assemblyai_override="${ASSEMBLYAI_API_KEY:-}"
-unset ASSEMBLYAI_API_KEY
+assemblyai_override="${meeting_inherited_assemblyai_key:-}"
 
 set +e
 if [[ -n "$assemblyai_override" ]]; then

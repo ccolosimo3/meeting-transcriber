@@ -2,6 +2,9 @@
 set -euo pipefail
 umask 077
 
+meeting_entry_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
 script_source="${BASH_SOURCE[0]}"
 while [[ -L "$script_source" ]]; do
   script_dir="$(cd "$(dirname "$script_source")" && pwd)"
@@ -64,19 +67,19 @@ fi
 
 # Contain the credential exactly like transcription: read it once, remove it
 # from the environment, and pass it only to the adapter child.
-assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
-unset ASSEMBLYAI_API_KEY
-if [[ -z "$assemblyai_key" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
-  keychain_account="${USER:-$(id -un)}"
-  assemblyai_key="$(security find-generic-password \
-    -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w 2>/dev/null)" || assemblyai_key=""
-fi
-if [[ -z "$assemblyai_key" ]]; then
+if ! meeting_load_assemblyai_key; then
   ui_heading 'Setup problem'
-  ui_row 'Problem' 'No AssemblyAI API key is configured (Keychain item meeting-transcriber-assemblyai-key)'
-  ui_row 'Fix' 'meeting setup'
+  if [[ -n "$meeting_assemblyai_key_error" ]]; then
+    ui_row 'Problem' "$meeting_assemblyai_key_error"
+    ui_row 'Fix' 'Repair the .env file manually, then run meeting doctor'
+  else
+    ui_row 'Problem' "No AssemblyAI API key is configured at $(meeting_env_file)"
+    ui_row 'Fix' 'meeting setup'
+  fi
   exit 2
 fi
+assemblyai_key="$meeting_assemblyai_key"
+meeting_assemblyai_key=""
 
 set +e
 ASSEMBLYAI_API_KEY="$assemblyai_key" "$python_bin" \

@@ -813,18 +813,14 @@ class AssemblyAIAdapterTests(unittest.TestCase):
                     "timestamps": {"created_at": "2026-08-26T10:00:00Z"}
                 },
             )
-            stderr = io.StringIO()
-            with running_server({"delete_statuses": [404]}) as (_, base_url):
-                adapter = self._cleanup_adapter(json_path, base_url, stderr)
-                with redirect_stdout(io.StringIO()) as stdout:
-                    status = adapter.cleanup(json_path)
-            self.assertEqual(status, 1)
-            self.assertEqual(stdout.getvalue(), "")
-            receipt = json.loads((run_dir / ".assemblyai.json").read_text(encoding="utf-8"))
-            self.assertFalse(receipt["deletion"]["confirmed"])
-            self.assertIn("404", receipt["deletion"]["last_error"])
-            self.assertIn("job-123", stderr.getvalue())
-            self.assertIn(assemblyai.SUPPORT_ACTION, stderr.getvalue())
+            receipt_before = file_sha(run_dir / ".assemblyai.json")
+            with running_server({"delete_statuses": [404]}) as (server, _):
+                with self.assertRaisesRegex(
+                    assemblyai.CleanupTargetError, "timestamps are incomplete"
+                ):
+                    assemblyai.resolve_cleanup_target(json_path)
+                self.assertEqual(server.requests, [])
+            self.assertEqual(file_sha(run_dir / ".assemblyai.json"), receipt_before)
 
     def test_cleanup_already_clean_is_idempotent_without_requests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -910,6 +906,47 @@ class AssemblyAIAdapterTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(assemblyai.CleanupTargetError, "transcript ID"):
                 assemblyai.resolve_cleanup_target(no_id / "transcript.json")
+
+            crafted = root / "crafted" / "transcripts" / "r"
+            crafted_json = write_published_run(
+                crafted,
+                deletion={"confirmed": False},
+                receipt_overrides={"provider": "other-provider"},
+            )
+            crafted_receipt_sha = file_sha(crafted / ".assemblyai.json")
+            with self.assertRaisesRegex(assemblyai.CleanupTargetError, "provider"):
+                assemblyai.resolve_cleanup_target(crafted_json)
+            self.assertEqual(file_sha(crafted / ".assemblyai.json"), crafted_receipt_sha)
+
+            crafted_id = root / "crafted-id" / "transcripts" / "r"
+            crafted_id_json = write_published_run(
+                crafted_id,
+                deletion={"confirmed": False},
+                receipt_overrides={"transcript_id": "../upload"},
+            )
+            with self.assertRaisesRegex(assemblyai.CleanupTargetError, "transcript ID"):
+                assemblyai.resolve_cleanup_target(crafted_id_json)
+
+            extra = root / "extra" / "transcripts" / "r"
+            extra_json = write_published_run(extra, deletion={"confirmed": False})
+            (extra / "crafted.txt").write_text("unexpected", encoding="utf-8")
+            _, _, extra_id = assemblyai.resolve_cleanup_target(extra_json)
+            self.assertEqual(extra_id, "job-123")
+
+            linked = root / "linked-transcript.json"
+            linked.symlink_to(crafted_json)
+            with self.assertRaises(assemblyai.CleanupTargetError):
+                assemblyai.resolve_cleanup_target(linked)
+
+            receipt_link_run = root / "receipt-link" / "transcripts" / "r"
+            receipt_link_json = write_published_run(
+                receipt_link_run, deletion={"confirmed": False}
+            )
+            real_receipt = root / "real-receipt.json"
+            (receipt_link_run / ".assemblyai.json").replace(real_receipt)
+            (receipt_link_run / ".assemblyai.json").symlink_to(real_receipt)
+            with self.assertRaises(assemblyai.CleanupTargetError):
+                assemblyai.resolve_cleanup_target(receipt_link_json)
 
 
 if __name__ == "__main__":
