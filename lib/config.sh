@@ -2,6 +2,78 @@
 
 _meeting_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Capture an inherited one-command override before this shell launches any
+# helper. The captured value is deliberately not exported.
+meeting_inherited_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
+
+meeting_env_file() {
+  printf '%s/.env\n' "$(cd "${_meeting_lib_dir}/.." && pwd)"
+}
+
+# Load the single app-owned assignment as data. Returns 0 when a key is ready,
+# 1 when the file is absent, and 2 when it is unsafe or malformed.
+meeting_load_assemblyai_key() {
+  local env_file content byte_count expected_count mode
+  # shellcheck disable=SC2034 # Outputs are consumed by scripts that source this file.
+  meeting_assemblyai_key=""
+  # shellcheck disable=SC2034 # Outputs are consumed by scripts that source this file.
+  meeting_assemblyai_key_error=""
+  if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
+    meeting_assemblyai_key="$meeting_inherited_assemblyai_key"
+    return 0
+  fi
+  env_file="$(meeting_env_file)"
+  if [[ ! -e "$env_file" && ! -L "$env_file" ]]; then
+    return 1
+  fi
+  if [[ ! -f "$env_file" || -L "$env_file" ]]; then
+    # shellcheck disable=SC2034
+    meeting_assemblyai_key_error="${env_file} must be a regular non-symlink file"
+    return 2
+  fi
+  mode="$(stat -f '%Lp' "$env_file" 2>/dev/null || true)"
+  if [[ "$mode" != "600" ]]; then
+    # shellcheck disable=SC2034
+    meeting_assemblyai_key_error="${env_file} must have mode 0600 (found ${mode:-unknown})"
+    return 2
+  fi
+  content="$(< "$env_file")"
+  byte_count="$(LC_ALL=C wc -c < "$env_file" | tr -d ' ')"
+  expected_count=$(( ${#content} + 1 ))
+  if [[ "$byte_count" -ne "$expected_count" \
+    || "$content" != ASSEMBLYAI_API_KEY=* \
+    || "$content" == *$'\n'* \
+    || -z "${content#ASSEMBLYAI_API_KEY=}" ]]; then
+    # shellcheck disable=SC2034
+    meeting_assemblyai_key_error="${env_file} must contain exactly one non-empty ASSEMBLYAI_API_KEY=<value> assignment"
+    return 2
+  fi
+  # shellcheck disable=SC2034
+  meeting_assemblyai_key="${content#ASSEMBLYAI_API_KEY=}"
+}
+
+meeting_store_assemblyai_key() {
+  local key="$1"
+  local env_file temporary inherited_key
+  [[ -n "$key" && "$key" != *$'\n'* ]] || return 2
+  env_file="$(meeting_env_file)"
+  if [[ -e "$env_file" || -L "$env_file" ]]; then
+    inherited_key="$meeting_inherited_assemblyai_key"
+    meeting_inherited_assemblyai_key=""
+    if ! meeting_load_assemblyai_key; then
+      meeting_inherited_assemblyai_key="$inherited_key"
+      return 2
+    fi
+    meeting_inherited_assemblyai_key="$inherited_key"
+  fi
+  temporary="$(mktemp "${env_file}.XXXXXX")"
+  chmod 600 "$temporary"
+  printf 'ASSEMBLYAI_API_KEY=%s\n' "$key" > "$temporary"
+  mv "$temporary" "$env_file"
+  chmod 600 "$env_file"
+}
+
 meeting_data_root() {
   printf '%s\n' "${MEETING_DATA_DIR:-${HOME}/Transcriptions}"
 }

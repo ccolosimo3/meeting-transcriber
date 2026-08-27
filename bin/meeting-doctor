@@ -9,6 +9,8 @@ while [[ -L "$script_source" ]]; do
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
 source "${utility_root}/lib/config.sh"
+assemblyai_override_present="${MEETING_TRANSCRIBER_KEY_OVERRIDE_PRESENT:-0}"
+unset MEETING_TRANSCRIBER_KEY_OVERRIDE_PRESENT
 data_root="$(meeting_data_root)"
 configured_device="$(meeting_config_get recording_device 0)"
 recording_failures=0
@@ -129,19 +131,23 @@ else
   bad "Python environment is incomplete; run uv sync --frozen --no-dev in ${utility_root}"
 fi
 
-keychain_account="${USER:-$(id -un)}"
 assemblyai_available=0
-if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then
-  assemblyai_available=1
-elif [[ "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]] \
-  && security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
+if [[ "$assemblyai_override_present" == "1" ]] || meeting_load_assemblyai_key; then
   assemblyai_available=1
 fi
 if [[ "$assemblyai_available" -eq 1 ]]; then
-  ok 'AssemblyAI API key is available'
+  if [[ -n "$meeting_inherited_assemblyai_key" || "$assemblyai_override_present" == "1" ]]; then
+    ok 'AssemblyAI API key is available from the one-command environment override'
+  else
+    ok "AssemblyAI API key is available in $(meeting_env_file)"
+  fi
+elif [[ -n "$meeting_assemblyai_key_error" ]]; then
+  bad "$meeting_assemblyai_key_error"
 else
-  bad 'No AssemblyAI API key; transcription is not ready. Recording remains available; run meeting setup'
+  bad "No AssemblyAI API key at $(meeting_env_file); transcription is not ready. Recording remains available; run meeting setup"
 fi
+# shellcheck disable=SC2034 # Clear the sourced secret-bearing global.
+meeting_assemblyai_key=""
 
 printf '\n' >&2
 total_failures=$((recording_failures + transcription_failures + general_failures))

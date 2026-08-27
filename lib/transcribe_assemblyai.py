@@ -21,6 +21,7 @@ from transcript_bundle import (
     TimedWord,
     save_canonical,
 )
+from transcript_run import ManagedRunError, validate_managed_run
 
 
 API_BASE_URL = "https://api.assemblyai.com"
@@ -710,7 +711,7 @@ class AssemblyAIAdapter:
 
 def resolve_cleanup_target(canonical_path: Path) -> tuple[Path, dict[str, Any], str]:
     """Validate a cleanup target without mutating anything."""
-    if not canonical_path.is_file():
+    if not canonical_path.is_file() or canonical_path.is_symlink():
         raise CleanupTargetError(f"transcript JSON does not exist: {canonical_path}")
     run_dir = canonical_path.parent
     receipt_path = run_dir / RECEIPT_NAME
@@ -723,21 +724,14 @@ def resolve_cleanup_target(canonical_path: Path) -> tuple[Path, dict[str, Any], 
         raise CleanupTargetError(
             f"no AssemblyAI receipt was found next to: {canonical_path}"
         )
+    if canonical_path.name != "transcript.json":
+        raise CleanupTargetError("meeting cleanup requires the canonical transcript.json")
     try:
-        with receipt_path.open(encoding="utf-8") as stream:
-            receipt: object = json.load(stream)
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise CleanupTargetError(f"the AssemblyAI receipt is unreadable: {error}") from error
-    if not isinstance(receipt, dict):
-        raise CleanupTargetError("the AssemblyAI receipt is malformed")
-    if receipt.get("state") != "published":
-        raise CleanupTargetError(
-            "this run was never published locally; meeting cleanup only reconciles "
-            "published transcripts"
-        )
-    transcript_id = receipt.get("transcript_id")
-    if not isinstance(transcript_id, str) or not transcript_id:
-        raise CleanupTargetError("the AssemblyAI receipt has no transcript ID")
+        managed_json, receipt_path, receipt, transcript_id = validate_managed_run(run_dir)
+    except ManagedRunError as error:
+        raise CleanupTargetError(str(error)) from error
+    if managed_json != canonical_path:
+        raise CleanupTargetError("the cleanup target is not the managed canonical transcript")
     return receipt_path, receipt, transcript_id
 
 
@@ -875,7 +869,13 @@ def main() -> int:
         if args.input or args.output_dir or args.output_name or args.speakers:
             print("Error: --cleanup does not accept other arguments", file=sys.stderr)
             return 2
-        canonical_path = args.cleanup.expanduser().resolve()
+        # Reject a symlink at the caller-supplied final component before
+        # canonicalizing parent-directory aliases such as macOS /var.
+        lexical_path = args.cleanup.expanduser().absolute()
+        if lexical_path.is_symlink():
+            print("Error: cleanup transcript must be a regular non-symlink file", file=sys.stderr)
+            return 2
+        canonical_path = lexical_path.resolve()
         try:
             receipt_path, receipt, transcript_id = resolve_cleanup_target(canonical_path)
         except CleanupTargetError as error:

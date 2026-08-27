@@ -173,8 +173,7 @@ run_command+=("$input" "$output_root")
 
 # The credential reaches only the provider run; every later child is spawned
 # without it.
-assemblyai_override="${ASSEMBLYAI_API_KEY:-}"
-unset ASSEMBLYAI_API_KEY
+assemblyai_override="${meeting_inherited_assemblyai_key:-}"
 
 set +e
 if [[ -n "$assemblyai_override" ]]; then

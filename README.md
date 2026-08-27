@@ -11,8 +11,8 @@ and one complete transcription command.
 
 ## Platform support
 
-macOS only. The app relies on FFmpeg AVFoundation recording, Homebrew, macOS
-Keychain, notifications, and Finder. Transcription requires an internet
+macOS only. The app relies on FFmpeg AVFoundation recording, Homebrew,
+notifications, and Finder. Transcription requires an internet
 connection, an AssemblyAI API key, and a paid AssemblyAI account.
 
 ## Quick start
@@ -27,7 +27,7 @@ meeting
 The installer explains its changes before running. It installs Homebrew `uv`
 and `ffmpeg@7`, creates a small locked Python environment
 (`uv sync --frozen --no-dev`), links the `meeting` command under
-`~/.local/bin`, and walks through microphone, AssemblyAI Keychain key, and
+`~/.local/bin`, and walks through microphone, AssemblyAI API key, and
 `$meeting` skill setup. If `~/.local/bin` is not on `PATH`, setup stops with
 the exact shell-profile line required.
 
@@ -98,10 +98,13 @@ Run `meeting help` or `meeting <command> --help` for details.
   private receipt. An unconfirmed deletion is reported prominently with a
   single `meeting cleanup` recovery command; the local transcript remains
   usable either way.
-- The AssemblyAI API key is stored in macOS Keychain under service
-  `meeting-transcriber-assemblyai-key` and reaches only the provider request —
-  never renderers, notifications, command lines, or saved files. A one-run
-  `ASSEMBLYAI_API_KEY` environment override is also supported.
+- The AssemblyAI API key is stored only in the checkout-root `.env`, as exactly
+  one `ASSEMBLYAI_API_KEY=<value>` assignment. The app requires this untracked
+  file to be a regular non-symlink file with mode `0600`, parses it as data, and
+  passes the key only to the AssemblyAI adapter — never recorders, renderers,
+  notifications, openers, command lines, transcripts, or receipts. A one-command
+  process-level `ASSEMBLYAI_API_KEY` override takes precedence without changing
+  `.env`.
 - Giving a transcript to an agent is a separate, deliberate disclosure governed
   by that workspace's data controls.
 - Record only with participant consent. Recordings and transcripts are retained
@@ -175,6 +178,11 @@ meeting doctor
 
 It reports separate Recording and Transcription readiness. A missing AssemblyAI
 key blocks transcription but recording remains available.
+
+If upgrading from a version that stored the key in macOS Keychain, run
+`meeting setup` to create the checkout-root `.env`. The app does not read,
+migrate, change, or delete the old Keychain item. You may remove that item
+manually with Keychain Access after confirming transcription readiness.
 
 Known limitations:
 

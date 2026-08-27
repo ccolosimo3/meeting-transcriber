@@ -133,6 +133,8 @@ class TranscribeOrchestrationTests(unittest.TestCase):
         write_executable(
             self.lib_dir / "config.sh",
             r"""#!/usr/bin/env bash
+meeting_inherited_assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
 meeting_data_root() { printf '%s\n' "$MEETING_DATA_DIR"; }
 meeting_python_bin() { printf '%s\n' "$STUB_PYTHON_BIN"; }
 meeting_latest_recording() {
@@ -596,6 +598,7 @@ class DiscoveryTests(unittest.TestCase):
                 "created_at": "2026-08-26T10:00:00Z",
                 "submitted_at": "2026-08-26T10:01:00Z",
                 "completed_at": "2026-08-26T10:02:00Z",
+                "published_at": "2026-08-26T10:02:01Z",
             },
         }
         if deletion == "confirmed":
@@ -952,7 +955,6 @@ class CleanupCommandTests(unittest.TestCase):
             result = self._run_cleanup(
                 base_url,
                 ASSEMBLYAI_API_KEY="",
-                MEETING_TRANSCRIBER_DISABLE_KEYCHAIN="1",
             )
             self.assertEqual(server.requests, [])
 
@@ -960,6 +962,19 @@ class CleanupCommandTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertIn("meeting setup", result.stderr)
         self.assertEqual(file_sha(self.pending_run / ".assemblyai.json"), receipt_sha)
+
+    def test_crafted_receipt_stops_before_any_request_or_mutation(self) -> None:
+        receipt_path = self.pending_run / ".assemblyai.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["provider"] = "crafted-provider"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        receipt_sha = file_sha(receipt_path)
+        with running_server({}) as (server, base_url):
+            result = self._run_cleanup(base_url, str(self.pending_json))
+            self.assertEqual(server.requests, [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("provider", result.stderr)
+        self.assertEqual(file_sha(receipt_path), receipt_sha)
 
 
 class MenuRecorderResultTests(unittest.TestCase):
@@ -1010,6 +1025,7 @@ esac
                 "STUB_RECORD_MODE": mode,
                 "STUB_RECORDING_PATH": str(self.recording_path),
                 "STUB_MENU_TRANSCRIBE_ARGV": str(self.transcribe_log),
+                "ASSEMBLYAI_API_KEY": "menu-key-sentinel",
             }
         )
         return run_pty(
@@ -1027,6 +1043,39 @@ esac
             if item
         ]
         self.assertEqual(arguments, [str(self.recording_path)])
+
+    def test_menu_keeps_override_private_until_transcription(self) -> None:
+        recorder_key_log = self.root / "recorder-key"
+        transcriber_key_log = self.root / "transcriber-key"
+        write_executable(
+            self.bin_dir / "record-meeting",
+            r'''#!/usr/bin/env bash
+[[ -z "${ASSEMBLYAI_API_KEY:-}" ]] || printf 'leaked\n' > "$STUB_RECORDER_KEY_LOG"
+printf '{"recording":"%s","outcome":"stopped"}\n' "$STUB_RECORDING_PATH" > "$MEETING_TRANSCRIBER_RECORD_RESULT_FILE"
+''',
+        )
+        write_executable(
+            self.bin_dir / "meeting-transcribe",
+            r'''#!/usr/bin/env bash
+[[ "${ASSEMBLYAI_API_KEY:-}" == "menu-key-sentinel" ]] && printf 'received\n' > "$STUB_TRANSCRIBER_KEY_LOG"
+''',
+        )
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ASSEMBLYAI_API_KEY": "menu-key-sentinel",
+                "STUB_RECORDING_PATH": str(self.recording_path),
+                "STUB_RECORDER_KEY_LOG": str(recorder_key_log),
+                "STUB_TRANSCRIBER_KEY_LOG": str(transcriber_key_log),
+            }
+        )
+        returncode, stdout, stderr = run_pty(
+            ["/bin/bash", str(self.bin_dir / "meeting")], b"1\n\ny\n", environment
+        )
+        self.assertEqual(returncode, 0, stderr)
+        self.assertFalse(recorder_key_log.exists())
+        self.assertEqual(transcriber_key_log.read_text().strip(), "received")
+        self.assertNotIn("menu-key-sentinel", stdout + stderr)
 
     def test_interrupted_capture_reports_the_saved_path_without_upload(self) -> None:
         returncode, _, stderr = self._run_menu("interrupted", b"1\n\n7\n")

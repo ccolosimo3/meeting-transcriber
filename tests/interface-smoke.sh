@@ -40,7 +40,7 @@ export STUB_OPEN_ARGV="${artifact_root}/open-argv.txt"
 # Keep Homebrew's read-only discovery out of the isolated test home.
 export HOMEBREW_CACHE="${real_home}/Library/Caches/Homebrew"
 
-MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 "${project_root}/bin/meeting" setup --device 0 \
+"${project_root}/bin/meeting" setup --device 0 \
   > "${artifact_root}/setup.txt" 2>&1 || true
 grep -Fq 'Configuration:' "${artifact_root}/setup.txt"
 [[ "$(command -v meeting)" == "${test_home}/.local/bin/meeting" ]]
@@ -51,23 +51,8 @@ if grep -Eq 'Hugging Face|hf-token|MLX|mlx|WhisperX|whisperx|pyannote' "${artifa
 fi
 touch -t 202608252000 "${preexisting_bundle}/recording.wav"
 
-# A stubbed Keychain hit must be reported without displaying the key.
-security_stub="${test_home}/.local/bin/security"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'if [[ "$*" == *"meeting-transcriber-assemblyai-key"* ]]; then printf "configured-test-key\n"; exit 0; fi' \
-  'exit 44' > "$security_stub"
-chmod +x "$security_stub"
-"${project_root}/bin/meeting" setup --device 0 \
-  > "${artifact_root}/setup-key-present.txt" 2>&1 || true
-grep -Fq 'AssemblyAI API key: already configured in Keychain' \
-  "${artifact_root}/setup-key-present.txt"
-if grep -Fq 'configured-test-key' "${artifact_root}/setup-key-present.txt"; then
-  fail 'setup displayed the AssemblyAI key'
-fi
-
 # Doctor: recording readiness passes while a missing key blocks transcription.
-if env -u ASSEMBLYAI_API_KEY MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 meeting doctor \
+if env -u ASSEMBLYAI_API_KEY meeting doctor \
   > "${artifact_root}/doctor-missing-key.txt" 2>&1; then
   fail 'doctor passed without an AssemblyAI key'
 fi
@@ -78,7 +63,7 @@ grep -Fq 'Transcription is not ready.' "${artifact_root}/doctor-missing-key.txt"
 if grep -Eq 'Hugging Face|MLX|PyAV|TorchCodec|WhisperX|pyannote' "${artifact_root}/doctor-missing-key.txt"; then
   fail 'doctor still checks the removed local transcription stack'
 fi
-ASSEMBLYAI_API_KEY=environment-test-key MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
+ASSEMBLYAI_API_KEY=environment-test-key \
   meeting doctor > "${artifact_root}/doctor-with-key.txt" 2>&1 \
   || fail 'doctor failed with an AssemblyAI key present'
 grep -Fq 'AssemblyAI API key is available' "${artifact_root}/doctor-with-key.txt"
@@ -91,7 +76,6 @@ if HOME="$conflict_home" \
   PATH="${conflict_home}/.local/bin:${original_path}" \
   MEETING_DATA_DIR="${artifact_root}/conflict-data" \
   MEETING_CONFIG_DIR="${artifact_root}/conflict-config" \
-  MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
   "${project_root}/bin/meeting" setup --device 0 \
   > "${artifact_root}/conflict-setup.txt" 2>&1; then
   fail 'setup accepted a meeting link to another installation'
@@ -151,7 +135,7 @@ fi
 # Missing credential stops before preflight or the provider stub.
 export MEETING_TRANSCRIBER_RUN_ID=20260826-121500
 export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-missing-key-argv.txt"
-if env -u ASSEMBLYAI_API_KEY MEETING_TRANSCRIBER_DISABLE_KEYCHAIN=1 \
+if env -u ASSEMBLYAI_API_KEY \
   meeting transcribe "$latest_recording" \
   > "${artifact_root}/missing-key.txt" 2>&1; then
   fail 'transcribe accepted a missing AssemblyAI key'
