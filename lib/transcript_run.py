@@ -62,7 +62,7 @@ def validate_managed_run(run_dir: Path) -> tuple[Path, Path, dict[str, object], 
         inventory = {path.name for path in run_dir.iterdir()}
     except OSError as error:
         raise ManagedRunError(f"the transcript run is unreadable: {error}") from error
-    if inventory != MANAGED_INVENTORY:
+    if not MANAGED_INVENTORY.issubset(inventory):
         raise ManagedRunError("the transcript run does not have the complete published inventory")
     json_path = run_dir / "transcript.json"
     markdown_path = run_dir / "transcript.md"

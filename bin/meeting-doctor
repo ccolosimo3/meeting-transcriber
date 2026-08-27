@@ -17,7 +17,7 @@ assemblyai_override_fd="${MEETING_TRANSCRIBER_KEY_OVERRIDE_FD:-}"
 unset MEETING_TRANSCRIBER_KEY_OVERRIDE_FD
 if [[ "$assemblyai_override_fd" == "9" ]]; then
   assemblyai_override_token=""
-  IFS= read -r assemblyai_override_token <&9 || true
+  IFS= read -r assemblyai_override_token 2>/dev/null <&9 || true
   exec 9<&-
   if [[ "$assemblyai_override_token" == "meeting-override-present" ]]; then
     assemblyai_override_present=1

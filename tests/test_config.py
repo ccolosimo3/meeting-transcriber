@@ -165,7 +165,7 @@ class CredentialFileTests(unittest.TestCase):
         self.assertFalse(leak_marker.exists())
         self.assert_secret_absent(result)
 
-    def test_doctor_does_not_trust_an_ambient_override_flag(self) -> None:
+    def test_doctor_requires_the_expected_token_on_the_override_fd(self) -> None:
         app_root = self.root / "doctor-app"
         (app_root / "bin").mkdir(parents=True)
         (app_root / "lib").mkdir()
@@ -180,18 +180,41 @@ class CredentialFileTests(unittest.TestCase):
                 "HOME": str(self.root / "doctor-home"),
                 "MEETING_DATA_DIR": str(self.root / "doctor-data"),
                 "MEETING_CONFIG_DIR": str(self.root / "doctor-config"),
-                "MEETING_TRANSCRIBER_KEY_OVERRIDE_PRESENT": "1",
+                "MEETING_TRANSCRIBER_KEY_OVERRIDE_FD": "9",
             }
         )
-        result = subprocess.run(
+        closed_fd_result = subprocess.run(
             ["/bin/bash", str(app_root / "bin" / "meeting-doctor")],
             text=True,
             capture_output=True,
             env=environment,
             check=False,
         )
-        self.assertIn("No AssemblyAI API key", result.stderr)
-        self.assertNotIn("available from the one-command environment override", result.stderr)
+        self.assertIn("No AssemblyAI API key", closed_fd_result.stderr)
+        self.assertNotIn("Bad file descriptor", closed_fd_result.stderr)
+        self.assertNotIn(
+            "available from the one-command environment override",
+            closed_fd_result.stderr,
+        )
+
+        wrong_token_result = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                'exec 9<<< wrong-token; exec "$1"',
+                "test",
+                str(app_root / "bin" / "meeting-doctor"),
+            ],
+            text=True,
+            capture_output=True,
+            env=environment,
+            check=False,
+        )
+        self.assertIn("No AssemblyAI API key", wrong_token_result.stderr)
+        self.assertNotIn(
+            "available from the one-command environment override",
+            wrong_token_result.stderr,
+        )
 
 
 if __name__ == "__main__":

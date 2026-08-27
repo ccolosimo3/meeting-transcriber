@@ -930,8 +930,8 @@ class AssemblyAIAdapterTests(unittest.TestCase):
             extra = root / "extra" / "transcripts" / "r"
             extra_json = write_published_run(extra, deletion={"confirmed": False})
             (extra / "crafted.txt").write_text("unexpected", encoding="utf-8")
-            with self.assertRaisesRegex(assemblyai.CleanupTargetError, "inventory"):
-                assemblyai.resolve_cleanup_target(extra_json)
+            _, _, extra_id = assemblyai.resolve_cleanup_target(extra_json)
+            self.assertEqual(extra_id, "job-123")
 
             linked = root / "linked-transcript.json"
             linked.symlink_to(crafted_json)

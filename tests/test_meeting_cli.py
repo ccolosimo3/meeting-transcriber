@@ -1006,17 +1006,16 @@ class CleanupCommandTests(unittest.TestCase):
         self.assertIn("transcript ID", result.stderr)
         self.assertEqual(file_sha(receipt_path), receipt_sha)
 
-    def test_extra_file_is_discovered_but_refused_before_cleanup_request(self) -> None:
+    def test_extra_file_does_not_block_cleanup_of_a_valid_managed_run(self) -> None:
         receipt_path = self.pending_run / ".assemblyai.json"
-        receipt_sha = file_sha(receipt_path)
         (self.pending_run / ".DS_Store").write_bytes(b"finder metadata")
-        with running_server({}) as (server, base_url):
+        with running_server({"delete_statuses": [200]}) as (server, base_url):
             result = self._run_cleanup(base_url)
-            self.assertEqual(server.requests, [])
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("inventory", result.stderr)
+            self.assertEqual([request["method"] for request in server.requests], ["DELETE"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertTrue(receipt["deletion"]["confirmed"])
         self.assertNotIn("No transcript requires cleanup", result.stderr)
-        self.assertEqual(file_sha(receipt_path), receipt_sha)
 
 
 class MenuRecorderResultTests(unittest.TestCase):
