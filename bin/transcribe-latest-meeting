@@ -17,10 +17,11 @@ speakers=""
 backend="mlx"
 model="turbo"
 hotwords=""
+local_provider=0
 
 usage() {
   printf '%s\n' \
-    'Usage: transcribe-latest-meeting [--speakers N] [--backend ENGINE]' \
+    'Usage: transcribe-latest-meeting [--local] [--speakers N] [--backend ENGINE]' \
     '                                 [--model MODEL]' \
     '                                 [--hotwords TEXT] [--no-diarize]' \
     '                                 [--meetings-root DIR]' \
@@ -42,20 +43,28 @@ while [[ $# -gt 0 ]]; do
     --model)
       [[ $# -ge 2 ]] || fail '--model requires a value'
       model="$2"
+      local_provider=1
       shift 2
       ;;
     --backend)
       [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
       backend="$2"
+      local_provider=1
       shift 2
       ;;
     --hotwords)
       [[ $# -ge 2 ]] || fail '--hotwords requires a value'
       hotwords="$2"
+      local_provider=1
       shift 2
       ;;
     --no-diarize)
       diarize=0
+      local_provider=1
+      shift
+      ;;
+    --local)
+      local_provider=1
       shift
       ;;
     --meetings-root|--recordings-root)
@@ -84,19 +93,26 @@ done
 latest_file="$(meeting_latest_recording "$meetings_root" || true)"
 [[ -n "$latest_file" ]] || fail "no completed meeting recording found in: $meetings_root"
 
-arguments=(--backend "$backend" --model "$model")
-if [[ -n "$hotwords" ]]; then
-  arguments+=(--hotwords "$hotwords")
-fi
-if [[ "$diarize" -eq 1 ]]; then
-  arguments+=(--diarize)
-  if [[ -n "$speakers" ]]; then
-    arguments+=(--speakers "$speakers")
+arguments=()
+if [[ "$local_provider" -eq 1 ]]; then
+  arguments=(--local --backend "$backend" --model "$model")
+  if [[ -n "$hotwords" ]]; then
+    arguments+=(--hotwords "$hotwords")
   fi
+  if [[ "$diarize" -eq 1 ]]; then
+    arguments+=(--diarize)
+  fi
+fi
+if [[ -n "$speakers" ]]; then
+  arguments+=(--speakers "$speakers")
 fi
 
 printf 'Latest recording: %s\n' "$latest_file"
 if [[ -z "$output_root" ]]; then
   output_root="$(dirname "$latest_file")/transcripts"
 fi
-exec "${utility_root}/bin/transcribe-meeting" "${arguments[@]}" "$latest_file" "$output_root"
+if [[ "${#arguments[@]}" -gt 0 ]]; then
+  exec "${utility_root}/bin/transcribe-meeting" "${arguments[@]}" "$latest_file" "$output_root"
+else
+  exec "${utility_root}/bin/transcribe-meeting" "$latest_file" "$output_root"
+fi

@@ -27,6 +27,8 @@ class MeetingProcessTests(unittest.TestCase):
         self.argv_log = self.root / "transcribe-argv"
         self.prepare_log = self.root / "prepare-argv"
         self.notify_log = self.root / "notify"
+        self.transcribe_assemblyai_env = self.root / "transcribe-assemblyai-env"
+        self.prepare_assemblyai_env = self.root / "prepare-assemblyai-env"
 
         self._write_executable(
             self.lib_dir / "config.sh",
@@ -41,7 +43,12 @@ meeting_notify() { printf '%s\n' "$1" >> "$STUB_NOTIFY_LOG"; }
             r"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\0' "$@" > "$STUB_TRANSCRIBE_ARGV"
+if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then printf 'present\n' > "$STUB_TRANSCRIBE_ASSEMBLYAI_ENV"; else printf 'absent\n' > "$STUB_TRANSCRIBE_ASSEMBLYAI_ENV"; fi
 mkdir -p "$STUB_OUTPUT_DIR"
+if [[ "${STUB_TRANSCRIBE_FAIL:-0}" -eq 1 ]]; then
+  printf 'provider failed\n' >&2
+  exit 7
+fi
 if [[ "${STUB_CANONICAL_JSON:-1}" -eq 1 ]]; then
   printf '{"segments":[]}' > "$STUB_OUTPUT_DIR/transcript.json"
 fi
@@ -54,6 +61,7 @@ printf '%s\n' "$STUB_OUTPUT_DIR" > "$MEETING_TRANSCRIBER_RESULT_FILE"
             r"""#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
+if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then printf 'present\n' > "$STUB_PREPARE_ASSEMBLYAI_ENV"; else printf 'absent\n' > "$STUB_PREPARE_ASSEMBLYAI_ENV"; fi
 """,
         )
         self._write_executable(
@@ -82,6 +90,8 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
                 "STUB_OUTPUT_DIR": str(self.output_dir),
                 "STUB_PREPARE_ARGV": str(self.prepare_log),
                 "STUB_TRANSCRIBE_ARGV": str(self.argv_log),
+                "STUB_TRANSCRIBE_ASSEMBLYAI_ENV": str(self.transcribe_assemblyai_env),
+                "STUB_PREPARE_ASSEMBLYAI_ENV": str(self.prepare_assemblyai_env),
             }
         )
         environment.update(overrides)
@@ -101,7 +111,12 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
         return [item.decode() for item in path.read_bytes().split(b"\0") if item]
 
     def test_bash_32_completes_with_empty_option_arrays_and_default_copy(self) -> None:
-        result = self._run("--skip-names", "--no-open", str(self.input_path))
+        result = self._run(
+            "--skip-names",
+            "--no-open",
+            str(self.input_path),
+            ASSEMBLYAI_API_KEY="managed-override-sentinel",
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._arguments(self.argv_log), [str(self.input_path)])
@@ -110,6 +125,15 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
             [str(self.output_dir / "transcript.json")],
         )
         self.assertIn("Done. Transcript bundle:", result.stdout)
+        self.assertIn("Provider: AssemblyAI", result.stdout)
+        self.assertEqual(
+            self.transcribe_assemblyai_env.read_text(encoding="utf-8").strip(),
+            "present",
+        )
+        self.assertEqual(
+            self.prepare_assemblyai_env.read_text(encoding="utf-8").strip(),
+            "absent",
+        )
         self.assertEqual(
             self.notify_log.read_text(encoding="utf-8").strip(),
             "Transcript ready: transcript-run",
@@ -140,10 +164,41 @@ printf '%s\0' "$@" > "$STUB_PREPARE_ARGV"
                 str(self.input_path),
             ],
         )
+        self.assertIn("Provider: local", result.stdout)
         self.assertEqual(
             self._arguments(self.prepare_log),
             ["--no-copy", str(self.output_dir / "transcript.json")],
         )
+
+    def test_explicit_local_routes_without_changing_provider_neutral_options(self) -> None:
+        result = self._run(
+            "--local",
+            "--speakers",
+            "2",
+            "--skip-names",
+            "--no-open",
+            str(self.input_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self._arguments(self.argv_log),
+            ["--local", "--speakers", "2", str(self.input_path)],
+        )
+        self.assertIn("Provider: local", result.stdout)
+
+    def test_provider_failure_stops_before_prepare_notify_and_done(self) -> None:
+        result = self._run(
+            "--skip-names",
+            "--no-open",
+            str(self.input_path),
+            STUB_TRANSCRIBE_FAIL="1",
+        )
+
+        self.assertEqual(result.returncode, 7)
+        self.assertFalse(self.prepare_log.exists())
+        self.assertFalse(self.notify_log.exists())
+        self.assertNotIn("Done. Transcript bundle:", result.stdout)
 
     def test_missing_canonical_json_stops_before_completion(self) -> None:
         result = self._run(

@@ -94,10 +94,30 @@ if [[ -n "$ffmpeg_prefix" ]]; then
 fi
 
 keychain_account="${USER:-$(id -un)}"
-if security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
-  ok 'Hugging Face token is available in macOS Keychain'
+assemblyai_available=0
+if [[ -n "${ASSEMBLYAI_API_KEY:-}" ]]; then
+  assemblyai_available=1
+elif [[ "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]] \
+  && security find-generic-password -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w >/dev/null 2>&1; then
+  assemblyai_available=1
+fi
+if [[ "$assemblyai_available" -eq 1 ]]; then
+  ok 'AssemblyAI API key is available'
 else
-  warn 'No Hugging Face token in Keychain; diarization will require setup or --no-diarize'
+  warn 'No AssemblyAI API key; run meeting setup or use meeting process --local'
+fi
+
+hf_available=0
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  hf_available=1
+elif [[ "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]] \
+  && security find-generic-password -a "$keychain_account" -s meeting-transcriber-hf-token -w >/dev/null 2>&1; then
+  hf_available=1
+fi
+if [[ "$hf_available" -eq 1 ]]; then
+  ok 'Hugging Face token is available'
+else
+  warn 'No Hugging Face token; local diarization requires setup or --no-diarize'
 fi
 
 if [[ -f "${HOME}/.codex/skills/meeting/SKILL.md" ]]; then

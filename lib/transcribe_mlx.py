@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
 import mlx_whisper
-from mlx_whisper.writers import format_timestamp
+
+from transcript_bundle import nonempty_segments, write_outputs
 
 
 MODEL_ALIASES = {
@@ -34,16 +34,7 @@ def parse_args() -> argparse.Namespace:
 
 def finalize_transcript(result: dict[str, Any]) -> dict[str, Any]:
     """Keep ASR phrase segments intact after speaker assignment."""
-    raw_segments = result.get("segments")
-    if not isinstance(raw_segments, list):
-        raise ValueError("MLX transcript has no segment list")
-    segments = [
-        segment
-        for segment in raw_segments
-        if isinstance(segment, dict) and str(segment.get("text", "")).strip()
-    ]
-    if not segments:
-        raise ValueError("MLX transcript has no nonempty segments")
+    segments = nonempty_segments(result)
     result["segments"] = segments
     result["text"] = "".join(str(segment["text"]) for segment in segments).strip()
     return result
@@ -67,52 +58,6 @@ def assign_speakers(
     # also retains word-level speaker metadata. The phrase boundary is the stable
     # rendering boundary; splitting on word labels creates noisy one-word turns.
     return finalize_transcript(assigned)
-
-
-def labeled_text(segment: dict[str, Any], *, subtitle: bool = False) -> str:
-    text = str(segment.get("text", "")).strip()
-    if subtitle:
-        text = text.replace("-->", "->")
-    speaker = str(segment.get("speaker", "")).strip()
-    return f"[{speaker}]: {text}" if speaker else text
-
-
-def write_outputs(
-    result: dict[str, Any], output_dir: Path, output_name: str
-) -> None:
-    """Write the established bundle without treating dots as suffixes."""
-    segments = result["segments"]
-    destinations = {
-        extension: output_dir / f"{output_name}.{extension}"
-        for extension in ("json", "txt", "srt", "vtt", "tsv")
-    }
-    destinations["json"].write_text(
-        json.dumps(result, ensure_ascii=False), encoding="utf-8"
-    )
-    destinations["txt"].write_text(
-        "".join(f"{labeled_text(segment)}\n" for segment in segments),
-        encoding="utf-8",
-    )
-
-    srt_lines: list[str] = []
-    vtt_lines = ["WEBVTT", ""]
-    tsv_lines = ["start\tend\ttext"]
-    for index, segment in enumerate(segments, start=1):
-        start = float(segment.get("start", 0))
-        end = float(segment.get("end", start))
-        text = labeled_text(segment, subtitle=True)
-        srt_start = format_timestamp(start, always_include_hours=True, decimal_marker=",")
-        srt_end = format_timestamp(end, always_include_hours=True, decimal_marker=",")
-        vtt_start = format_timestamp(start, always_include_hours=False, decimal_marker=".")
-        vtt_end = format_timestamp(end, always_include_hours=False, decimal_marker=".")
-        srt_lines.extend((str(index), f"{srt_start} --> {srt_end}", text, ""))
-        vtt_lines.extend((f"{vtt_start} --> {vtt_end}", text, ""))
-        plain_text = str(segment.get("text", "")).strip().replace("\t", " ")
-        tsv_lines.append(f"{round(1000 * start)}\t{round(1000 * end)}\t{plain_text}")
-
-    destinations["srt"].write_text("\n".join(srt_lines), encoding="utf-8")
-    destinations["vtt"].write_text("\n".join(vtt_lines), encoding="utf-8")
-    destinations["tsv"].write_text("\n".join(tsv_lines) + "\n", encoding="utf-8")
 
 
 def main() -> int:

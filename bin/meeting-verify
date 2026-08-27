@@ -14,8 +14,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     'Usage: meeting-verify baseline | smoke | diarization' \
     '' \
     '  baseline      Compatibility no-op; no baseline is required' \
-    '  smoke         Verify the local toolchain and transcription path' \
-    '  diarization   Verify real two-speaker diarization'
+    '  smoke         Verify only the local toolchain and transcription path' \
+    '  diarization   Verify only real local two-speaker diarization'
   exit 0
 fi
 

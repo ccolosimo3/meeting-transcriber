@@ -11,16 +11,25 @@ usable commands:
   render a two-line elapsed-time and rolling-peak display from FFmpeg `astats`
   metadata; the analysis filter passes the captured audio through unchanged.
 - `meeting-transcribe` creates a new dated output directory and selects the
-  transcription engine. Runs live under the source bundle's `transcripts/`
-  directory; explicit external audio is first copied into a new bundle. MLX
-  Whisper Turbo on the Apple GPU is the default; locked WhisperX Turbo with CPU
-  `int8` is the explicit fallback.
-- `lib/transcribe_mlx.py` is the narrow MLX adapter. It writes the same JSON,
-  text, subtitle, and table bundle as the CPU path and optionally applies local
-  pyannote diarization. Diarization labels MLX phrase segments by overlap
-  majority; word-level labels remain metadata and never create one-word turns.
-  Its writer preserves dotted source stems verbatim and includes phrase speaker
-  labels in TXT, SRT, and VTT while keeping TSV as plain timing/text data.
+  transcription provider. Runs live under the source bundle's `transcripts/`
+  directory; explicit external audio is first copied into a new bundle.
+  AssemblyAI is the default provider. `--local` selects the existing local
+  stack, where MLX is the normal engine and locked WhisperX CPU `int8` remains
+  the engine fallback. Legacy local-only flags imply `--local`; provider
+  failures never cross this boundary automatically.
+- `lib/transcribe_assemblyai.py` is the standard-library asynchronous REST
+  adapter. It streams upload bytes, submits exactly one Universal-3.5 Pro job,
+  polls with bounded transient retries, validates and converts utterances, and
+  reconciles remote deletion. It has no import-time dependency on MLX,
+  WhisperX, Torch, or pyannote.
+- `lib/transcribe_mlx.py` remains the narrow local MLX adapter and optionally
+  applies Community-1 diarization. It retains the established segment-text join
+  and phrase-majority speaker behavior.
+- `lib/transcript_bundle.py` is the provider-neutral canonical writer shared by
+  the AssemblyAI and MLX producers. It owns segment filtering and
+  dependency-free timestamp formatting while accepting an already canonical
+  top-level `text`; this preserves local output bytes and AssemblyAI's returned
+  top-level text.
 - `meeting-process` composes transcription, interactive speaker naming, HTML and
   Markdown rendering, browser opening, prompt copying, and notification.
 - `meeting-setup` owns user-local configuration, command linking, Keychain
@@ -52,9 +61,28 @@ qualification.
 `.venv`, model caches, recordings, transcripts, local configuration, or
 Keychain material.
 
-## Credential boundary
+## Provider lifecycle and credential boundary
 
-Diarization reads `HF_TOKEN` when explicitly inherited or retrieves the
+The managed path uses `https://api.assemblyai.com`, places the raw API key only
+in the adapter child's `Authorization` header, and pins
+`speech_models: ["universal-3-5-pro"]`. The wrapper retrieves
+`ASSEMBLYAI_API_KEY` only after provider selection or reads the
+`meeting-transcriber-assemblyai-key` Keychain item, unsets the inherited value,
+and does not expose it to local engines, renderers, or preparation children. The
+guided orchestrator scopes an environment override only to its managed
+transcription child before continuing downstream.
+
+Each managed run atomically persists mode-`0600`
+`transcript.assemblyai.json`. The receipt begins after upload, gains the known
+transcript ID immediately after submission, retains the terminal provider
+response, and records deletion only after a successful DELETE response. Unknown
+upload/submission outcomes retain explicit residual-risk states and are never
+retried. Every known-ID failure attempts bounded deletion. Successful deletion
+occurs only after the completed receipt and canonical outputs reload; an
+unconfirmed deletion preserves local evidence but prevents downstream success
+actions.
+
+The explicit local provider reads `HF_TOKEN` for diarization when inherited or retrieves the
 `meeting-transcriber-hf-token` item for the current account from macOS Keychain.
 The token is exported only to the transcription child environment. It is not
 passed through a command-line argument, printed, or written into an output
@@ -92,14 +120,24 @@ verified in the supported V0 environment before release.
 
 `bin/verify-install` retains the heavier synthetic-audio smoke and real
 diarization checks used to qualify dependency behavior. These checks may load
-models or perform transcription; they are not part of ordinary setup or command
-help.
+models or perform local transcription; they always pass `--local`, cannot invoke
+AssemblyAI, and are not part of ordinary setup or command help.
 
-For orchestration changes, select deterministic engine stubs through
-`MEETING_TRANSCRIBER_MLX_BIN` and `MEETING_TRANSCRIBER_WHISPERX_BIN`. Set
-`MEETING_NOTIFICATIONS=0` during automated verification. Confirm a child sees
-the inherited token when diarization is requested while neither argv nor output
-contains the credential.
+`tests/test_assemblyai_adapter.py` runs a standard-library loopback HTTP server
+that crosses the real request boundary for streamed upload framing, raw
+authorization, submit/poll/delete behavior, canonical publication, and lifecycle
+receipts without provider traffic. Narrow injected failures cover transport
+ambiguity and interruption. Shell coverage uses
+`MEETING_TRANSCRIBER_ASSEMBLYAI_BIN`, `MEETING_TRANSCRIBER_MLX_BIN`, and
+`MEETING_TRANSCRIBER_WHISPERX_BIN` to prove routing and credential containment.
+Set `MEETING_NOTIFICATIONS=0` during automated verification.
+
+After deterministic implementation and both review gates, the remaining Tier 4
+proof is exactly one separately approved, short production-path AssemblyAI job
+with a named consented/synthetic input and cost cap. It must confirm the reported
+model, complete rendering, unchanged source hash, credential-free receipt,
+confirmed DELETE, and follow-up provider deletion. Deterministic tests and
+`meeting doctor` never make a provider request.
 
 ## ASR model comparison
 
@@ -119,11 +157,12 @@ Review the generated `README.md`, first-run transcripts, and pairwise diffs.
 Timing alone does not select the winner: prefer the fastest model that preserves
 names, technical terms, meaning, and freedom from hallucinated speech.
 
-The August 2026 M5 comparison selected MLX Turbo as the normal default. Across
+The August 2026 M5 comparison selected MLX Turbo as the normal local engine. Across
 two runs of the fixed 114.5-second sample it averaged 6.96 seconds, produced
 byte-identical transcripts, and retained more of the quiet opening and final
 exchange than the CPU candidates. WhisperX CPU Turbo remains available as a
-manual fallback so an MLX failure is visible rather than silently retried.
+manual local-engine fallback so an MLX failure is visible rather than silently
+retried.
 
 ## Packaging
 

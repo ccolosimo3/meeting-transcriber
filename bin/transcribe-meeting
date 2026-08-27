@@ -17,10 +17,11 @@ model="turbo"
 hotwords=""
 diarize=0
 speakers=""
+local_provider=0
 
 usage() {
   printf '%s\n' \
-    'Usage: transcribe-meeting [--diarize] [--speakers N] [--backend ENGINE]' \
+    'Usage: transcribe-meeting [--local] [--diarize] [--speakers N] [--backend ENGINE]' \
     '                          [--model MODEL]' \
     '                          [--hotwords TEXT] INPUT OUTPUT_ROOT'
 }
@@ -44,17 +45,24 @@ while [[ $# -gt 0 ]]; do
     --model)
       [[ $# -ge 2 ]] || fail '--model requires a value'
       model="$2"
+      local_provider=1
       shift 2
       ;;
     --backend)
       [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
       backend="$2"
+      local_provider=1
       shift 2
       ;;
     --hotwords)
       [[ $# -ge 2 ]] || fail '--hotwords requires a value'
       hotwords="$2"
+      local_provider=1
       shift 2
+      ;;
+    --local)
+      local_provider=1
+      shift
       ;;
     -h|--help)
       usage
@@ -75,10 +83,18 @@ output_root="$2"
 
 [[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
 [[ -z "$speakers" || "$speakers" =~ ^[1-9][0-9]*$ ]] || fail '--speakers requires a positive integer'
-[[ -z "$speakers" || "$diarize" -eq 1 ]] || fail '--speakers may be used only with --diarize'
+[[ -z "$speakers" || "$local_provider" -eq 0 || "$diarize" -eq 1 ]] || fail '--speakers may be used only with --diarize for local transcription'
 [[ "$backend" == "mlx" || "$backend" == "whisperx" ]] || fail '--backend requires mlx or whisperx'
-diarization_token="${HF_TOKEN:-}"
-if [[ "$diarize" -eq 1 && -z "$diarization_token" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
+diarization_token=""
+assemblyai_key=""
+if [[ "$local_provider" -eq 1 ]]; then
+  diarization_token="${HF_TOKEN:-}"
+else
+  assemblyai_key="${ASSEMBLYAI_API_KEY:-}"
+fi
+unset HF_TOKEN
+unset ASSEMBLYAI_API_KEY
+if [[ "$local_provider" -eq 1 && "$diarize" -eq 1 && -z "$diarization_token" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
   keychain_account="${USER:-$(id -un)}"
   if ! diarization_token="$(security find-generic-password \
     -a "$keychain_account" -s meeting-transcriber-hf-token -w 2>/dev/null)"; then
@@ -86,9 +102,23 @@ if [[ "$diarize" -eq 1 && -z "$diarization_token" && "${MEETING_TRANSCRIBER_DISA
   fi
   [[ -n "$diarization_token" ]] || fail 'the meeting-transcriber-hf-token Keychain item is empty'
 fi
-[[ "$diarize" -eq 0 || -n "$diarization_token" ]] || fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
-unset HF_TOKEN
-if [[ "$backend" == "mlx" ]]; then
+[[ "$local_provider" -eq 0 || "$diarize" -eq 0 || -n "$diarization_token" ]] || fail 'diarization requires HF_TOKEN or the meeting-transcriber-hf-token Keychain item'
+if [[ "$local_provider" -eq 0 ]]; then
+  if [[ -z "$assemblyai_key" && "${MEETING_TRANSCRIBER_DISABLE_KEYCHAIN:-}" != "1" ]]; then
+    keychain_account="${USER:-$(id -un)}"
+    if ! assemblyai_key="$(security find-generic-password \
+      -a "$keychain_account" -s meeting-transcriber-assemblyai-key -w 2>/dev/null)"; then
+      fail 'AssemblyAI requires ASSEMBLYAI_API_KEY or the meeting-transcriber-assemblyai-key Keychain item; use --local for local transcription'
+    fi
+  fi
+  [[ -n "$assemblyai_key" ]] || fail 'AssemblyAI requires ASSEMBLYAI_API_KEY or the meeting-transcriber-assemblyai-key Keychain item; use --local for local transcription'
+  if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
+    [[ -x "$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" ]] || fail "AssemblyAI adapter executable not found: $MEETING_TRANSCRIBER_ASSEMBLYAI_BIN"
+  else
+    [[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
+    [[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] || fail 'AssemblyAI adapter is missing'
+  fi
+elif [[ "$backend" == "mlx" ]]; then
   if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
     [[ -x "$MEETING_TRANSCRIBER_MLX_BIN" ]] || fail "MLX adapter executable not found: $MEETING_TRANSCRIBER_MLX_BIN"
   else
@@ -102,6 +132,20 @@ fi
 
 ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" || fail 'Homebrew ffmpeg@7 is not installed'
 [[ -x "${ffmpeg_prefix}/bin/ffmpeg" ]] || fail "ffmpeg@7 executable not found under: $ffmpeg_prefix"
+if [[ "$local_provider" -eq 0 ]]; then
+  ffprobe_bin="${MEETING_TRANSCRIBER_FFPROBE_BIN:-${ffmpeg_prefix}/bin/ffprobe}"
+  [[ -x "$ffprobe_bin" ]] || fail "FFprobe executable not found: $ffprobe_bin"
+  input_bytes="$(stat -f '%z' "$input")"
+  if [[ "$input_bytes" -gt 2200000000 ]]; then
+    fail 'AssemblyAI accepts files up to 2.2 GB; use --local for this recording'
+  fi
+  duration="$("$ffprobe_bin" -v error -show_entries format=duration \
+    -of default=noprint_wrappers=1:nokey=1 "$input")" \
+    || fail 'FFprobe could not determine recording duration for AssemblyAI preflight'
+  [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail 'FFprobe returned an invalid recording duration'
+  awk -v duration="$duration" 'BEGIN { exit !(duration > 36000) }' \
+    && fail 'AssemblyAI accepts recordings up to 10 hours; use --local for this recording'
+fi
 
 mkdir -p "$output_root"
 [[ -d "$output_root" && -w "$output_root" ]] || fail "output root is not writable: $output_root"
@@ -123,7 +167,21 @@ export PATH="${ffmpeg_prefix}/bin:${PATH}"
 export DYLD_LIBRARY_PATH="${ffmpeg_prefix}/lib${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
 export PYANNOTE_METRICS_ENABLED=0
 
-if [[ "$backend" == "mlx" ]]; then
+if [[ "$local_provider" -eq 0 ]]; then
+  if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
+    command=("$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN")
+  else
+    command=("$python_bin" "${utility_root}/lib/transcribe_assemblyai.py")
+  fi
+  command+=(
+    --input "$input"
+    --output-dir "$output_dir"
+    --output-name transcript
+  )
+  if [[ -n "$speakers" ]]; then
+    command+=(--speakers "$speakers")
+  fi
+elif [[ "$backend" == "mlx" ]]; then
   if [[ -n "${MEETING_TRANSCRIBER_MLX_BIN:-}" ]]; then
     command=("$MEETING_TRANSCRIBER_MLX_BIN")
   else
@@ -166,13 +224,21 @@ else
   fi
 fi
 
-if [[ "$diarize" -eq 1 ]]; then
+if [[ "$local_provider" -eq 0 ]]; then
+  printf 'Provider: AssemblyAI\n' >&2
+else
+  printf 'Provider: local (%s engine)\n' "$backend" >&2
+fi
+if [[ "$local_provider" -eq 0 ]]; then
+  ASSEMBLYAI_API_KEY="$assemblyai_key" "${command[@]}"
+elif [[ "$diarize" -eq 1 ]]; then
   HF_TOKEN="$diarization_token" "${command[@]}"
 else
   "${command[@]}"
 fi
 unset diarization_token
-if [[ "$backend" == "whisperx" ]]; then
+unset assemblyai_key
+if [[ "$local_provider" -eq 1 && "$backend" == "whisperx" ]]; then
   for extension in json txt srt vtt tsv; do
     source_output="${output_dir}/${source_stem}.${extension}"
     [[ -e "$source_output" ]] || continue

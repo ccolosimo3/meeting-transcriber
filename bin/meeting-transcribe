@@ -20,6 +20,7 @@ backend="mlx"
 model="turbo"
 hotwords=""
 input=""
+local_provider=0
 
 usage() {
   printf '%s\n' \
@@ -30,10 +31,11 @@ usage() {
     '' \
     'Options:' \
     '  --speakers N          Use an exact speaker count' \
-    '  --backend ENGINE      mlx (default) or whisperx (CPU fallback)' \
-    '  --model MODEL         Whisper model (default: turbo)' \
-    '  --hotwords TEXT       Bias names or domain vocabulary' \
-    '  --no-diarize          Skip speaker diarization' \
+    '  --local               Use the local MLX/Community-1 fallback' \
+    '  --backend ENGINE      Local engine: mlx or whisperx (CPU fallback)' \
+    '  --model MODEL         Local Whisper model (default: turbo)' \
+    '  --hotwords TEXT       Bias local recognition vocabulary' \
+    '  --no-diarize          Use local transcription without diarization' \
     '  --meetings-root DIR  Search DIR when INPUT is omitted' \
     '  --output-root DIR     Advanced: write transcript runs directly under DIR' \
     '  -h, --help            Show this help'
@@ -54,20 +56,28 @@ while [[ $# -gt 0 ]]; do
     --model)
       [[ $# -ge 2 ]] || fail '--model requires a value'
       model="$2"
+      local_provider=1
       shift 2
       ;;
     --backend)
       [[ $# -ge 2 ]] || fail '--backend requires mlx or whisperx'
       backend="$2"
+      local_provider=1
       shift 2
       ;;
     --hotwords)
       [[ $# -ge 2 ]] || fail '--hotwords requires a value'
       hotwords="$2"
+      local_provider=1
       shift 2
       ;;
     --no-diarize)
       diarize=0
+      local_provider=1
+      shift
+      ;;
+    --local)
+      local_provider=1
       shift
       ;;
     --meetings-root|--recordings-root)
@@ -100,15 +110,18 @@ done
 [[ -z "$speakers" || "$diarize" -eq 1 ]] || fail '--speakers may not be used with --no-diarize'
 [[ "$backend" == "mlx" || "$backend" == "whisperx" ]] || fail '--backend requires mlx or whisperx'
 
-arguments=(--backend "$backend" --model "$model")
-if [[ -n "$hotwords" ]]; then
-  arguments+=(--hotwords "$hotwords")
-fi
-if [[ "$diarize" -eq 1 ]]; then
-  arguments+=(--diarize)
-  if [[ -n "$speakers" ]]; then
-    arguments+=(--speakers "$speakers")
+arguments=()
+if [[ "$local_provider" -eq 1 ]]; then
+  arguments=(--local --backend "$backend" --model "$model")
+  if [[ -n "$hotwords" ]]; then
+    arguments+=(--hotwords "$hotwords")
   fi
+  if [[ "$diarize" -eq 1 ]]; then
+    arguments+=(--diarize)
+  fi
+fi
+if [[ -n "$speakers" ]]; then
+  arguments+=(--speakers "$speakers")
 fi
 
 if [[ -n "$input" ]]; then
@@ -151,18 +164,30 @@ if [[ -n "$input" ]]; then
       printf 'Imported recording: %s\n' "$input"
     fi
   fi
-  exec "${utility_root}/bin/transcribe-meeting" \
-    "${arguments[@]}" "$input" "$output_root"
+  if [[ "$local_provider" -eq 1 ]]; then
+    printf 'Provider: local (MLX/Community-1 fallback)\n' >&2
+  else
+    printf 'Provider: AssemblyAI (recording will leave this Mac)\n' >&2
+  fi
+  if [[ "${#arguments[@]}" -gt 0 ]]; then
+    exec "${utility_root}/bin/transcribe-meeting" \
+      "${arguments[@]}" "$input" "$output_root"
+  else
+    exec "${utility_root}/bin/transcribe-meeting" "$input" "$output_root"
+  fi
 fi
 
-latest_arguments=(--backend "$backend" --model "$model" --meetings-root "$meetings_root")
+latest_arguments=(--meetings-root "$meetings_root")
+if [[ "$local_provider" -eq 1 ]]; then
+  latest_arguments+=(--local --backend "$backend" --model "$model")
+fi
 if [[ -n "$output_root" ]]; then
   latest_arguments+=(--output-root "$output_root")
 fi
 if [[ -n "$hotwords" ]]; then
   latest_arguments+=(--hotwords "$hotwords")
 fi
-if [[ "$diarize" -eq 0 ]]; then
+if [[ "$local_provider" -eq 1 && "$diarize" -eq 0 ]]; then
   latest_arguments+=(--no-diarize)
 elif [[ -n "$speakers" ]]; then
   latest_arguments+=(--speakers "$speakers")

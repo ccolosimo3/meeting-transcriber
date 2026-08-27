@@ -19,6 +19,8 @@ speaker_count=""
 input=""
 meetings_root="$data_root"
 transcribe_arguments=()
+local_provider=0
+assemblyai_override=""
 
 usage() {
   printf '%s\n' \
@@ -29,10 +31,11 @@ usage() {
     '' \
     'Options:' \
     '  --speakers N          Use an exact speaker count' \
-    '  --backend ENGINE      mlx (default) or whisperx (CPU fallback)' \
-    '  --model MODEL         Whisper model (default: turbo)' \
-    '  --hotwords TEXT       Bias names or domain vocabulary' \
-    '  --no-diarize          Skip speaker diarization and naming' \
+    '  --local               Use the local MLX/Community-1 fallback' \
+    '  --backend ENGINE      Local engine: mlx or whisperx (CPU fallback)' \
+    '  --model MODEL         Local Whisper model (default: turbo)' \
+    '  --hotwords TEXT       Bias local recognition vocabulary' \
+    '  --no-diarize          Use local transcription without diarization' \
     '  --skip-names          Keep anonymous speaker labels' \
     '  --no-open             Do not open the HTML transcript' \
     '  --no-copy             Print rather than copy the Codex prompt' \
@@ -57,6 +60,9 @@ while [[ $# -gt 0 ]]; do
     --backend|--model|--hotwords|--output-root)
       [[ $# -ge 2 ]] || fail "$1 requires a value"
       transcribe_arguments+=("$1" "$2")
+      if [[ "$1" != "--output-root" ]]; then
+        local_provider=1
+      fi
       shift 2
       ;;
     --meetings-root|--recordings-root)
@@ -66,7 +72,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-diarize)
       diarize=0
+      local_provider=1
       transcribe_arguments+=(--no-diarize)
+      shift
+      ;;
+    --local)
+      local_provider=1
+      transcribe_arguments+=(--local)
       shift
       ;;
     --skip-names)
@@ -95,6 +107,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+assemblyai_override="${ASSEMBLYAI_API_KEY:-}"
+unset ASSEMBLYAI_API_KEY
 
 if [[ -z "$input" ]]; then
   input="$(meeting_latest_recording "$meetings_root" || true)"
@@ -134,9 +149,21 @@ else
   invocation=("${utility_root}/bin/meeting-transcribe" "$input")
 fi
 
-printf '\nTranscribing…\n'
-MEETING_DATA_DIR="$meetings_root" \
-  MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+if [[ "$local_provider" -eq 1 ]]; then
+  printf '\nProvider: local (recording stays on this Mac)\n'
+else
+  printf '\nProvider: AssemblyAI (recording will leave this Mac)\n'
+fi
+printf 'Transcribing…\n'
+if [[ "$local_provider" -eq 0 && -n "$assemblyai_override" ]]; then
+  ASSEMBLYAI_API_KEY="$assemblyai_override" \
+    MEETING_DATA_DIR="$meetings_root" \
+    MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+else
+  MEETING_DATA_DIR="$meetings_root" \
+    MEETING_TRANSCRIBER_RESULT_FILE="$result_file" "${invocation[@]}"
+fi
+unset assemblyai_override
 output_dir="$(sed -n '1p' "$result_file")"
 [[ -n "$output_dir" && -d "$output_dir" ]] || fail 'transcription completed without reporting its output directory'
 
