@@ -2,6 +2,61 @@
 
 ## Architecture
 
+### Desktop reader
+
+`python -m desktop.main` launches the optional read-only Windows/Mac reader.
+It clears an inherited `ASSEMBLYAI_API_KEY` before importing native rendering,
+and exposes only library selection/refresh, run loading and saved-HTML opening.
+The CLI and its provider lifecycle below retain their existing behavior.
+
+- `lib/meeting_library.py` projects existing bundles through the shared
+  classifier, canonical parser and identity owner. IDs belong to the current
+  library session. It rejects linked/reparse descendants and verifies actual
+  opened-file paths and identities before reading. Media and saved HTML leave
+  this owner as verified binary handles, never arbitrary renderer paths.
+- `desktop/server.py` serves an explicit asset allowlist and capability-bound
+  handles on one ephemeral loopback listener. Media supports ranges without
+  loading whole recordings; no HTTP endpoint lists or reads arbitrary files.
+  Saved HTML opens through a temporary handle-backed URL in the system browser,
+  which has no Python bridge. URLs and document content are never logged.
+- `desktop/native.py` adapts the pinned pywebview renderers before their first
+  app navigation. It blocks other navigation, popups, drops and downloads,
+  protects session storage, and rejects missing WebView2 rather than allowing
+  MSHTML. Windows storage retains required engine AppContainer access within
+  the protected per-user session. Mac uses a nonpersistent WK data store set
+  before webview construction. The browser sandbox remains enabled.
+- `desktop/assets/` renders escaped canonical text with source-ordinal identity.
+  The actual media element drives interval highlighting; filtering changes the
+  text view, not the audio. Nothing is saved back to meeting bundles.
+
+Install/build separately from the CLI-only route:
+
+```text
+uv sync --frozen --extra desktop --group desktop-build
+uv run --frozen --extra desktop python -m desktop.main
+uv run --frozen --extra desktop --group desktop-build python -m desktop.build
+```
+
+Builds must run on the target OS. Folder packages and the Apple Silicon `.app`
+land under `.local-artifacts/desktop-build/dist`; they are local unsigned/ad hoc
+builds, not public installers. Library choice and theme are session-only.
+
+Focused desktop checks:
+
+```text
+uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_native
+```
+
+Set `MEETING_REQUIRE_NATIVE=1` for the actual Windows native-engine navigation
+probe in `tests.test_desktop_native`. Its missing-runtime test forces only the
+runtime-availability decision and never uninstalls the host WebView2 runtime.
+Packaged launch, native picker/permissions and integrated playback still need
+the Windows/WebView2 and Mac/WKWebView operation boundary; an ordinary browser
+test cannot establish both. Use synthetic libraries and a sentinel key, and
+retain the tested revision and captures outside product commits.
+
+### Existing CLI
+
 The public interface is `bin/meeting`. It owns the interactive menu, the
 canonical command surface, one-release migration errors for removed commands,
 and dispatch to one owner per command:
@@ -70,9 +125,11 @@ The supported environment is macOS with:
 
 - Homebrew `uv` and keg-only `ffmpeg@7`;
 - a uv-managed pinned Python 3.13 and a small project virtual environment; and
-- the Python standard library only for the installed application.
+- the Python standard library only for the installed CLI.
 
-There are no third-party production runtime dependencies. The single
+The CLI has no third-party production runtime dependencies. The optional
+desktop extra adds pinned pywebview/Bottle and their native renderer bindings;
+the separate desktop-build group pins PyInstaller. The single CLI
 development-only dependency is `aiohttp==3.14.3` in the default `dev`
 dependency group, used by the Chromium DevTools browser test.
 

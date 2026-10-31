@@ -11,9 +11,48 @@ and one complete transcription command.
 
 ## Platform support
 
-macOS only. The app relies on FFmpeg AVFoundation recording, Homebrew,
-notifications, and Finder. Transcription requires an internet
+Recording and transcription commands currently support macOS and rely on
+FFmpeg AVFoundation, Homebrew, notifications, and Finder. Transcription requires an internet
 connection, an AssemblyAI API key, and a paid AssemblyAI account.
+
+The optional **desktop library and audio viewer** supports Windows x64 with
+Microsoft Edge WebView2 and Apple Silicon macOS. It reads existing meeting
+folders without uploading, editing or transcribing them. It needs no API key or
+FFmpeg. Desktop recording and transcription controls are separate future work.
+
+## Desktop library and audio viewer
+
+From a checkout with [uv](https://docs.astral.sh/uv/) installed:
+
+```text
+uv sync --frozen --extra desktop
+uv run --frozen --extra desktop python -m desktop.main
+```
+
+The reader starts with `~/Transcriptions` if present. Use **Choose library** for
+another folder, then select a meeting or saved transcript run. Click a passage
+to hear its audio; use search, speaker filters, speed and optional Follow mode
+to review it. The chosen library and theme last for the current session.
+
+Copy an entire meeting folder into the other computer's library and press
+**Refresh**. Keep the recording beside its `transcripts` directory. Missing or
+unsupported media leaves the transcript readable. Multiple recording files are
+reported as ambiguous; partial recordings are never treated as finished audio.
+**Open saved HTML** opens the existing export in the system browser through a
+temporary local URL while the app is running; it does not rewrite the export.
+
+To build a self-contained folder package on Windows or `.app` on Apple Silicon
+Mac (build on the target OS):
+
+```text
+uv sync --frozen --extra desktop --group desktop-build
+uv run --frozen --extra desktop --group desktop-build python -m desktop.build
+```
+
+Packages appear in `.local-artifacts/desktop-build/dist`. Windows requires the
+[Evergreen WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+The app fails clearly if it is missing; it does not use the legacy IE renderer.
+These local builds are not publicly signed/notarized installers.
 
 ## Quick start
 
