@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlsplit
@@ -111,20 +112,24 @@ print('sentinel absent in desktop and opener child')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('sentinel absent', result.stdout)
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'macOS exec/process-environment boundary')
     def test_mac_entry_branch_reexecutes_with_clean_process_environment(self):
-        # Select the Mac bootstrap branch, then cross a real exec/process
-        # boundary into a tiny observer before any GUI or library is initialized.
+        # Cross the actual Mac exec boundary before GUI or library initialization.
+        observed = self.root / 'exec-observed.txt'
+        observer = "import os; from pathlib import Path; Path(" + repr(str(observed)) + ").write_text('clean' if 'ASSEMBLYAI_API_KEY' not in os.environ else 'leaked')"
         script = '''
 import sys,runpy
-sys.platform='darwin'
-sys.orig_argv=[sys.executable,'-c',"import os; print('clean' if 'ASSEMBLYAI_API_KEY' not in os.environ else 'leaked')"]
+sys.orig_argv=[sys.executable,'-c',OBSERVER]
 runpy.run_path('desktop/main.py',run_name='__main__')
-'''
+'''.replace('OBSERVER', repr(observer))
         result = subprocess.run([sys.executable, '-c', script], cwd=ROOT,
                                 env=dict(os.environ, ASSEMBLYAI_API_KEY='synthetic-sentinel'),
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), 'clean')
+        deadline = time.monotonic() + 5
+        while not observed.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(observed.read_text(), 'clean')
 
 
 if __name__ == '__main__':
