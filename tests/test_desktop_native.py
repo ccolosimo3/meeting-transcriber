@@ -116,12 +116,27 @@ def _native_probe():
         gui = native.configure_webview(webview, url, session)
         forbidden = session.path / "untrusted.html"
         forbidden.write_text("<title>UNTRUSTED</title>", encoding="utf-8")
-        window = webview.create_window("Native boundary probe", url=url, hidden=True)
+        from desktop.main import Bridge
+        from desktop.server import ReaderServer
+        from meeting_library import Library
+        library_root = session.path / 'library'
+        library_root.mkdir()
+        outside = session.path / 'outside-library.txt'
+        outside.write_text('preserve', encoding='utf-8')
+        auxiliary = ReaderServer(ROOT / 'desktop' / 'assets')
+        bridge = Bridge(auxiliary, lambda: None, lambda _: False)
+        bridge._library = Library(library_root)
+        window = webview.create_window("Native boundary probe", url=url, js_api=bridge, hidden=True)
 
         def exercise():
             try:
                 assert window.events.loaded.wait(15), str(session.error or "App document did not load")
                 assert window.evaluate_js("document.title") == "reader probe"
+                payload = ['_library.root.__class__.unlink', json.dumps([str(outside)]), '12345']
+                window.evaluate_js('window.chrome.webview.postMessage(' + json.dumps(payload) + ')')
+                time.sleep(0.2)
+                assert outside.read_text(encoding='utf-8') == 'preserve', 'Raw private dispatch changed an outside file'
+                assert bridge._library.root == library_root.resolve(), 'Raw private dispatch changed the selected library'
                 for target in (url + "/untrusted", forbidden.as_uri(), "https://example.invalid/"):
                     window.evaluate_js(f"location.href={json.dumps(target)};")
                     time.sleep(0.2)
@@ -142,6 +157,7 @@ def _native_probe():
         webview.start(exercise, gui=gui, private_mode=True, storage_path=str(session.profile_path))
         if session.error:
             errors.append(str(session.error))
+        auxiliary.http.server_close()
     server.shutdown()
     server.server_close()
     thread.join(timeout=2)

@@ -7,6 +7,7 @@ import mimetypes
 from pathlib import Path
 import re
 import secrets
+import sys
 import threading
 from typing import BinaryIO
 from urllib.parse import urlsplit
@@ -170,4 +171,8 @@ class ReaderServer:
         handler.send_header('Referrer-Policy', 'no-referrer')
         handler.send_header('X-Frame-Options', 'DENY')
         if app:
-            handler.send_header('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self'; connect-src 'self'; img-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
+            # Pinned pywebview creates its four API wrappers with new Function.
+            # WKWebView enforces CSP for that native-injected bridge code.
+            # Keep inline/remote scripts forbidden; only Mac needs this eval.
+            bridge_eval = " 'unsafe-eval'" if sys.platform == 'darwin' else ''
+            handler.send_header('Content-Security-Policy', f"default-src 'none'; script-src 'self'{bridge_eval}; style-src 'self'; media-src 'self'; connect-src 'self'; img-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")

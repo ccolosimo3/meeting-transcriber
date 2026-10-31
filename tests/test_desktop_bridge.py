@@ -111,6 +111,21 @@ print('sentinel absent in desktop and opener child')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('sentinel absent', result.stdout)
 
+    def test_mac_entry_branch_reexecutes_with_clean_process_environment(self):
+        # Select the Mac bootstrap branch, then cross a real exec/process
+        # boundary into a tiny observer before any GUI or library is initialized.
+        script = '''
+import sys,runpy
+sys.platform='darwin'
+sys.orig_argv=[sys.executable,'-c',"import os; print('clean' if 'ASSEMBLYAI_API_KEY' not in os.environ else 'leaked')"]
+runpy.run_path('desktop/main.py',run_name='__main__')
+'''
+        result = subprocess.run([sys.executable, '-c', script], cwd=ROOT,
+                                env=dict(os.environ, ASSEMBLYAI_API_KEY='synthetic-sentinel'),
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'clean')
+
 
 if __name__ == '__main__':
     unittest.main()

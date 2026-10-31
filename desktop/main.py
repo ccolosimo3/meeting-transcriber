@@ -3,10 +3,17 @@ from __future__ import annotations
 
 # Scrub before importing any renderer or launching children. This slice has no key consumer.
 import os
+import sys
+_had_inherited_key = 'ASSEMBLYAI_API_KEY' in os.environ
 os.environ.pop('ASSEMBLYAI_API_KEY', None)
+if _had_inherited_key and sys.platform == 'darwin' and __name__ == '__main__':
+    # macOS retains the initial environment for process inspection after
+    # unsetenv. Replace the real entry process before any content or children.
+    args = [sys.executable, *sys.argv[1:]] if getattr(sys, 'frozen', False) else [sys.executable, *sys.orig_argv[1:]]
+    os.execv(sys.executable, args)
+del _had_inherited_key
 
 from pathlib import Path
-import sys
 import threading
 import webbrowser
 

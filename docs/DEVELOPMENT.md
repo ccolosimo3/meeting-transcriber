@@ -7,6 +7,8 @@
 `python -m desktop.main` launches the optional read-only Windows/Mac reader.
 It clears an inherited `ASSEMBLYAI_API_KEY` before importing native rendering,
 and exposes only library selection/refresh, run loading and saved-HTML opening.
+On Mac, an entry process that inherited the key re-executes with the sanitized
+environment so OS process inspection cannot retain the original key copy.
 The CLI and its provider lifecycle below retain their existing behavior.
 
 - `lib/meeting_library.py` projects existing bundles through the shared
@@ -25,9 +27,16 @@ The CLI and its provider lifecycle below retain their existing behavior.
   MSHTML. Windows storage retains required engine AppContainer access within
   the protected per-user session. Mac uses a nonpersistent WK data store set
   before webview construction. The browser sandbox remains enabled.
+  Native messages also enforce an exact four-action allowlist before the
+  framework dispatcher; hiding private Python attributes from API enumeration
+  alone does not prevent raw dotted-attribute calls.
 - `desktop/assets/` renders escaped canonical text with source-ordinal identity.
   The actual media element drives interval highlighting; filtering changes the
   text view, not the audio. Nothing is saved back to meeting bundles.
+
+The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
+needed for pinned pywebview's `new Function` bridge registration; document,
+frame/origin, action allowlist and escaped-text controls remain enforced.
 
 Install/build separately from the CLI-only route:
 

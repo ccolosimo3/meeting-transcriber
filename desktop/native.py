@@ -10,9 +10,11 @@ import ctypes
 import importlib
 import importlib.abc
 import importlib.metadata
+import json
 import os
 from pathlib import Path
 import secrets
+import re
 import shutil
 import stat
 import sys
@@ -29,6 +31,28 @@ WEBVIEW2_REQUIRED = (
     "from https://developer.microsoft.com/microsoft-edge/webview2/ and reopen "
     "Meeting Transcriber. The legacy Internet Explorer renderer is disabled."
 )
+
+
+def _dispatch(window, name, params, call_id):
+    """Authorize raw native messages, not only the generated API enumeration."""
+    if not isinstance(name, str) or not isinstance(call_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', call_id):
+        return
+    if name == 'pywebviewAsyncCallback':
+        # Native evaluate_js callbacks are framework-owned, single-use and
+        # registered before a page can deliver a response. No state/DOM/move API.
+        if call_id not in window._callbacks or not callable(window._callbacks[call_id]):
+            return
+    else:
+        arities = {'choose_library': 0, 'refresh_library': 0, 'load_run': 2, 'open_saved_html': 2}
+        if name not in arities or not isinstance(params, list) or len(params) != arities[name]:
+            return
+        if params and (not isinstance(params[0], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[0])):
+            return
+        if len(params) == 2 and not (name == 'load_run' and params[1] is None):
+            if not isinstance(params[1], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[1]):
+                return
+    from webview.util import js_bridge_call
+    js_bridge_call(window, name, params, call_id)
 
 
 def _windows_api():
@@ -279,7 +303,6 @@ def _configure_windows(webview, document_url: str, session: Session):
     edge = native.Chromium
     original_ready = edge.EdgeChrome.on_webview_ready
     original_completed = edge.EdgeChrome.on_navigation_completed
-    original_message = edge.EdgeChrome.on_script_notify
     origin = urlsplit(document_url)
 
     def navigation(self, sender, args):
@@ -293,8 +316,13 @@ def _configure_windows(webview, document_url: str, session: Session):
         args.Handled = True
 
     def message(self, sender, args):
-        if str(args.Source) == document_url:
-            return original_message(self, sender, args)
+        if str(args.Source) != document_url:
+            return
+        try:
+            name, encoded_params, call_id = json.loads(args.get_WebMessageAsJson())
+            _dispatch(self.pywebview_window, name, json.loads(encoded_params), call_id)
+        except (TypeError, ValueError, KeyError):
+            return
 
     def completed(self, sender, args):
         if str(sender.Source) == document_url:
@@ -408,7 +436,11 @@ def _configure_cocoa(webview, document_url: str, session: Session):
         def userContentController_didReceiveScriptMessage_(self, controller, message):
             frame = message.frameInfo()
             if frame.isMainFrame() and str(frame.request().URL().absoluteString()) == document_url:
-                return objc.super(PrivateBridge, self).userContentController_didReceiveScriptMessage_(controller, message)
+                try:
+                    body = json.loads(message.body())
+                    _dispatch(self.window, body['funcName'], body['params'], body['id'])
+                except (TypeError, ValueError, KeyError):
+                    return
 
     # 6.2.1 also asks for defaultDataStore after constructing WKWebView. Redirect
     # only this renderer module's lookup, so it never clears the user's global
