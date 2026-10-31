@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
 import sys
 import tempfile
 import threading
@@ -26,6 +27,7 @@ class Window:
         self.finished.set()
 
 
+@unittest.skipUnless(importlib.util.find_spec('webview'), 'install the desktop extra for real bridge dispatch')
 class DispatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

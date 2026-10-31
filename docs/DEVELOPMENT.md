@@ -53,7 +53,7 @@ builds, not public installers. Library choice and theme are session-only.
 Focused desktop checks:
 
 ```text
-uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_native
+uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_dispatch tests.test_desktop_native
 ```
 
 Set `MEETING_REQUIRE_NATIVE=1` for the actual Windows native-engine navigation
