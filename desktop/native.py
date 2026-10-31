@@ -19,6 +19,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import threading
 from urllib.parse import urlsplit
 
 
@@ -386,6 +387,49 @@ def _configure_cocoa(webview, document_url: str, session: Session):
     store = wk.WKWebsiteDataStore.nonPersistentDataStore()
     if store.isPersistent():
         raise NativeBoundaryError("WKWebView did not create a private data store.")
+
+    def evaluate_js(self, script, parse_json):
+        # 6.2.1 waits forever when windowWillClose_ stops Cocoa's event loop
+        # before a queued evaluation or its completion runs. Its existing closed
+        # event also releases bridge replies that finish after the window closes.
+        completed = threading.Event()
+        result = None
+        failure = None
+
+        def evaluate():
+            nonlocal failure
+            if self.closed.is_set():
+                completed.set()
+                return
+            try:
+                self.webview.evaluateJavaScript_completionHandler_(script, handler)
+            except Exception as error:
+                failure = error
+                completed.set()
+
+        def handler(value, error):
+            nonlocal result
+            try:
+                result = json.loads(value) if parse_json and value else value
+            except Exception:
+                cocoa.logger.exception('Failed to parse JSON: ' + value)
+                result = value
+            finally:
+                completed.set()
+
+        if self.closed.is_set():
+            return None
+        cocoa.AppHelper.callAfter(evaluate)
+        while not completed.wait(0.05):
+            if self.closed.is_set():
+                return None
+        if self.closed.is_set():
+            return None
+        if failure is not None:
+            raise failure
+        return result
+
+    cocoa.BrowserView.evaluate_js = evaluate_js
 
     host = cocoa.BrowserView.WebKitHost
 

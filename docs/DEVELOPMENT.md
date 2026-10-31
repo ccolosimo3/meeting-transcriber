@@ -27,6 +27,8 @@ The CLI and its provider lifecycle below retain their existing behavior.
   MSHTML. Windows storage retains required engine AppContainer access within
   the protected per-user session. Mac uses a nonpersistent WK data store set
   before webview construction. The browser sandbox remains enabled.
+  On Mac, pending JavaScript result waits end when the native window closes,
+  so late bridge replies cannot keep the process alive.
   Native messages also enforce an exact four-action allowlist before the
   framework dispatcher; hiding private Python attributes from API enumeration
   alone does not prevent raw dotted-attribute calls.
