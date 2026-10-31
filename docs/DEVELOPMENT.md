@@ -34,7 +34,11 @@ The CLI and its provider lifecycle below retain their existing behavior.
   alone does not prevent raw dotted-attribute calls.
 - `desktop/assets/` renders escaped canonical text with source-ordinal identity.
   The actual media element drives interval highlighting; filtering changes the
-  text view, not the audio. Nothing is saved back to meeting bundles.
+  text view, not the audio. Library/Find/Details/Listening disclosure is local
+  presentation state and never replaces the media element. Show categories
+  derive from the library snapshot's eligible runs and exact statuses; selected
+  version labels and warnings derive from the current run. Nothing is saved
+  back to meeting bundles.
 
 The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
 needed for pinned pywebview's `new Function` bridge registration; document,
@@ -65,6 +69,14 @@ Packaged launch, native picker/permissions and integrated playback still need
 the Windows/WebView2 and Mac/WKWebView operation boundary; an ordinary browser
 test cannot establish both. Use synthetic libraries and a sentinel key, and
 retain the tested revision and captures outside product commits.
+
+For reader layout changes, also interact with the actual served assets in the
+native reader using synthetic bundles. Check wide/light and narrow/dark layouts,
+Library search/Show and folder actions, Find → close → filter chips/clear,
+Details → select a saved version → close, and live playback while collapsing
+Library and Listening. Exercise Escape/focus return, warnings, duplicate speaker
+display names, source passage numbers, no matches, missing audio and saved HTML.
+These native UI checks complement the focused Python checks above.
 
 ### Existing CLI
 

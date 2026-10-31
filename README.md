@@ -29,14 +29,24 @@ uv sync --frozen --extra desktop
 uv run --frozen --extra desktop python -m desktop.main
 ```
 
-The reader starts with `~/Transcriptions` if present. Use **Choose library** for
-another folder, then select a meeting or saved transcript run. Click a passage
-to hear its audio; use search, speaker filters, speed and optional Follow mode
-to review it. The chosen library and theme last for the current session.
+The reader starts with `~/Transcriptions` if present. Open **Library**, then its
+**Library folder** control to choose another folder or refresh. Search titles
+and use **Show** to narrow the list to transcripts, audio only or meetings that
+need attention. Library collapses to give the transcript more space; on narrow
+windows, choosing a meeting returns to the reader.
 
-Copy an entire meeting folder into the other computer's library and press
-**Refresh**. Keep the recording beside its `transcripts` directory. Missing or
-unsupported media leaves the transcript readable. Multiple recording files are
+Use **Find** for literal passage search and speaker filtering. Closing Find
+keeps the filters active, with visible chips to clear each one. **Details** holds
+the meeting metadata and saved-version selector; a selected non-default version
+stays identified when Details closes. Click a passage to hear its audio, and
+open **Listening** for speed, optional Follow and Jump to playing passage.
+Collapsing a panel keeps playback running. The **More actions** menu holds theme
+choice and **Open saved HTML** for the selected version. Layout, library and
+theme choices last for the current session.
+
+Copy an entire meeting folder into the other computer's library and use
+**Library folder → Refresh**. Keep the recording beside its `transcripts`
+directory. Missing or unsupported media leaves the transcript readable. Multiple recording files are
 reported as ambiguous; partial recordings are never treated as finished audio.
 **Open saved HTML** opens the existing export in the system browser through a
 temporary local URL while the app is running; it does not rewrite the export.

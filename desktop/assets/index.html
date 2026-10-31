@@ -8,55 +8,89 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <header class="appbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">m</span><span>Meeting Transcriber</span><span class="local-badge">Local library</span></div>
-    <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+  <header class="toolbar">
+    <button id="library-toggle" type="button" aria-controls="library" aria-expanded="true">Hide library</button>
+    <h1 id="meeting-title" tabindex="-1">Meeting Transcriber</h1>
+    <div class="toolbar-actions">
+      <button id="find-toggle" type="button" aria-controls="find-panel" aria-expanded="false" disabled>Find</button>
+      <button id="details-toggle" type="button" aria-controls="details-panel" aria-expanded="false" disabled>Details</button>
+      <details id="actions-menu" class="actions-menu">
+        <summary id="actions-toggle" aria-label="More actions" aria-expanded="false">•••</summary>
+        <div class="actions-panel">
+          <button id="open-html" type="button" hidden>Open saved HTML ↗</button>
+          <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+        </div>
+      </details>
+    </div>
   </header>
-  <main class="workspace">
-    <aside class="library" aria-label="Meeting library">
+  <div id="library-feedback" class="library-feedback" role="status" hidden><p id="library-feedback-message"></p><button id="library-recovery" type="button">Open Library</button></div>
+  <main id="workspace" class="workspace">
+    <aside id="library" class="library" aria-label="Meeting library">
       <div class="library-head">
-        <div class="section-heading"><h1>Library</h1><span id="meeting-count" class="count">0</span></div>
-        <p id="library-path" class="library-path">Choose a folder to open your meetings.</p>
-        <div class="library-actions"><button id="choose-library" type="button" disabled>Choose library</button><button id="refresh-library" type="button" disabled>Refresh</button></div>
+        <div class="section-heading"><h2>Library</h2><span id="meeting-count" class="count">0 / 0</span><button id="library-close" type="button" aria-label="Close library" title="Close library">×</button></div>
+        <details id="library-folder" class="folder">
+          <summary id="folder-toggle" aria-expanded="false">Library folder</summary>
+          <div class="folder-panel">
+            <p id="library-path" class="library-path">Choose a folder to open your meetings.</p>
+            <div class="library-actions"><button id="choose-library" type="button" disabled>Choose library</button><button id="refresh-library" type="button" disabled>Refresh</button></div>
+          </div>
+        </details>
         <label class="visually-hidden" for="library-search">Search meeting titles</label>
-        <input id="library-search" type="search" placeholder="Find a meeting…" autocomplete="off" disabled>
+        <input id="library-search" type="search" placeholder="Find a title…" autocomplete="off" disabled>
+        <div class="library-filter"><label for="library-show">Show</label><select id="library-show" disabled><option value="all">All</option><option value="transcripts">Transcripts</option><option value="audio">Audio only</option><option value="attention">Needs attention</option></select></div>
       </div>
       <p id="library-errors" class="library-errors" role="status" hidden></p>
       <div id="meeting-list" class="meeting-list" aria-label="Meetings" aria-busy="true"></div>
       <p id="library-empty" class="library-empty" role="status">Connecting to your library…</p>
-      <footer class="library-footer">Your recordings and transcripts stay in this folder.</footer>
     </aside>
-    <section class="reader" aria-label="Meeting reader" aria-busy="false">
+    <section id="reader" class="reader" aria-label="Meeting reader" aria-busy="false">
       <div id="reader-empty" class="reader-empty">
         <span class="empty-mark" aria-hidden="true">≋</span>
-        <p class="eyebrow">A moment, within reach</p>
-        <h2>Open a meeting.<br>Pick up the conversation.</h2>
+        <h2>Open a meeting.</h2>
         <p>Read a saved transcript, find a passage, and hear the words in context.</p>
         <p id="reader-empty-detail" class="empty-detail">Choose a meeting from your library to begin.</p>
       </div>
       <div id="reader-content" class="reader-content" hidden>
-        <header class="reader-header">
-          <p class="eyebrow">Meeting transcript</p>
-          <div class="reader-title-row"><h2 id="meeting-title"></h2><button id="open-html" type="button" hidden>Open saved HTML ↗</button></div>
-          <div class="meeting-meta"><span id="meeting-added"></span><span id="meeting-status" class="status"></span></div>
-          <div class="run-row"><label for="run-select">Saved run</label><select id="run-select" aria-label="Saved transcript run"></select></div>
+        <div class="reader-context">
+          <section id="details-panel" class="details-panel" aria-label="Meeting details" hidden>
+            <div class="panel-heading"><h2 id="details-title"></h2><button id="details-close" type="button" aria-label="Close details">×</button></div>
+            <div class="meeting-meta"><span id="meeting-added"></span><span id="meeting-status" class="status"></span><span id="language-label"></span></div>
+            <div class="run-row"><label for="run-select">Saved version</label><select id="run-select" aria-label="Saved transcript run"></select></div>
+          </section>
+          <section id="find-panel" class="find-panel" aria-label="Find in transcript" hidden>
+            <div id="transcript-tools" class="transcript-tools" hidden>
+              <div class="find-box"><label class="visually-hidden" for="transcript-search">Find in this transcript</label><input id="transcript-search" type="search" placeholder="Find in this transcript…" autocomplete="off"><button id="find-previous" type="button" aria-label="Previous matching passage" title="Previous matching passage" disabled>↑</button><button id="find-next" type="button" aria-label="Next matching passage" title="Next matching passage" disabled>↓</button></div>
+              <label class="visually-hidden" for="speaker-filter">Filter by speaker</label><select id="speaker-filter" aria-label="Filter by speaker"><option value="">All speakers</option></select>
+              <button id="find-close" type="button" aria-label="Close find">×</button>
+            </div>
+            <div id="transcript-summary" class="transcript-summary" hidden><span id="find-status" role="status"></span></div>
+          </section>
+          <div id="active-filters" class="active-filters" hidden>
+            <span id="passage-count" role="status"></span>
+            <button id="clear-text" class="filter-chip" type="button" hidden></button>
+            <button id="clear-speaker" class="filter-chip" type="button" hidden></button>
+            <button id="clear-filters" type="button">Clear all</button>
+          </div>
+          <p id="selected-version" class="selected-version" hidden></p>
+          <p id="meeting-warning" class="meeting-warning" role="status" hidden></p>
           <p id="reader-notice" class="notice" role="status" hidden></p>
-          <div id="transcript-tools" class="transcript-tools" hidden>
-            <div class="find-box"><label class="visually-hidden" for="transcript-search">Find in this transcript</label><input id="transcript-search" type="search" placeholder="Find in this transcript…" autocomplete="off"><button id="find-previous" type="button" aria-label="Previous matching passage" title="Previous matching passage" disabled>↑</button><button id="find-next" type="button" aria-label="Next matching passage" title="Next matching passage" disabled>↓</button></div>
-            <label class="visually-hidden" for="speaker-filter">Filter by speaker</label><select id="speaker-filter" aria-label="Filter by speaker"><option value="">All speakers</option></select>
-          </div>
-          <div id="transcript-summary" class="transcript-summary" hidden><span id="find-status" role="status"></span><span id="language-label"></span></div>
-        </header>
+        </div>
         <div id="passages" class="passages" tabindex="0" aria-label="Transcript passages"></div>
-        <div id="transcript-empty" class="transcript-empty" role="status" hidden></div>
+        <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" type="button" hidden>Open saved HTML ↗</button></div>
         <footer class="player" aria-label="Audio player">
-          <div class="player-heading"><span id="audio-status" role="status">Audio loading…</span><span id="audio-duration">Duration unavailable</span></div>
-          <div id="audio-container" class="audio-container"></div>
-          <div class="player-tools">
-            <div class="playback-tools"><button id="back-ten" type="button" disabled>↶ 10 sec</button><label class="visually-hidden" for="playback-speed">Playback speed</label><select id="playback-speed" aria-label="Playback speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div>
-            <div class="follow-tools"><button id="follow-toggle" type="button" aria-pressed="false" disabled>Follow off</button><button id="jump-playing" type="button" disabled>Jump to playing passage</button></div>
+          <div class="player-main">
+            <button id="back-ten" type="button" disabled>↶ 10 sec</button>
+            <div id="audio-container" class="audio-container"></div>
+            <details id="listening" class="listening">
+              <summary id="listening-toggle" aria-expanded="false">Listening<span id="listening-state"></span></summary>
+              <div class="listening-panel">
+                <label for="playback-speed">Playback speed</label><select id="playback-speed" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+                <button id="follow-toggle" type="button" aria-pressed="false" disabled>Follow off</button>
+                <button id="jump-playing" type="button" disabled>Jump to playing passage</button>
+              </div>
+            </details>
           </div>
-          <p id="playing-status" class="playing-status">Select a timestamp to listen from that moment.</p>
+          <div class="player-feedback"><span id="audio-status" role="status">Audio loading…</span><span id="audio-duration">Duration unavailable</span><p id="playing-status" class="playing-status">Select a timestamp to listen from that moment.</p></div>
         </footer>
       </div>
     </section>
