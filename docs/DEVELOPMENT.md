@@ -56,6 +56,8 @@ run, never approvals, disabled web search and action features. Claude uses
 safe/restricted mode, no tools, strict empty MCP, denied prompts and no session
 persistence. Both use structured output streams; unexpected actions, provider
 errors, malformed output and incomplete results cannot publish a summary.
+Claude admission requires its initialization event with an explicit empty tool
+list before its successful final result.
 Codex's documented nonfatal `item.completed/error` retains a generic warning
 indicator; top-level `error`, `turn.failed` and failed process exits still reject.
 This distinction follows the matching

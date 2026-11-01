@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import shutil
 import signal
@@ -219,6 +218,7 @@ def parse_result(provider, raw) -> tuple[str, str | None, dict]:
     try:
         events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
         final, model, completed, tools, provider_warning = None, None, False, None, False
+        initialized = False
         if not events:
             raise ValueError()
         for event in events:
@@ -249,14 +249,19 @@ def parse_result(provider, raw) -> tuple[str, str | None, dict]:
             else:
                 if kind == "system" and event.get("subtype") == "init":
                     tools = event.get("tools")
+                    if initialized or not isinstance(tools, list):
+                        raise ValueError()
                     if tools:
                         raise DigestError("The CLI exposed unexpected tools. No summary was saved.")
+                    initialized = True
                     model = event.get("model")
                 elif kind == "assistant":
+                    if not initialized:
+                        raise ValueError()
                     if any(block.get("type") in {"tool_use", "server_tool_use"} for block in event["message"]["content"]):
                         raise ActionError("tool_use")
                 elif kind == "result":
-                    if event.get("is_error") or event.get("subtype") != "success" or event.get("permission_denials"):
+                    if not initialized or completed or event.get("is_error") or event.get("subtype") != "success" or event.get("permission_denials"):
                         raise ValueError()
                     final, completed = event["result"], True
                 elif kind not in {"system", "rate_limit_event", "user"}:

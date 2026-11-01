@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import signal
 import subprocess
 import sys
 import tempfile
@@ -152,14 +151,18 @@ print(json.dumps({'type':'turn.completed'}))
     def test_action_error_and_truncated_cli_results_are_rejected(self):
         codex_success = b'\n{"type":"item.completed","item":{"type":"agent_message","text":"# Summary"}}\n{"type":"turn.completed"}'
         claude_success = b'\n{"type":"result","subtype":"success","result":"# Summary"}'
+        claude_init = b'{"type":"system","subtype":"init","tools":[]}\n'
         cases = [('codex',b'{"type":"item.completed","item":{"type":"command_execution"}}'+codex_success),
                  ('codex',b'{"type":"error","message":"fatal"}'+codex_success),
                  ('codex',b'{"type":"turn.failed","error":{"message":"fatal"}}'+codex_success),
                  ('codex',b'{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}'),
                  ('codex',b'{"type":"item.completed","item":{"type":"error","message":"rate limit synthetic"}}'),
                  ('claude',b'{"type":"system","subtype":"init","tools":["Bash"]}'+claude_success),
-                 ('claude',b'{"type":"assistant","message":{"content":[{"type":"tool_use"}]}}'+claude_success),
-                 ('claude',b'{"type":"result","subtype":"error","result":"wrong"}')]
+                 ('claude',claude_init+b'{"type":"assistant","message":{"content":[{"type":"tool_use"}]}}'+claude_success),
+                 ('claude',claude_init+b'{"type":"result","subtype":"error","result":"wrong"}'),
+                 ('claude',claude_success),
+                 ('claude',b'{"type":"system","subtype":"init"}'+claude_success),
+                 ('claude',b'{"type":"system","subtype":"init","tools":""}'+claude_success)]
         for provider,data in cases:
             with self.subTest(provider=provider,data=data), self.assertRaises(DigestError):
                 parse_result(provider,data)

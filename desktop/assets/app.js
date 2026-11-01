@@ -410,8 +410,6 @@
     ui["summary-provenance"].textContent = "";
     ui["summary-view"].setAttribute("aria-pressed", "false");
     ui["transcript-view"].setAttribute("aria-pressed", "true");
-    state.view = "transcript";
-    ui["summary-panel"].hidden = true;
     state.rows = [];
     state.matches = [];
     state.matchIndex = -1;
