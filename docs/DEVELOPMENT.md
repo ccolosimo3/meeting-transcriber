@@ -51,18 +51,25 @@ callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
 already signed-in first-party subscription CLI with a sanitized environment,
 neutral private working directory, stdin input, bounded independent pipe drains
 and restrictive tool/hook/integration controls. No credential is read or copied
-by the app. Codex uses ignore-user-config/ignore-rules, an ephemeral read-only
-run, never approvals, disabled web search and action features. Claude uses
-safe/restricted mode, no tools, strict empty MCP, denied prompts and no session
-persistence. Both use structured output streams; unexpected actions, provider
+by the app. Claude uses safe/restricted mode, no tools, strict empty MCP, denied
+prompts and no session persistence. Its structured output stream is admitted only
+after validation; unexpected actions, provider
 errors, malformed output and incomplete results cannot publish a summary.
 Claude admission requires its initialization event with an explicit empty tool
 list before its successful final result.
-Codex's documented nonfatal `item.completed/error` retains a generic warning
-indicator; top-level `error`, `turn.failed` and failed process exits still reject.
-This distinction follows the matching
-[0.164.0 SDK item contract](https://github.com/openai/codex/blob/rust-v0.164.0/sdk/typescript/src/items.ts)
-and [stream event contract](https://github.com/openai/codex/blob/rust-v0.164.0/sdk/typescript/src/events.ts).
+Codex generation is unavailable and fails before prompt assembly or any Codex
+process starts. CLI0.164.0 has no established blanket MCP disable or inspection
+that shares `exec --ignore-user-config` configuration selection. That flag skips
+user configuration; independent system/cloud defaults can still contain servers.
+Normal `mcp list` is not a faithful substitute: user configuration affects auth
+bootstrap and therefore cloud configuration selection, and listing can perform
+OAuth discovery/auth refresh. See [configuration layers](https://learn.chatgpt.com/docs/config-file/config-basic)
+and [MCP controls](https://learn.chatgpt.com/docs/extend/mcp).
+The reader defaults to Claude and visibly explains this limitation. Forged Codex
+bridge requests receive the same bounded failure, without automatic fallback.
+Saved Codex records, provenance and generic historical warning indicators remain
+supported. The original working-Codex goal is incomplete; there is no API-key,
+alternate provider, configuration-copying or global-settings workaround.
 The app does not claim isolation from trusted admin policy or ordinary CLI
 authentication/cache behavior. Raw prompts/events/stderr never become app logs.
 

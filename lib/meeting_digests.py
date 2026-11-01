@@ -34,30 +34,6 @@ class ActionError(DigestError):
             self.admission["tool_name"] = name
 
 
-class ProviderError(DigestError):
-    def __init__(self, text="", code=None, status=None):
-        # Only fixed categories survive, never CLI error text or a quoted prompt.
-        lowered = text.lower() if isinstance(text, str) else ""
-        category = "provider_error"
-        for label, words in (("rate_limit", ("rate limit", "usage limit", "429", "quota")),
-                             ("authentication", ("unauthorized", "authentication", "401")),
-                             ("model_unavailable", ("model not found", "unsupported model", "model_not_found", "model is not supported")),
-                             ("connection", ("reconnecting", "connection", "network", "stream disconnected"))):
-            if any(word in lowered for word in words):
-                category = label
-                break
-        super().__init__("The CLI reported a provider error. Check its availability outside this app; no summary was saved.")
-        self.admission = {"error_category": category, "error_keywords": [word for word in
-                          ("reconnecting", "stream disconnected", "network", "rate limit", "429", "auth", "401",
-                           "model", "timeout", "unexpected status", "retry", "login", "websocket") if word in lowered]}
-        if isinstance(code, str) and code in {"rate_limit_exceeded", "usage_limit_reached", "model_not_found",
-                                             "unsupported_model", "invalid_request_error", "server_error",
-                                             "insufficient_quota", "authentication_error"}:
-            self.admission["code"] = code
-        if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
-            self.admission["http_status"] = status
-
-
 @dataclass(frozen=True)
 class Source:
     meeting_path: Path

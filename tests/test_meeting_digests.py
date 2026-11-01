@@ -51,22 +51,24 @@ class DigestTests(unittest.TestCase):
         self.source = self.library.digest_source(self.row['id'], self.runs['T2'])
         self.skill = (ROOT / 'skills/meeting/SKILL.md').read_bytes()
 
-    def fixture_cli(self, body=None):
-        executable = self.root / 'codex'
+    def fixture_cli(self, body=None, provider='claude'):
+        executable = self.root / provider
         executable.write_text('#!' + sys.executable + '\n' + '''
 import sys,json,os
 args=sys.argv[1:]
-if args==['--version']: print('codex-cli synthetic');sys.exit()
+if args==['--version']: print('CLI synthetic');sys.exit()
 if args==['login','status']: print('Logged in using ChatGPT');sys.exit()
 if args==['exec','--help']: print('--ignore-user-config --ignore-rules --ephemeral --json');sys.exit()
+if args==['auth','status']: print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty','subscriptionType':'max'}));sys.exit()
+if args==['--help']: print('--safe-mode --restricted --tools --strict-mcp-config --no-session-persistence --permission-prompts');sys.exit()
 text=sys.stdin.read()
 ''' + (body or '''
 assert 'Selected T2 evidence only.' in text
 assert not any(k in os.environ for k in ['OPENAI_API_KEY','CODEX_API_KEY','ASSEMBLYAI_API_KEY','CODEX_APP_TOOLS_PIPE_PATH'])
-assert '--ignore-user-config' in args and '--sandbox' in args
-print(json.dumps({'type':'item.completed','item':{'type':'error','message':'SYNTHETIC_PRIVATE_WARNING'}}))
-print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'# Summary\\nSelected T2 evidence.'}}))
-print(json.dumps({'type':'turn.completed'}))
+assert '--safe-mode' in args and '--restricted' in args
+assert args[args.index('--tools')+1]=='' and args[args.index('--mcp-config')+1]=='{"mcpServers":{}}'
+print(json.dumps({'type':'system','subtype':'init','tools':[]}))
+print(json.dumps({'type':'result','subtype':'success','result':'# Summary\\nSelected T2 evidence.'}))
 '''))
         executable.chmod(0o700)
         return executable
@@ -83,7 +85,7 @@ print(json.dumps({'type':'turn.completed'}))
         hashes = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in self.bundle.rglob('*') if p.is_file()}
         with patch.dict(os.environ, {'PATH':str(self.root)+os.pathsep+os.environ.get('PATH',''),
                                      'OPENAI_API_KEY':'synthetic-sentinel','CODEX_APP_TOOLS_PIPE_PATH':'synthetic-sentinel'}):
-            started = bridge.start_summary(self.row['id'], self.runs['T2'], 'codex')
+            started = bridge.start_summary(self.row['id'], self.runs['T2'], 'claude')
             self.assertEqual(bridge.load_run(self.row['id'], self.runs['T1'])['canonical']['text'], 'First.')
             # Even replacing the active Library cannot retarget this job.
             bridge._library = Library()
@@ -93,9 +95,7 @@ print(json.dumps({'type':'turn.completed'}))
         history = self.library.summary_history(self.row['id'], self.runs['T2'])
         self.assertEqual(history['summary']['markdown'], '# Summary\nSelected T2 evidence.')
         self.assertFalse(history['summary']['earlier_revision'])
-        self.assertTrue(history['summary']['provider_warning'])
-        self.assertTrue(result['admission']['provider_warning'])
-        self.assertNotIn('SYNTHETIC_PRIVATE_WARNING', next(self.bundle.glob('summaries/*/summary.json')).read_text())
+        self.assertFalse(history['summary']['provider_warning'])
         for path, digest in hashes.items():
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
         saved = next(self.bundle.glob('summaries/*/summary.json'))
@@ -106,13 +106,50 @@ print(json.dumps({'type':'turn.completed'}))
         self.fixture_cli("print('not a CLI envelope')\n")
         bridge._library = self.library
         with patch.dict(os.environ, {'PATH':str(self.root)+os.pathsep+os.environ.get('PATH','')}):
-            started = bridge.start_summary(self.row['id'], self.runs['T2'], 'codex')
+            started = bridge.start_summary(self.row['id'], self.runs['T2'], 'claude')
             self.assertEqual(finished(bridge._digests, started['id'])['state'], 'failed')
         self.assertEqual(saved.read_bytes(), prior)
         self.assertEqual(len(list(self.bundle.glob('summaries/*/summary.json'))), 1)
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX executable fixture; Windows native proof is separate')
+    def test_codex_cannot_submit_to_unverified_mcp_configuration(self):
+        # A synthetic remaining configuration layer, independent of user config.
+        # If exec is reached, the fixture starts that server and records only
+        # receipt, never transcript content. No model or external service runs.
+        server_marker = self.root / 'server-started'
+        input_marker = self.root / 'input-received'
+        exec_marker = self.root / 'exec-started'
+        server = self.root / 'remaining-server.py'
+        server.write_text('from pathlib import Path\nPath('+repr(str(server_marker))+').touch()\n')
+        config = self.root / 'remaining-defaults.json'
+        config.write_text(json.dumps({'mcp_servers':{'synthetic':{'command':sys.executable,'args':[str(server)]}}}))
+        self.fixture_cli('''
+import subprocess
+from pathlib import Path
+Path('''+repr(str(exec_marker))+''').touch()
+servers=json.loads(Path('''+repr(str(config))+''').read_text())['mcp_servers']
+for server in servers.values(): subprocess.run([server['command'],*server['args']],check=True)
+if text: Path('''+repr(str(input_marker))+''').touch()
+''', provider='codex')
+        previous = record(self.source,self.skill,'codex','synthetic','Keep prior Codex success',None)
+        self.library.publish_digest(self.source,previous)
+        saved = next(self.bundle.glob('summaries/*/summary.json'))
+        prior = saved.read_bytes()
+        job = DigestJob(ROOT/'skills/meeting/SKILL.md')
+        self.addCleanup(job.close)
+        with patch.dict(os.environ,{'PATH':str(self.root)+os.pathsep+os.environ.get('PATH','')}):
+            started = job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
+            result = finished(job,started['id'])
+        self.assertEqual(result['state'],'failed',result)
+        self.assertIn('MCP',result['error'])
+        self.assertFalse(exec_marker.exists())
+        self.assertFalse(server_marker.exists())
+        self.assertFalse(input_marker.exists())
+        self.assertEqual(saved.read_bytes(),prior)
+        self.assertEqual(len(list(self.bundle.glob('summaries/*/summary.json'))),1)
+
     def test_reload_copy_version_hash_and_malformed_history(self):
-        first = record(self.source, self.skill, 'codex', 'synthetic', 'Earlier success', None)
+        first = record(self.source, self.skill, 'codex', 'synthetic', 'Earlier success', None, provider_warning=True)
         second = record(self.source, self.skill, 'claude', 'synthetic', 'Newest success', 'reported')
         self.library.publish_digest(self.source, first)
         self.library.publish_digest(self.source, second)
@@ -125,6 +162,7 @@ print(json.dumps({'type':'turn.completed'}))
         self.assertTrue(result['summary']['earlier_revision'])
         self.assertTrue(result['summary_warning'])
         self.assertEqual(self.library.summary_history(self.row['id'],self.runs['T2'],first['id'])['summary']['markdown'],'Earlier success')
+        self.assertTrue(self.library.summary_history(self.row['id'],self.runs['T2'],first['id'])['summary']['provider_warning'])
         import shutil
         copied = self.root / 'copy'
         shutil.copytree(self.bundle, copied / self.bundle.name)
@@ -149,35 +187,29 @@ print(json.dumps({'type':'turn.completed'}))
         self.assertFalse((self.bundle/'summaries').exists())
 
     def test_action_error_and_truncated_cli_results_are_rejected(self):
-        codex_success = b'\n{"type":"item.completed","item":{"type":"agent_message","text":"# Summary"}}\n{"type":"turn.completed"}'
         claude_success = b'\n{"type":"result","subtype":"success","result":"# Summary"}'
         claude_init = b'{"type":"system","subtype":"init","tools":[]}\n'
-        cases = [('codex',b'{"type":"item.completed","item":{"type":"command_execution"}}'+codex_success),
-                 ('codex',b'{"type":"error","message":"fatal"}'+codex_success),
-                 ('codex',b'{"type":"turn.failed","error":{"message":"fatal"}}'+codex_success),
-                 ('codex',b'{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}'),
-                 ('codex',b'{"type":"item.completed","item":{"type":"error","message":"rate limit synthetic"}}'),
-                 ('claude',b'{"type":"system","subtype":"init","tools":["Bash"]}'+claude_success),
-                 ('claude',claude_init+b'{"type":"assistant","message":{"content":[{"type":"tool_use"}]}}'+claude_success),
-                 ('claude',claude_init+b'{"type":"result","subtype":"error","result":"wrong"}'),
-                 ('claude',claude_success),
-                 ('claude',b'{"type":"system","subtype":"init"}'+claude_success),
-                 ('claude',b'{"type":"system","subtype":"init","tools":""}'+claude_success)]
-        for provider,data in cases:
-            with self.subTest(provider=provider,data=data), self.assertRaises(DigestError):
-                parse_result(provider,data)
-        text,model,admission = parse_result('claude', b'{"type":"system","subtype":"init","tools":[],"model":"reported"}\n{"type":"result","subtype":"success","result":"# Summary"}')
+        cases = [b'{"type":"system","subtype":"init","tools":["Bash"]}'+claude_success,
+                 claude_init+b'{"type":"assistant","message":{"content":[{"type":"tool_use"}]}}'+claude_success,
+                 claude_init+b'{"type":"result","subtype":"error","result":"wrong"}',
+                 claude_success,
+                 b'{"type":"system","subtype":"init"}'+claude_success,
+                 b'{"type":"system","subtype":"init","tools":""}'+claude_success]
+        for data in cases:
+            with self.subTest(data=data), self.assertRaises(DigestError):
+                parse_result(data)
+        text,model,admission = parse_result(b'{"type":"system","subtype":"init","tools":[],"model":"reported"}\n{"type":"result","subtype":"success","result":"# Summary"}')
         self.assertEqual((text,model,admission['init_tools']),('# Summary','reported',[]))
 
     @unittest.skipIf(os.name == 'nt', 'Mac per-user installation and executable fixture')
     def test_native_cli_fallback_is_available_without_shell_path_configuration(self):
         executable = self.fixture_cli()
-        fallback = self.root / '.local/bin/codex'
+        fallback = self.root / '.local/bin/claude'
         fallback.parent.mkdir(parents=True)
         executable.rename(fallback)
-        resolved = resolve_cli('codex', {'PATH':'/usr/bin:/bin', 'HOME':str(self.root)})
+        resolved = resolve_cli('claude', {'PATH':'/usr/bin:/bin', 'HOME':str(self.root)})
         result = subprocess.run([resolved,'--version'],capture_output=True,text=True,check=True)
-        self.assertEqual(result.stdout.strip(),'codex-cli synthetic')
+        self.assertEqual(result.stdout.strip(),'CLI synthetic')
         self.assertEqual(Path(resolved),fallback.resolve())
 
     @unittest.skipIf(os.name == 'nt', 'POSIX operation; actual Windows Job Object proof remains deferred')
@@ -213,9 +245,9 @@ print(json.dumps({'type':'turn.completed'}))
         job = DigestJob(ROOT/'skills/meeting/SKILL.md')
         self.addCleanup(job.close)
         with patch.dict(os.environ,{'PATH':str(self.root)+os.pathsep+os.environ.get('PATH','')}):
-            status = job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
+            status = job.start(self.source,self.library.publish_digest,'claude',self.row['id'],self.runs['T2'])
             with self.assertRaises(DigestError):
-                job.start(self.source,self.library.publish_digest,'claude',self.row['id'],self.runs['T2'])
+                job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
             job.cancel(status['id'])
             self.assertEqual(finished(job,status['id'])['state'],'cancelled')
         self.assertEqual(self.library.summary_history(self.row['id'],self.runs['T2'])['summary']['id'],previous['id'])

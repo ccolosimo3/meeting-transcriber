@@ -46,8 +46,13 @@ Collapsing a panel keeps playback running. The **More actions** menu holds theme
 choice and **Open saved HTML** for the selected version. Layout, library and
 theme choices last for the current session.
 
-Use **Generate with** to choose Codex or Claude, then **Generate summary** to send
-the selected saved transcript. Install the provider's native CLI and sign in with
+Use **Generate summary** to send the selected saved transcript to Claude Code.
+Claude is selected by default. **Codex generation is currently unavailable:** the
+app cannot establish that every effective MCP integration is disabled, so it
+stops before assembling or submitting a Codex prompt. Previously saved Codex
+summaries remain readable. A working Codex generation route is still incomplete.
+
+Install Claude's native CLI and sign in with
 your own subscription outside the app first. The app does not sign you in, use
 API keys, install a CLI or automatically retry with another provider. The CLI's
 default model and your account's data controls apply. Generation never starts
@@ -63,7 +68,8 @@ revision. A speaker-name edit can make a summary refer to an earlier revision;
 it remains available with that label. Choose another saved transcript version to
 read its own summaries. Summary text displays Markdown literally; generated
 links, images, HTML and instructions cannot act on the app.
-Nonfatal CLI warnings retain a generic indicator without their raw message.
+Earlier summaries with nonfatal CLI warnings retain a generic indicator without
+their raw message.
 
 You can keep browsing while generation runs. Its status and **Cancel summary**
 remain visible above the reader, and the result stays attached to the version

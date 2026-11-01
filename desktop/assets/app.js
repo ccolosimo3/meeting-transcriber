@@ -215,7 +215,7 @@
     ui["find-toggle"].disabled = !state.data?.canonical || state.loading || state.view !== "transcript";
     ui["details-toggle"].disabled = !state.meeting;
     const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
-    ui["generate-summary"].disabled = !state.data?.canonical || !state.runId || state.loading || state.busy || running;
+    ui["generate-summary"].disabled = ui["summary-provider"].value !== "claude" || !state.data?.canonical || !state.runId || state.loading || state.busy || running;
     ui["summary-provider"].disabled = running;
     ui["summary-view"].disabled = !state.data?.summary;
   }
@@ -745,8 +745,7 @@
   ui["summary-view"].addEventListener("click", () => setReaderView("summary"));
   ui["transcript-view"].addEventListener("click", () => setReaderView("transcript"));
   ui["summary-provider"].addEventListener("change", () => {
-    const label = ui["summary-provider"].value === "claude" ? "Claude Code" : "Codex";
-    ui["summary-disclosure"].textContent = `Sends this saved transcript to your signed-in ${label} CLI subscription. No automatic follow-up.`;
+    updateLibraryControls();
   });
   ui["summary-history"].addEventListener("change", async () => {
     if (!state.meeting || !state.runId) return;
