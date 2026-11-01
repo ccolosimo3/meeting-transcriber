@@ -546,7 +546,7 @@
       const visible = state.rows.filter(row => !row.node.hidden && state.activeOrdinals.includes(row.ordinal)).length;
       const label = `${state.activeOrdinals.length === 1 ? "Passage" : "Passages"} ${state.activeOrdinals.map(ordinal => String(ordinal + 1).padStart(2, "0")).join(", ")}`;
       ui["playing-status"].textContent = state.activeOrdinals.length
-        ? `${label} playing${visible === state.activeOrdinals.length ? " · Highlighted in transcript." : visible ? " · Some hidden by your filters." : " · Hidden by your filters."}`
+        ? `Current audio position: ${label}${visible === state.activeOrdinals.length ? " · Highlighted in transcript." : visible ? " · Some hidden by your filters." : " · Hidden by your filters."}`
         : "No transcript passage at this moment.";
     }
     followCurrent();
