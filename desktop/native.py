@@ -44,14 +44,19 @@ def _dispatch(window, name, params, call_id):
         if call_id not in window._callbacks or not callable(window._callbacks[call_id]):
             return
     else:
-        arities = {'choose_library': 0, 'refresh_library': 0, 'load_run': 2, 'open_saved_html': 2}
+        arities = {'choose_library': 0, 'refresh_library': 0, 'load_run': 2, 'open_saved_html': 2,
+                   'start_summary': 3, 'summary_status': 1, 'cancel_summary': 1, 'summary_history': 3}
         if name not in arities or not isinstance(params, list) or len(params) != arities[name]:
             return
         if params and (not isinstance(params[0], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[0])):
             return
-        if len(params) == 2 and not (name == 'load_run' and params[1] is None):
+        if len(params) >= 2 and not (name == 'load_run' and params[1] is None):
             if not isinstance(params[1], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[1]):
                 return
+        if name == 'start_summary' and params[2] not in ('codex', 'claude'):
+            return
+        if name == 'summary_history' and params[2] is not None and (not isinstance(params[2], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[2])):
+            return
     from webview.util import js_bridge_call
     js_bridge_call(window, name, params, call_id)
 

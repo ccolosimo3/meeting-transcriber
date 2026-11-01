@@ -15,13 +15,17 @@
     "find-toggle", "find-panel", "find-close", "details-toggle", "details-panel", "details-close",
     "details-title", "selected-version", "meeting-warning", "active-filters", "passage-count",
     "clear-text", "clear-speaker", "clear-filters", "actions-menu", "actions-toggle",
-    "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message"
+    "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message",
+    "summary-view", "transcript-view", "summary-provider", "generate-summary", "summary-disclosure",
+    "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-text",
+    "digest-progress", "digest-status", "cancel-summary"
   ].map(id => [id, byId(id)]));
   const state = {
     meetings: [], meeting: null, runId: null, data: null,
     rows: [], matches: [], matchIndex: -1, audio: null,
     generation: 0, libraryRequest: 0, busy: false, loading: false,
-    mediaReady: false, follow: false, activeOrdinals: [], lastFollowOrdinal: null
+    mediaReady: false, follow: false, activeOrdinals: [], lastFollowOrdinal: null,
+    view: "transcript", digestJob: null, digestGeneration: 0, summaryRequest: 0
   };
   const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
   const narrowWindow = window.matchMedia("(max-width: 760px)");
@@ -132,7 +136,7 @@
     ui["clear-speaker"].hidden = !speaker;
     ui["clear-speaker"].textContent = `Speaker: ${speakerLabel} ×`;
     ui["clear-speaker"].setAttribute("aria-label", `Clear speaker filter: ${speakerLabel}`);
-    ui["active-filters"].hidden = !ui["find-panel"].hidden || !(query || speaker);
+    ui["active-filters"].hidden = state.view === "summary" || !ui["find-panel"].hidden || !(query || speaker);
   }
 
   function setFollow(enabled) {
@@ -183,6 +187,8 @@
     ui["reader-empty"].hidden = false;
     ui["reader-empty-detail"].textContent = message || "Choose a meeting from your library to begin.";
     ui["passages"].replaceChildren();
+    ui["summary-panel"].hidden = true;
+    ui["summary-text"].textContent = "";
     ui["meeting-title"].textContent = "Meeting Transcriber";
     ui["meeting-title"].removeAttribute("title");
     ui["details-toggle"].textContent = "Details";
@@ -206,8 +212,75 @@
     ui["run-select"].disabled = state.busy || !state.meeting || state.meeting.runs.length === 0;
     ui["open-html"].disabled = state.busy || state.loading;
     ui["fallback-open-html"].disabled = state.busy || state.loading;
-    ui["find-toggle"].disabled = !state.data?.canonical || state.loading;
+    ui["find-toggle"].disabled = !state.data?.canonical || state.loading || state.view !== "transcript";
     ui["details-toggle"].disabled = !state.meeting;
+    const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
+    ui["generate-summary"].disabled = !state.data?.canonical || !state.runId || state.loading || state.busy || running;
+    ui["summary-provider"].disabled = running;
+    ui["summary-view"].disabled = !state.data?.summary;
+  }
+
+  function setReaderView(view) {
+    state.view = view === "summary" && state.data?.summary ? "summary" : "transcript";
+    const summary = state.view === "summary";
+    ui["summary-panel"].hidden = !summary;
+    ui["passages"].hidden = summary || !state.data?.canonical;
+    ui["transcript-empty"].hidden = summary || Boolean(state.data?.canonical);
+    ui["summary-view"].setAttribute("aria-pressed", String(summary));
+    ui["transcript-view"].setAttribute("aria-pressed", String(!summary));
+    if (summary) setPanelOpen("find", false, false);
+    ui["active-filters"].hidden = summary || (!ui["find-panel"].hidden || !(ui["transcript-search"].value || ui["speaker-filter"].value));
+    updateLibraryControls();
+  }
+
+  function renderSummaries(data, chooseView = false) {
+    if (!state.data) return;
+    Object.assign(state.data, data);
+    ui["summary-history"].replaceChildren();
+    for (const saved of data.summaries || []) {
+      const option = element("option", "", `${saved.generated_at} · ${saved.provider} · ${saved.source_run}`);
+      option.value = saved.id;
+      ui["summary-history"].append(option);
+    }
+    const saved = data.summary;
+    ui["summary-text"].textContent = saved ? saved.markdown : "";
+    ui["summary-provenance"].textContent = saved ? `Source version ${saved.source_run} · ${saved.earlier_revision ? "Earlier transcript revision" : "Current transcript revision"} · ${saved.source_sha256.slice(0, 12)} · ${saved.provider} · ${saved.generated_at}${saved.reported_model ? ` · ${saved.reported_model}` : ""}` : "";
+    ui["summary-history"].value = saved ? saved.id : "";
+    const warnings = [data.summary_warning, saved?.provider_warning ? "The CLI reported a nonfatal provider warning during this generation." : ""].filter(Boolean);
+    ui["summary-warning"].textContent = warnings.join(" ");
+    ui["summary-warning"].hidden = !warnings.length;
+    setReaderView(chooseView && saved ? "summary" : state.view);
+  }
+
+  function renderDigestJob() {
+    const job = state.digestJob;
+    ui["digest-progress"].hidden = !job;
+    if (!job) return;
+    const running = ["running", "cancelling"].includes(job.state);
+    ui["digest-status"].textContent = `${job.title || "Meeting"} · ${job.source_run || ""}: ${job.error || ({running: "Generating summary…", cancelling: "Cancelling summary…", succeeded: "Summary saved.", cancelled: "Summary cancelled."}[job.state] || "Summary unavailable.")}`;
+    ui["cancel-summary"].hidden = !running;
+    ui["cancel-summary"].disabled = job.state === "cancelling" || !job.id;
+    updateLibraryControls();
+  }
+
+  async function pollDigest(identifier) {
+    try {
+      const result = await api().summary_status(identifier);
+      if (state.digestJob?.id !== identifier) return;
+      state.digestJob = result && !result.error ? result : { ...state.digestJob, state: "failed", error: bounded(result?.error, "Summary status is unavailable.") };
+      renderDigestJob();
+      if (state.digestJob.state === "running") setTimeout(() => pollDigest(identifier), 700);
+      else if (state.digestJob.state === "succeeded" && state.meeting?.id === result.meeting_id && state.runId === result.run_id) {
+        const generation = state.generation;
+        const data = await api().summary_history(result.meeting_id, result.run_id, null);
+        if (generation === state.generation && data && !data.error) renderSummaries(data, state.digestGeneration === generation);
+      }
+    } catch (_) {
+      if (state.digestJob?.id === identifier) {
+        state.digestJob = { ...state.digestJob, state: "failed", error: "Summary status is unavailable. Close the app to stop its owned process." };
+        renderDigestJob();
+      }
+    }
   }
 
   function needsAttention(status) {
@@ -331,6 +404,14 @@
     state.meeting = meeting;
     state.runId = requestedRun || null;
     state.data = null;
+    state.view = "transcript";
+    ui["summary-panel"].hidden = true;
+    ui["summary-text"].textContent = "";
+    ui["summary-provenance"].textContent = "";
+    ui["summary-view"].setAttribute("aria-pressed", "false");
+    ui["transcript-view"].setAttribute("aria-pressed", "true");
+    state.view = "transcript";
+    ui["summary-panel"].hidden = true;
     state.rows = [];
     state.matches = [];
     state.matchIndex = -1;
@@ -394,6 +475,7 @@
           : "There is no readable transcript for this meeting yet. Its saved audio is available below when present.";
         ui["fallback-open-html"].hidden = ui["open-html"].hidden;
       }
+      renderSummaries({ summaries: data.summaries || [], summary: data.summary || null, summary_warning: data.summary_warning || "" }, true);
       bindMedia(data, generation);
     } catch (_) {
       if (generation !== state.generation) return;
@@ -662,6 +744,53 @@
   });
   systemTheme.addEventListener("change", event => { if (!themeChosen) setTheme(event.matches); });
   setTheme(systemTheme.matches);
+  ui["summary-view"].addEventListener("click", () => setReaderView("summary"));
+  ui["transcript-view"].addEventListener("click", () => setReaderView("transcript"));
+  ui["summary-provider"].addEventListener("change", () => {
+    const label = ui["summary-provider"].value === "claude" ? "Claude Code" : "Codex";
+    ui["summary-disclosure"].textContent = `Sends this saved transcript to your signed-in ${label} CLI subscription. No automatic follow-up.`;
+  });
+  ui["summary-history"].addEventListener("change", async () => {
+    if (!state.meeting || !state.runId) return;
+    const generation = state.generation;
+    const request = ++state.summaryRequest;
+    try {
+      const data = await api().summary_history(state.meeting.id, state.runId, ui["summary-history"].value);
+      if (generation !== state.generation || request !== state.summaryRequest) return;
+      if (!data || data.error) notice(bounded(data?.error, "This saved summary is unavailable."));
+      else renderSummaries(data);
+    } catch (_) {
+      if (generation === state.generation) notice("This saved summary is unavailable.");
+    }
+  });
+  ui["generate-summary"].addEventListener("click", async () => {
+    if (!state.meeting || !state.runId || ui["generate-summary"].disabled) return;
+    const meeting = state.meeting;
+    const runId = state.runId;
+    state.digestGeneration = state.generation;
+    state.digestJob = { state: "running", title: meeting.title, source_run: meeting.runs.find(run => run.id === runId)?.label };
+    renderDigestJob();
+    try {
+      const result = await api().start_summary(meeting.id, runId, ui["summary-provider"].value);
+      state.digestJob = result?.id ? result : { ...state.digestJob, state: "failed", error: bounded(result?.error, "Summary generation could not start.") };
+      renderDigestJob();
+      if (result?.id) pollDigest(result.id);
+    } catch (_) {
+      state.digestJob = { ...state.digestJob, state: "failed", error: "Summary generation could not start." };
+      renderDigestJob();
+    }
+  });
+  ui["cancel-summary"].addEventListener("click", async () => {
+    const identifier = state.digestJob?.id;
+    if (!identifier) return;
+    try {
+      const result = await api().cancel_summary(identifier);
+      if (state.digestJob?.id === identifier && result && !result.error) {
+        state.digestJob = result;
+        renderDigestJob();
+      }
+    } catch (_) { ui["digest-status"].textContent = "Cancellation is unavailable. Close the app to stop its owned process."; }
+  });
   ui["choose-library"].addEventListener("click", () => scanLibrary(true));
   ui["refresh-library"].addEventListener("click", () => scanLibrary(false));
   ui["library-search"].addEventListener("input", renderLibrary);

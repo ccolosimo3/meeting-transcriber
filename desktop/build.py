@@ -35,9 +35,11 @@ def main(argv=None):
         "--specpath", str(output),
         "--paths", str(root), "--paths", str(root / "lib"),
         "--add-data", f"{root / 'desktop' / 'assets'}:desktop/assets",
+        "--add-data", f"{root / 'skills' / 'meeting' / 'SKILL.md'}:skills/meeting",
         "--collect-data", "webview",
         "--copy-metadata", "pywebview",
         "--hidden-import", "desktop.native",
+        "--hidden-import", "desktop.digest_child",
     ]
     if sys.platform == "win32":
         options += [

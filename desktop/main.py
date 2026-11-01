@@ -1,4 +1,4 @@
-"""Read-only meeting desktop entry point. No provider code or credential store."""
+"""Meeting reader with explicit subscription-CLI summaries. No credential store."""
 from __future__ import annotations
 
 # Scrub before importing any renderer or launching children. This slice has no key consumer.
@@ -13,6 +13,10 @@ if _had_inherited_key and sys.platform == 'darwin' and __name__ == '__main__':
     os.execv(sys.executable, args)
 del _had_inherited_key
 
+if __name__ == '__main__' and sys.argv[1:] == ['--digest-child']:
+    from desktop.digest_child import main as digest_child_main
+    digest_child_main()
+
 from pathlib import Path
 import threading
 import webbrowser
@@ -24,14 +28,18 @@ sys.path.insert(0, str(ROOT / 'desktop'))
 from meeting_library import Library, LibraryError
 from desktop.server import ReaderServer
 from desktop.native import create_session, configure_webview
+from desktop.digest_job import DigestJob
+from meeting_digests import DigestError
 
 
 class Bridge:
     def __init__(self, server, picker, opener=webbrowser.open):
         self._server, self._picker, self._opener = server, picker, opener
         self._lock = threading.RLock()
-        root = Path.home() / 'Transcriptions'
+        root = Path(os.environ.get('MEETING_DATA_DIR', str(Path.home() / 'Transcriptions')))
         self._library = Library(root) if root.is_dir() else None
+        skill_root = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else ROOT
+        self._digests = DigestJob(skill_root / 'skills' / 'meeting' / 'SKILL.md')
 
     def choose_library(self):
         chosen = self._picker()
@@ -66,6 +74,11 @@ class Bridge:
             self._server.invalidate(media_only=True)
             try:
                 result = self._library.load(meeting_id, run_id_or_null)
+                if run_id_or_null:
+                    try:
+                        result.update(self._library.summary_history(meeting_id, run_id_or_null))
+                    except (OSError, ValueError):
+                        result.update(summaries=[], summary=None, summary_warning='Saved summaries are unavailable. Refresh to try again.')
                 if result.get('media_state') == 'ready':
                     try:
                         result['media_url'] = self._server.bind(self._library.open_media(meeting_id), result.get('media_name', 'recording.wav'))
@@ -89,6 +102,41 @@ class Bridge:
             except (OSError, ValueError):
                 return {'opened': False, 'error': 'The saved HTML is unavailable. Refresh the library.'}
 
+    def start_summary(self, meeting_id, run_id, provider):
+        with self._lock:
+            try:
+                if self._library is None:
+                    raise DigestError('Choose a library first.')
+                library = self._library
+                source = library.digest_source(meeting_id, run_id)
+                return self._digests.start(source, library.publish_digest, provider, meeting_id, run_id)
+            except (OSError, ValueError) as error:
+                return {'error': str(error) if isinstance(error, DigestError) else 'This transcript is unavailable. Refresh to try again.'}
+
+    def summary_status(self, job_id):
+        try:
+            return self._digests.status(job_id)
+        except DigestError as error:
+            return {'error': str(error)}
+
+    def cancel_summary(self, job_id):
+        try:
+            return self._digests.cancel(job_id)
+        except DigestError as error:
+            return {'error': str(error)}
+
+    def summary_history(self, meeting_id, run_id, summary_id):
+        with self._lock:
+            try:
+                if self._library is None:
+                    raise DigestError('Choose a library first.')
+                return self._library.summary_history(meeting_id, run_id, summary_id)
+            except (OSError, ValueError):
+                return {'error': 'Saved summaries are unavailable. Refresh to try again.'}
+
+    def _close(self):
+        self._digests.close()
+
 
 def main():
     import webview
@@ -105,13 +153,17 @@ def main():
         bridge = Bridge(server, picker)
         window = webview.create_window('Meeting Transcriber', server.document_url, js_api=bridge,
                                        width=1200, height=820, min_size=(400, 500), text_select=True)
+        window.events.closed += bridge._close
         server.start()
         try:
             webview.start(gui=gui, private_mode=True, storage_path=str(session.profile_path), debug=False)
             if session.error:
                 raise session.error
         finally:
-            server.close()
+            try:
+                bridge._close()
+            finally:
+                server.close()
 
 
 if __name__ == '__main__':

@@ -1,7 +1,8 @@
-"""Read-only, session-scoped projection of the existing meeting bundle layout.
+"""Session-scoped projection of the existing meeting bundle layout.
 
 Only opaque IDs cross the desktop bridge. Files are opened and verified before
 any bytes are read; callers own and close returned media/export handles.
+Only explicit digest publication writes new, exclusively owned artifacts.
 """
 
 from __future__ import annotations
@@ -13,12 +14,15 @@ import secrets
 import stat
 import sys
 import threading
+import tempfile
+import shutil
 from dataclasses import dataclass
 from typing import BinaryIO
 
 from meeting_identity import meeting_identity
 from transcript_bundle import canonical_to_json, parse_canonical
 from transcript_run import classify
+from meeting_digests import Source, DigestError, MAX_SOURCE, MAX_RECORD, GENERATION, sha256, parse_record, verify_private
 
 
 class LibraryError(ValueError):
@@ -385,3 +389,124 @@ class Library:
                 raise
         except (OSError, LibraryError) as error:
             raise _error(error) from None
+
+    def digest_source(self, meeting_id: str, run_id: str) -> Source:
+        meeting, run, generation = self._selection(meeting_id, run_id)
+        if run is None:
+            raise DigestError("Select a readable saved transcript version.")
+        description = self._run(run.path, include_text=True)
+        if not description or description["canonical"] is None:
+            raise DigestError("This saved version has no readable structured transcript.")
+        with self._open(run.path / "transcript.json") as stream:
+            data = stream.read(MAX_SOURCE + 1)
+        if len(data) > MAX_SOURCE:
+            raise DigestError("This transcript is too large to summarize in one request.")
+        transcript = parse_canonical(json.loads(data), require_speaker_names=not description['status'].startswith('Historical'))
+        source = Source(meeting.path, run.path, meeting.identity, _identity(self._check(run.path)),
+                        meeting.title, meeting.added, run.path.name, sha256(data), transcript)
+        with self._lock:
+            self._current(generation)
+        return source
+
+    def _digest_target(self, source: Source) -> None:
+        if (_identity(self._check(source.meeting_path)) != source.meeting_identity or
+                _identity(self._check(source.run_path)) != source.run_identity):
+            raise DigestError("The original summary destination changed. Refresh and try again.")
+
+    def publish_digest(self, source: Source, value: dict) -> dict:
+        """Write only to the captured meeting, with verified handles and reload."""
+        payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        parse_record(payload)
+        with self._lock:
+            self._digest_target(source)
+            parent = source.meeting_path / "summaries"
+            try:
+                parent.mkdir(mode=0o700)
+            except FileExistsError:
+                pass
+            self._check(parent)
+            verify_private(parent, directory=True)
+            target = parent / value["id"]
+            target.mkdir(mode=0o700)  # Exclusive ownership; never replace another generation.
+            identity = _identity(self._check(target))
+            temporary = None
+            try:
+                verify_private(target, directory=True)
+                descriptor, name = tempfile.mkstemp(prefix=".summary-", suffix=".tmp", dir=target)
+                temporary = Path(name)
+                with os.fdopen(descriptor, "wb") as stream:
+                    if os.name != "nt":
+                        os.fchmod(stream.fileno(), 0o600)
+                    # No sensitive byte is written until the actual opened target
+                    # and every ancestor have passed the Library boundary.
+                    if os.path.normcase(str(_handle_path(stream.fileno()))) != os.path.normcase(str(temporary)):
+                        raise DigestError("Summary destination changed.")
+                    if _identity(self._check(temporary)) != _identity(os.fstat(stream.fileno())):
+                        raise DigestError("Summary destination changed.")
+                    self._digest_target(source)
+                    verify_private(temporary, directory=False)
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if _identity(self._check(target)) != identity:
+                    raise DigestError("Summary destination changed.")
+                destination = target / "summary.json"
+                os.replace(temporary, destination)
+                verify_private(destination, directory=False)
+                with self._open(destination) as stream:
+                    saved = parse_record(stream.read(MAX_RECORD + 1))
+                if saved != value:
+                    raise DigestError("The saved summary could not be verified.")
+                return saved
+            except BaseException:
+                # Only the exclusive task directory may be removed. Never follow
+                # a replaced/reparse path during failure cleanup.
+                try:
+                    if _identity(self._check(target)) == identity:
+                        shutil.rmtree(target)
+                except (OSError, LibraryError):
+                    pass
+                raise
+
+    def summary_history(self, meeting_id: str, run_id: str, summary_id: str | None = None) -> dict:
+        meeting, run, generation = self._selection(meeting_id, run_id)
+        if run is None:
+            return {"summaries": [], "summary": None}
+        records = []
+        warning = False
+        parent = meeting.path / "summaries"
+        try:
+            candidates = self._names(parent)
+        except FileNotFoundError:
+            candidates = []
+        for folder in candidates:
+            if not GENERATION.fullmatch(folder.name):
+                continue
+            try:
+                with self._open(folder / "summary.json") as stream:
+                    value = parse_record(stream.read(MAX_RECORD + 1))
+                if value["id"] != folder.name:
+                    raise DigestError("Summary identity changed.")
+                if value["source_run"] == run.path.name:
+                    records.append(value)
+            except (OSError, ValueError):
+                warning = True
+        records.sort(key=lambda item: (item["generated_at"], item["id"]), reverse=True)
+        selected = next((item for item in records if item["id"] == summary_id), None) if summary_id else next(iter(records), None)
+        if summary_id and selected is None:
+            raise DigestError("This summary is unavailable. Refresh to try again.")
+        current_sha = None
+        try:
+            with self._open(run.path / "transcript.json") as stream:
+                data = stream.read(MAX_SOURCE + 1)
+            if len(data) <= MAX_SOURCE:
+                current_sha = sha256(data)
+        except OSError:
+            pass
+        if selected:
+            selected = {**selected, "earlier_revision": selected["source_sha256"] != current_sha}
+        with self._lock:
+            self._current(generation)
+        headers = [{k: item[k] for k in ("id", "generated_at", "provider", "source_run", "source_sha256")} for item in records]
+        return {"summaries": headers, "summary": selected,
+                "summary_warning": "Some saved summaries are unavailable." if warning else ""}

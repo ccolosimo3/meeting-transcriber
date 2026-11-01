@@ -4,9 +4,10 @@
 
 ### Desktop reader
 
-`python -m desktop.main` launches the optional read-only Windows/Mac reader.
+`python -m desktop.main` launches the optional Windows/Mac reader.
 It clears an inherited `ASSEMBLYAI_API_KEY` before importing native rendering,
-and exposes only library selection/refresh, run loading and saved-HTML opening.
+and exposes library selection/refresh, run loading, saved-HTML opening and the
+explicit summary job/history actions.
 On Mac, an entry process that inherited the key re-executes with the sanitized
 environment so OS process inspection cannot retain the original key copy.
 The CLI and its provider lifecycle below retain their existing behavior.
@@ -29,7 +30,7 @@ The CLI and its provider lifecycle below retain their existing behavior.
   before webview construction. The browser sandbox remains enabled.
   On Mac, pending JavaScript result waits end when the native window closes,
   so late bridge replies cannot keep the process alive.
-  Native messages also enforce an exact four-action allowlist before the
+  Native messages also enforce an exact action/arity/input allowlist before the
   framework dispatcher; hiding private Python attributes from API enumeration
   alone does not prevent raw dotted-attribute calls.
 - `desktop/assets/` renders escaped canonical text with source-ordinal identity.
@@ -37,12 +38,54 @@ The CLI and its provider lifecycle below retain their existing behavior.
   text view, not the audio. Library/Find/Details/Listening disclosure is local
   presentation state and never replaces the media element. Show categories
   derive from the library snapshot's eligible runs and exact statuses; selected
-  version labels and warnings derive from the current run. Nothing is saved
-  back to meeting bundles.
+  version labels and warnings derive from the current run. Summary text uses the
+  same escaped-text boundary; it cannot render raw HTML, remote resources or
+  generated actions.
 
 The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
 needed for pinned pywebview's `new Function` bridge registration; document,
 frame/origin, action allowlist and escaped-text controls remain enforced.
+
+Summary generation is a separate deliberate disclosure, never a transcription
+callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
+already signed-in first-party subscription CLI with a sanitized environment,
+neutral private working directory, stdin input, bounded independent pipe drains
+and restrictive tool/hook/integration controls. No credential is read or copied
+by the app. Codex uses ignore-user-config/ignore-rules, an ephemeral read-only
+run, never approvals, disabled web search and action features. Claude uses
+safe/restricted mode, no tools, strict empty MCP, denied prompts and no session
+persistence. Both use structured output streams; unexpected actions, provider
+errors, malformed output and incomplete results cannot publish a summary.
+Codex's documented nonfatal `item.completed/error` retains a generic warning
+indicator; top-level `error`, `turn.failed` and failed process exits still reject.
+This distinction follows the matching
+[0.164.0 SDK item contract](https://github.com/openai/codex/blob/rust-v0.164.0/sdk/typescript/src/items.ts)
+and [stream event contract](https://github.com/openai/codex/blob/rust-v0.164.0/sdk/typescript/src/events.ts).
+The app does not claim isolation from trusted admin policy or ordinary CLI
+authentication/cache behavior. Raw prompts/events/stderr never become app logs.
+
+`lib/meeting_digests.py` owns the small app-serialized record and consumes the
+bundled repository skill plus a quoted transcript snapshot. `Library` captures
+the exact selected canonical bytes through verified handles and publishes only
+under that captured meeting's private `summaries/<UTC>-<random>/summary.json`.
+Content and app-owned provenance share one atomic record, followed by reload.
+History derives from records for the existing selected transcript run; there is
+no index, latest pointer, background queue or durable recovery service. Source
+hashes expose a later speaker-name/content revision without rewriting history.
+
+Cancellation/timeout/window-close owns the entire subprocess tree. POSIX uses a
+new session/process group; Windows assigns a trusted waiting bootstrap to a
+kill-on-close Job Object before giving it the provider launch header. The app
+retains the Job handle after the root exits so surviving children remain owned.
+Windows private publication checks actual owner/DACL rather than treating POSIX
+mode bits as a Windows privacy proof. Target-OS process/privacy and native package
+tests remain necessary; a Mac run cannot qualify Windows behavior.
+
+The existing embedding/test `MEETING_DATA_DIR` seam also selects the desktop
+library before its first scan. Use a synthetic data root with normal CLI auth
+for native tests; never copy credentials into a synthetic HOME. Deterministic
+digest tests use real executable fixtures, not provider requests. Live synthetic
+subscription checks require the bounded operator authorization for that run.
 
 Install/build separately from the CLI-only route:
 
@@ -59,7 +102,7 @@ builds, not public installers. Library choice and theme are session-only.
 Focused desktop checks:
 
 ```text
-uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_dispatch tests.test_desktop_native
+uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_meeting_digests tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_dispatch tests.test_desktop_native
 ```
 
 Set `MEETING_REQUIRE_NATIVE=1` for the actual Windows native-engine navigation

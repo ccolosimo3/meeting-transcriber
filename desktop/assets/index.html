@@ -24,6 +24,7 @@
     </div>
   </header>
   <div id="library-feedback" class="library-feedback" role="status" hidden><p id="library-feedback-message"></p><button id="library-recovery" type="button">Open Library</button></div>
+  <div id="digest-progress" class="library-feedback" role="status" hidden><p id="digest-status"></p><button id="cancel-summary" type="button" hidden>Cancel summary</button></div>
   <main id="workspace" class="workspace">
     <aside id="library" class="library" aria-label="Meeting library">
       <div class="library-head">
@@ -51,6 +52,11 @@
         <p id="reader-empty-detail" class="empty-detail">Choose a meeting from your library to begin.</p>
       </div>
       <div id="reader-content" class="reader-content" hidden>
+        <div class="summary-tools">
+          <div class="summary-views" role="group" aria-label="Reader view"><button id="summary-view" type="button" aria-pressed="false" disabled>Summary</button><button id="transcript-view" type="button" aria-pressed="true">Transcript</button></div>
+          <label for="summary-provider">Generate with</label><select id="summary-provider"><option value="codex">Codex</option><option value="claude">Claude</option></select><button id="generate-summary" type="button" disabled>Generate summary</button>
+          <p id="summary-disclosure">Sends this saved transcript to your signed-in Codex CLI subscription. No automatic follow-up.</p>
+        </div>
         <div class="reader-context">
           <section id="details-panel" class="details-panel" aria-label="Meeting details" hidden>
             <div class="panel-heading"><h2 id="details-title"></h2><button id="details-close" type="button" aria-label="Close details">×</button></div>
@@ -75,6 +81,7 @@
           <p id="meeting-warning" class="meeting-warning" role="status" hidden></p>
           <p id="reader-notice" class="notice" role="status" hidden></p>
         </div>
+        <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summaries</label><select id="summary-history"></select><p id="summary-provenance" class="summary-provenance"></p><p id="summary-warning" class="summary-provenance" role="status" hidden></p><div id="summary-text" class="summary-text" tabindex="0"></div></section>
         <div id="passages" class="passages" tabindex="0" aria-label="Transcript passages"></div>
         <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" type="button" hidden>Open saved HTML ↗</button></div>
         <footer class="player" aria-label="Audio player">

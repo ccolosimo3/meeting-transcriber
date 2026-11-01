@@ -25,13 +25,18 @@ def speaker_label(speaker: str, names: dict[str, str]) -> str:
 def render(source: Path) -> str:
     transcript = load_canonical(source)
     title, recorded_at, run_id = meeting_identity(source)
+    return render_content(transcript, title, recorded_at, run_id, source.name)
+
+
+def render_content(transcript, title: str, recorded_at: str, run_id: str, source_name: str = "transcript.json") -> str:
+    """Render already validated data without reopening an unverified path."""
     turns = group_turns(transcript.segments)
     lines = [
         f"# {title}",
         "",
         f"- Recorded: {recorded_at}",
         f"- Transcript run: {run_id}",
-        f"- Structured source: `{source.name}`",
+        f"- Structured source: `{source_name}`",
         f"- Language: {transcript.language}",
         f"- Speaker turns: {len(turns)}",
         "",

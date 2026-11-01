@@ -15,10 +15,12 @@ Recording and transcription commands currently support macOS and rely on
 FFmpeg AVFoundation, Homebrew, notifications, and Finder. Transcription requires an internet
 connection, an AssemblyAI API key, and a paid AssemblyAI account.
 
-The optional **desktop library and audio viewer** supports Windows x64 with
+The optional **desktop library, audio viewer and summary reader** supports Windows x64 with
 Microsoft Edge WebView2 and Apple Silicon macOS. It reads existing meeting
-folders without uploading, editing or transcribing them. It needs no API key or
-FFmpeg. Desktop recording and transcription controls are separate future work.
+folders without transcribing them. Reading needs no API key or FFmpeg. Optional
+summary generation deliberately sends one selected transcript to an already
+signed-in Codex or Claude Code CLI subscription. Desktop recording and
+transcription controls are separate future work.
 
 ## Desktop library and audio viewer
 
@@ -43,6 +45,30 @@ open **Listening** for speed, optional Follow and Jump to playing passage.
 Collapsing a panel keeps playback running. The **More actions** menu holds theme
 choice and **Open saved HTML** for the selected version. Layout, library and
 theme choices last for the current session.
+
+Use **Generate with** to choose Codex or Claude, then **Generate summary** to send
+the selected saved transcript. Install the provider's native CLI and sign in with
+your own subscription outside the app first. The app does not sign you in, use
+API keys, install a CLI or automatically retry with another provider. The CLI's
+default model and your account's data controls apply. Generation never starts
+automatically after transcription and follow-up suggestions remain text only.
+The app checks `PATH` and the usual per-user `~/.local/bin` native install
+directory, including when launched from Finder.
+
+Successful summaries stay under `summaries` in the meeting folder, with earlier
+successes retained. **Summary** opens first when the selected **Saved version**
+has a summary; otherwise the reader opens **Transcript**. The summary selector
+lists that version's history newest first and identifies provider, time and source
+revision. A speaker-name edit can make a summary refer to an earlier revision;
+it remains available with that label. Choose another saved transcript version to
+read its own summaries. Summary text displays Markdown literally; generated
+links, images, HTML and instructions cannot act on the app.
+Nonfatal CLI warnings retain a generic indicator without their raw message.
+
+You can keep browsing while generation runs. Its status and **Cancel summary**
+remain visible above the reader, and the result stays attached to the version
+you originally selected. Closing the app stops its owned generation processes.
+An error or cancellation keeps earlier summaries and the original transcript.
 
 Copy an entire meeting folder into the other computer's library and use
 **Library folder → Refresh**. Keep the recording beside its `transcripts`
@@ -156,6 +182,12 @@ Run `meeting help` or `meeting <command> --help` for details.
   `.env`.
 - Giving a transcript to an agent is a separate, deliberate disclosure governed
   by that workspace's data controls.
+- Desktop **Generate summary** sends the selected transcript snapshot plus the
+  bundled meeting instructions through the selected CLI. Restrictive CLI controls
+  disable ordinary tool, hook and integration execution; the app does not promise
+  OS isolation from the CLI or trusted organization/host policy. It saves only
+  successful summary text and provenance, with no raw prompt, event or error
+  logs. It never sends the recording for summary generation.
 - Record only with participant consent. Recordings and transcripts are retained
   until you remove them.
 - Meeting directories use mode `0700` and generated files use `0600`.
@@ -175,6 +207,8 @@ immutable dated run beneath it:
 ~/Transcriptions/
 └── 20260826-100000-weekly-sync/
     ├── recording.wav
+    ├── summaries/                  (optional desktop generations)
+    │   └── <UTC>-<random-id>/summary.json
     └── transcripts/
         └── 20260826-105401/
             ├── transcript.json

@@ -96,6 +96,16 @@ h1, h2, p { margin: 0; }
 .reader-empty > p { font-size: 13px; line-height: 1.7; }
 .reader-empty .empty-detail { margin-top: 22px; font-size: 12px; }
 .reader-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.summary-tools { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; padding: 10px 24px; border-bottom: 1px solid var(--line); }
+.summary-tools label { color: var(--muted); font-size: 11px; margin-left: auto; }
+.summary-tools p { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.summary-views { display: flex; gap: 5px; }
+.summary-panel { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; }
+.summary-panel > label { font-size: 12px; color: var(--muted); margin-right: 8px; }
+.summary-panel > select { max-width: 100%; }
+.summary-provenance { color: var(--muted); font-size: 11px; margin-top: 10px; overflow-wrap: anywhere; }
+.summary-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 850px; margin-top: 20px; line-height: 1.75; }
+@media (max-width: 760px) { .summary-tools, .summary-panel { padding-inline: 15px; } .summary-tools label { margin-left: 0; } }
 .reader-context { flex: 0 1 auto; max-height: 50%; overflow: auto; }
 .details-panel, .find-panel { padding: 12px 24px; border-bottom: 1px solid var(--line); }
 .panel-heading { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }

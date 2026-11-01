@@ -171,7 +171,7 @@ class ReaderServer:
         handler.send_header('Referrer-Policy', 'no-referrer')
         handler.send_header('X-Frame-Options', 'DENY')
         if app:
-            # Pinned pywebview creates its four API wrappers with new Function.
+            # Pinned pywebview creates its API wrappers with new Function.
             # WKWebView enforces CSP for that native-injected bridge code.
             # Keep inline/remote scripts forbidden; only Mac needs this eval.
             bridge_eval = " 'unsafe-eval'" if sys.platform == 'darwin' else ''
