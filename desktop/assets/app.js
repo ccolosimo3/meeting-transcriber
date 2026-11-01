@@ -622,7 +622,8 @@
   });
   narrowWindow.addEventListener("change", () => {
     const focusInLibrary = ui["library"].contains(document.activeElement);
-    setLibraryOpen(narrowWindow.matches ? false : wideLibraryOpen, focusInLibrary && narrowWindow.matches);
+    const open = !narrowWindow.matches && wideLibraryOpen;
+    setLibraryOpen(open, focusInLibrary && !open);
   });
   setLibraryOpen(libraryOpen);
   for (const name of panels) {
