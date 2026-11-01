@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -18,6 +19,25 @@ from meeting_digests import DigestError, ActionError, MAX_SUMMARY, prompt, recor
 TIMEOUT = 300
 MAX_STDOUT = 2 * 1024 * 1024
 MAX_STDERR = 64 * 1024
+
+FEATURES = ("hooks", "shell_tool", "apps", "plugins", "remote_plugin", "multi_agent",
+            "browser_use", "browser_use_external", "computer_use", "image_generation",
+            "view_image", "code_mode", "code_mode_host", "goals", "memories",
+            "skill_search", "skill_mcp_dependency_install")
+
+
+def codex_controls() -> list[str]:
+    # Shared by ordinary-config metadata discovery and execution. In particular,
+    # never use exec-only --ignore-user-config: it changes auth/cloud bootstrap.
+    settings = ('approval_policy="never"', 'sandbox_mode="read-only"',
+                'forced_login_method="chatgpt"', 'model_provider="openai"',
+                'openai_base_url=""', 'chatgpt_base_url="https://chatgpt.com/backend-api/"',
+                'web_search="disabled"', 'notify=[]', 'history.persistence="none"',
+                'analytics.enabled=false', 'otel.exporter="none"',
+                'otel.trace_exporter="none"', 'otel.metrics_exporter="none"',
+                'otel.log_user_prompt=false')
+    return [argument for setting in settings for argument in ('-c', setting)] + [
+        argument for feature in FEATURES for argument in ('--disable', feature)]
 
 
 def child_environment() -> dict[str, str]:
@@ -194,7 +214,10 @@ def run_process(command, payload, cwd, env, cancel, *, timeout=TIMEOUT):
     return process.returncode, bytes(output), bytes(errors)
 
 
-def cli_command(executable: str) -> list[str]:
+def cli_command(provider: str, executable: str, controls=()) -> list[str]:
+    if provider == "codex":
+        return [executable, "exec", "--ignore-rules", "--ephemeral", "--sandbox", "read-only",
+                "--json", "--color", "never", "--skip-git-repo-check", *controls, "-"]
     return [executable, "--print", "--safe-mode", "--restricted", "--tools", "", "--disallowedTools", "*",
             "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "dontAsk",
             "--permission-prompts", "none", "--disable-slash-commands", "--no-session-persistence",
@@ -202,40 +225,62 @@ def cli_command(executable: str) -> list[str]:
             "--output-format", "stream-json", "--verbose"]
 
 
-def parse_result(raw) -> tuple[str, str | None, dict]:
+def parse_result(provider, raw) -> tuple[str, str | None, dict]:
     try:
         events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
-        final, model, completed, tools = None, None, False, None
+        final, model, completed, tools, provider_warning = None, None, False, None, False
         initialized = False
         if not events:
             raise ValueError()
         for event in events:
             kind = event["type"]
-            if kind == "system" and event.get("subtype") == "init":
-                tools = event.get("tools")
-                if initialized or not isinstance(tools, list):
+            if provider == "codex":
+                if kind in {"error", "turn.failed"}:
+                    raise DigestError("The CLI reported a provider error. No summary was saved.")
+                if kind in {"item.started", "item.updated", "item.completed"}:
+                    item = event["item"]
+                    if item["type"] == "error":
+                        # rust-v0.164.0 SDK ErrorItem is explicitly nonfatal;
+                        # top-level error/turn.failed remain fatal. Keep no raw
+                        # warning text, which may contain private context.
+                        if kind != "item.completed":
+                            raise ValueError()
+                        provider_warning = True
+                        continue
+                    if item["type"] not in {"reasoning", "agent_message"}:
+                        raise ActionError(item["type"], item.get("status"), item.get("tool") or item.get("name"))
+                    if kind == "item.completed" and item["type"] == "agent_message":
+                        final = item["text"]
+                elif kind == "turn.completed":
+                    completed = True
+                elif kind not in {"thread.started", "turn.started"}:
                     raise ValueError()
-                if tools:
-                    raise DigestError("The CLI exposed unexpected tools. No summary was saved.")
-                initialized = True
-                model = event.get("model")
-            elif kind == "assistant":
-                if not initialized:
+            else:
+                if kind == "system" and event.get("subtype") == "init":
+                    tools = event.get("tools")
+                    if initialized or not isinstance(tools, list):
+                        raise ValueError()
+                    if tools:
+                        raise DigestError("The CLI exposed unexpected tools. No summary was saved.")
+                    initialized = True
+                    model = event.get("model")
+                elif kind == "assistant":
+                    if not initialized:
+                        raise ValueError()
+                    if any(block.get("type") in {"tool_use", "server_tool_use"} for block in event["message"]["content"]):
+                        raise ActionError("tool_use")
+                elif kind == "result":
+                    if not initialized or completed or event.get("is_error") or event.get("subtype") != "success" or event.get("permission_denials"):
+                        raise ValueError()
+                    final, completed = event["result"], True
+                elif kind not in {"system", "rate_limit_event", "user"}:
                     raise ValueError()
-                if any(block.get("type") in {"tool_use", "server_tool_use"} for block in event["message"]["content"]):
-                    raise ActionError("tool_use")
-            elif kind == "result":
-                if not initialized or completed or event.get("is_error") or event.get("subtype") != "success" or event.get("permission_denials"):
-                    raise ValueError()
-                final, completed = event["result"], True
-            elif kind not in {"system", "rate_limit_event", "user"}:
-                raise ValueError()
         if not completed or not isinstance(final, str) or not final.strip() or len(final.encode("utf-8")) > MAX_SUMMARY:
             raise ValueError()
         if model is not None and (not isinstance(model, str) or len(model) > 200):
             raise ValueError()
         return final.strip(), model, {"completed": True, "action_events": 0, "init_tools": tools,
-                                     "provider_warning": False}
+                                     "provider_warning": provider_warning}
     except DigestError:
         raise
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
@@ -273,39 +318,67 @@ class DigestJob:
     def _run(self, command, data, cwd, env, *, timeout=TIMEOUT):
         return run_process(command, data, cwd, env, self._cancel, timeout=timeout)
 
+    def _codex_servers(self, executable, controls, cwd, env):
+        code, output, _ = self._run([executable, "mcp", "list", "--json", *controls], b"", cwd, env, timeout=20)
+        try:
+            entries = json.loads(output)
+            if code or not isinstance(entries, list) or len(entries) > 128:
+                raise ValueError()
+            servers = {}
+            for entry in entries:
+                name, enabled = entry["name"], entry["enabled"]
+                if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", name) or name in servers or not isinstance(enabled, bool):
+                    raise ValueError()
+                servers[name] = enabled
+            return servers
+        except (ValueError, TypeError, KeyError, RecursionError):
+            raise DigestError("Codex MCP configuration could not be verified. No transcript was submitted.") from None
+
     def _work(self, source, publish, provider, skill):
         try:
-            if provider == "codex":
-                # No supported inspection shares exec's --ignore-user-config
-                # bootstrap/cloud selection, and no blanket MCP disable exists.
-                # Stop before prompt assembly or any Codex process is started.
-                raise DigestError("Codex generation is unavailable: the app cannot verify that all MCP integrations are disabled. Choose Claude; saved Codex summaries remain available.")
             env = child_environment()
             executable = resolve_cli(provider, env)
+            controls = codex_controls() if provider == "codex" else []
             with tempfile.TemporaryDirectory(prefix="MeetingTranscriber-digest-") as temporary:
                 cwd = Path(temporary)
                 code, version, _ = self._run([executable, "--version"], b"", cwd, env, timeout=20)
                 version = version.decode("utf-8").strip()
                 if code or not version or len(version) > 200:
                     raise DigestError("The selected CLI version could not be checked.")
-                code, auth_out, _ = self._run([executable, "auth", "status"], b"", cwd, env, timeout=20)
-                try:
-                    status = json.loads(auth_out)
-                    authorized = (code == 0 and status.get("loggedIn") is True and
-                                  status.get("authMethod") == "claude.ai" and status.get("apiProvider") == "firstParty" and
-                                  str(status.get("subscriptionType", "")).lower() in {"pro", "max", "team", "enterprise", "ultra"})
-                except (ValueError, AttributeError):
-                    authorized = False
+                auth = [executable, "login", "status", *controls] if provider == "codex" else [executable, "auth", "status"]
+                code, auth_out, auth_err = self._run(auth, b"", cwd, env, timeout=20)
+                if provider == "codex":
+                    authorized = code == 0 and b"ChatGPT" in auth_out + auth_err and b"API key" not in auth_out + auth_err
+                else:
+                    try:
+                        status = json.loads(auth_out)
+                        authorized = (code == 0 and status.get("loggedIn") is True and
+                                      status.get("authMethod") == "claude.ai" and status.get("apiProvider") == "firstParty" and
+                                      str(status.get("subscriptionType", "")).lower() in {"pro", "max", "team", "enterprise", "ultra"})
+                    except (ValueError, AttributeError):
+                        authorized = False
                 if not authorized:
                     raise DigestError("Sign in to the selected CLI with a subscription account outside this app. API-key generation is unavailable.")
-                code, help_text, _ = self._run([executable, "--help"], b"", cwd, env, timeout=20)
-                required = [b"--safe-mode", b"--restricted", b"--tools", b"--strict-mcp-config", b"--no-session-persistence", b"--permission-prompts"]
+                help_command = [executable, "exec", "--help"] if provider == "codex" else [executable, "--help"]
+                code, help_text, _ = self._run(help_command, b"", cwd, env, timeout=20)
+                required = ([b"--ignore-rules", b"--ephemeral", b"--json"] if provider == "codex" else
+                            [b"--safe-mode", b"--restricted", b"--tools", b"--strict-mcp-config", b"--no-session-persistence", b"--permission-prompts"])
                 if code or any(flag not in help_text for flag in required):
                     raise DigestError("This CLI lacks required summary controls. Update it outside this app.")
-                code, output, _ = self._run(cli_command(executable), prompt(source, skill), cwd, env)
+                servers = {}
+                if provider == "codex":
+                    servers = self._codex_servers(executable, controls, cwd, env)
+                    controls += [argument for name in sorted(servers) for argument in
+                                 ("-c", "mcp_servers." + name + ".enabled=false")]
+                    verified = self._codex_servers(executable, controls, cwd, env)
+                    if verified.keys() != servers.keys() or any(verified.values()):
+                        raise DigestError("Codex MCP configuration changed or could not be disabled. No transcript was submitted.")
+                code, output, _ = self._run(cli_command(provider, executable, controls), prompt(source, skill), cwd, env)
                 if code:
                     raise DigestError("The CLI could not generate a summary. Check its subscription availability outside this app.")
-                markdown, model, admission = parse_result(output)
+                markdown, model, admission = parse_result(provider, output)
+                if provider == "codex":
+                    admission["mcp_servers_disabled"] = len(servers)
                 value = record(source, skill, provider, version, markdown, model,
                                provider_warning=admission['provider_warning'])
                 with self._lock:

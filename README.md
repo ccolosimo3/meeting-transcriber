@@ -46,19 +46,21 @@ Collapsing a panel keeps playback running. The **More actions** menu holds theme
 choice and **Open saved HTML** for the selected version. Layout, library and
 theme choices last for the current session.
 
-Use **Generate summary** to send the selected saved transcript to Claude Code.
-Claude is selected by default. **Codex generation is currently unavailable:** the
-app cannot establish that every effective MCP integration is disabled, so it
-stops before assembling or submitting a Codex prompt. Previously saved Codex
-summaries remain readable. A working Codex generation route is still incomplete.
-
-Install Claude's native CLI and sign in with
+Use **Generate with** to choose Claude or Codex, then **Generate summary** to send
+the selected saved transcript. Claude is selected by default; the app never
+switches providers for you. Install the selected provider's native CLI and sign in with
 your own subscription outside the app first. The app does not sign you in, use
 API keys, install a CLI or automatically retry with another provider. The CLI's
 default model and your account's data controls apply. Generation never starts
 automatically after transcription and follow-up suggestions remain text only.
 The app checks `PATH` and the usual per-user `~/.local/bin` native install
 directory, including when launched from Finder.
+Before submitting a transcript to Codex, the app discovers configured MCP server
+names, disables each for that invocation and verifies that all remain disabled.
+Discovery and generation use the same ordinary configuration, authentication
+selection, working directory, environment and common restrictions. Your global
+configuration is unchanged. If the check cannot establish safety, generation
+stops with a bounded explanation and keeps earlier summaries.
 
 Successful summaries stay under `summaries` in the meeting folder, with earlier
 successes retained. **Summary** opens first when the selected **Saved version**

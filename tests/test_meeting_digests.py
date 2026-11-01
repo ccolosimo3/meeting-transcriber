@@ -54,21 +54,56 @@ class DigestTests(unittest.TestCase):
     def fixture_cli(self, body=None, provider='claude'):
         executable = self.root / provider
         executable.write_text('#!' + sys.executable + '\n' + '''
-import sys,json,os
+import sys,json,os,subprocess,hashlib
+from pathlib import Path
 args=sys.argv[1:]
 if args==['--version']: print('CLI synthetic');sys.exit()
-if args==['login','status']: print('Logged in using ChatGPT');sys.exit()
+if args[:2]==['login','status']: print('Logged in using ChatGPT');sys.exit()
 if args==['exec','--help']: print('--ignore-user-config --ignore-rules --ephemeral --json');sys.exit()
 if args==['auth','status']: print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty','subscriptionType':'max'}));sys.exit()
 if args==['--help']: print('--safe-mode --restricted --tools --strict-mcp-config --no-session-persistence --permission-prompts');sys.exit()
 text=sys.stdin.read()
+if Path(__file__).name=='codex':
+ config_path=Path(__file__).with_name('codex-config.json')
+ config=json.loads(config_path.read_text())
+ common=[args[i+1] for i,arg in enumerate(args[:-1]) if arg in ('-c','--disable') and not args[i+1].startswith('mcp_servers.')]
+ context=hashlib.sha256(json.dumps([os.getcwd(),sorted(os.environ.items()),common,hashlib.sha256(config_path.read_bytes()).hexdigest()]).encode()).hexdigest()
+ context_path=Path(__file__).with_name('context-sha')
+ if context_path.exists(): assert context_path.read_text()==context
+ else: context_path.write_text(context)
+ for setting in ['notify=[]','analytics.enabled=false','otel.exporter="none"','otel.trace_exporter="none"','otel.metrics_exporter="none"','otel.log_user_prompt=false','forced_login_method="chatgpt"','model_provider="openai"','openai_base_url=""','chatgpt_base_url="https://chatgpt.com/backend-api/"']:
+  assert setting in args
+ assert '--ignore-user-config' not in args
+ for feature in ['hooks','shell_tool','apps','plugins','remote_plugin','multi_agent','browser_use','computer_use','image_generation']:
+  assert any(args[i:i+2]==['--disable',feature] for i in range(len(args)-1))
+ servers=config['servers']
+ for server in servers:
+  if 'mcp_servers.'+server['name']+'.enabled=false' in args and config.get('mode')!='ignored-override': server['enabled']=False
+ if args[:2]==['mcp','list']:
+  assert not text
+  counter=Path(__file__).with_name('list-count')
+  count=int(counter.read_text())+1 if counter.exists() else 1
+  counter.write_text(str(count))
+  mode=config.get('mode')
+  if mode=='malformed': print('{}');sys.exit()
+  if count==2 and mode=='changed': servers.append({'name':'unexpected','enabled':False})
+  if mode=='unknown-enabled': servers[0].pop('enabled')
+  print(json.dumps(servers));sys.exit()
+ Path(__file__).with_name('exec-started').touch()
+ for server in servers:
+  if server['enabled']: subprocess.run([server['command'],*server['args']],input=text.encode(),check=True)
 ''' + (body or '''
 assert 'Selected T2 evidence only.' in text
 assert not any(k in os.environ for k in ['OPENAI_API_KEY','CODEX_API_KEY','ASSEMBLYAI_API_KEY','CODEX_APP_TOOLS_PIPE_PATH'])
-assert '--safe-mode' in args and '--restricted' in args
-assert args[args.index('--tools')+1]=='' and args[args.index('--mcp-config')+1]=='{"mcpServers":{}}'
-print(json.dumps({'type':'system','subtype':'init','tools':[]}))
-print(json.dumps({'type':'result','subtype':'success','result':'# Summary\\nSelected T2 evidence.'}))
+if Path(__file__).name=='codex':
+ print(json.dumps({'type':'item.completed','item':{'type':'error','message':'SYNTHETIC_PRIVATE_WARNING'}}))
+ print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'# Summary\\nSelected T2 evidence.'}}))
+ print(json.dumps({'type':'turn.completed'}))
+else:
+ assert '--safe-mode' in args and '--restricted' in args
+ assert args[args.index('--tools')+1]=='' and args[args.index('--mcp-config')+1]=='{"mcpServers":{}}'
+ print(json.dumps({'type':'system','subtype':'init','tools':[]}))
+ print(json.dumps({'type':'result','subtype':'success','result':'# Summary\\nSelected T2 evidence.'}))
 '''))
         executable.chmod(0o700)
         return executable
@@ -111,42 +146,58 @@ print(json.dumps({'type':'result','subtype':'success','result':'# Summary\\nSele
         self.assertEqual(saved.read_bytes(), prior)
         self.assertEqual(len(list(self.bundle.glob('summaries/*/summary.json'))), 1)
 
+    def codex_config(self, mode='valid'):
+        for name in ('context-sha','list-count'):
+            (self.root/name).unlink(missing_ok=True)
+        server=self.root/'remaining-server.py'
+        server.write_text('import sys\nfrom pathlib import Path\nPath('+repr(str(self.root/'server-started'))+').touch()\nif sys.stdin.read(): Path('+repr(str(self.root/'input-received'))+').touch()\n')
+        config=self.root/'codex-config.json'
+        name='unsafe.name' if mode=='unsafe-name' else 'synthetic'
+        config.write_text(json.dumps({'mode':mode,'servers':[{'name':name,'enabled':True,'command':sys.executable,'args':[str(server)]}]}))
+        self.fixture_cli(provider='codex')
+        return config
+
     @unittest.skipIf(os.name == 'nt', 'POSIX executable fixture; Windows native proof is separate')
-    def test_codex_cannot_submit_to_unverified_mcp_configuration(self):
-        # A synthetic remaining configuration layer, independent of user config.
-        # If exec is reached, the fixture starts that server and records only
-        # receipt, never transcript content. No model or external service runs.
-        server_marker = self.root / 'server-started'
-        input_marker = self.root / 'input-received'
-        exec_marker = self.root / 'exec-started'
-        server = self.root / 'remaining-server.py'
-        server.write_text('from pathlib import Path\nPath('+repr(str(server_marker))+').touch()\n')
-        config = self.root / 'remaining-defaults.json'
-        config.write_text(json.dumps({'mcp_servers':{'synthetic':{'command':sys.executable,'args':[str(server)]}}}))
-        self.fixture_cli('''
-import subprocess
-from pathlib import Path
-Path('''+repr(str(exec_marker))+''').touch()
-servers=json.loads(Path('''+repr(str(config))+''').read_text())['mcp_servers']
-for server in servers.values(): subprocess.run([server['command'],*server['args']],check=True)
-if text: Path('''+repr(str(input_marker))+''').touch()
-''', provider='codex')
-        previous = record(self.source,self.skill,'codex','synthetic','Keep prior Codex success',None)
-        self.library.publish_digest(self.source,previous)
-        saved = next(self.bundle.glob('summaries/*/summary.json'))
-        prior = saved.read_bytes()
-        job = DigestJob(ROOT/'skills/meeting/SKILL.md')
-        self.addCleanup(job.close)
+    def test_codex_disables_servers_per_run_and_saves_without_config_changes(self):
+        config=self.codex_config()
+        original=config.read_bytes()
+        job=DigestJob(ROOT/'skills/meeting/SKILL.md');self.addCleanup(job.close)
         with patch.dict(os.environ,{'PATH':str(self.root)+os.pathsep+os.environ.get('PATH','')}):
-            started = job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
-            result = finished(job,started['id'])
-        self.assertEqual(result['state'],'failed',result)
-        self.assertIn('MCP',result['error'])
-        self.assertFalse(exec_marker.exists())
-        self.assertFalse(server_marker.exists())
-        self.assertFalse(input_marker.exists())
-        self.assertEqual(saved.read_bytes(),prior)
-        self.assertEqual(len(list(self.bundle.glob('summaries/*/summary.json'))),1)
+            started=job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
+            result=finished(job,started['id'])
+        self.assertEqual(result['state'],'succeeded',result)
+        self.assertEqual(result['admission']['mcp_servers_disabled'],1)
+        self.assertTrue(result['admission']['provider_warning'])
+        self.assertTrue((self.root/'exec-started').exists())
+        self.assertFalse((self.root/'server-started').exists())
+        self.assertFalse((self.root/'input-received').exists())
+        self.assertEqual(config.read_bytes(),original)
+        library=Library(self.root);row=library.scan()['meetings'][0]
+        run=next(run for run in row['runs'] if run['label']=='T2')
+        self.assertEqual(library.summary_history(row['id'],run['id'])['summary']['markdown'],'# Summary\nSelected T2 evidence.')
+        saved=next(self.bundle.glob('summaries/*/summary.json'))
+        self.assertNotIn('SYNTHETIC_PRIVATE_WARNING',saved.read_text())
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX executable fixture; Windows native proof is separate')
+    def test_codex_unverified_listings_cannot_submit_or_replace_history(self):
+        previous=record(self.source,self.skill,'codex','synthetic','Keep prior success',None)
+        self.library.publish_digest(self.source,previous)
+        saved=next(self.bundle.glob('summaries/*/summary.json'));prior=saved.read_bytes()
+        for mode in ('malformed','unsafe-name','unknown-enabled','changed','ignored-override'):
+            with self.subTest(mode=mode):
+                config=self.codex_config(mode);original=config.read_bytes()
+                job=DigestJob(ROOT/'skills/meeting/SKILL.md');self.addCleanup(job.close)
+                with patch.dict(os.environ,{'PATH':str(self.root)+os.pathsep+os.environ.get('PATH','')}):
+                    started=job.start(self.source,self.library.publish_digest,'codex',self.row['id'],self.runs['T2'])
+                    result=finished(job,started['id'])
+                self.assertEqual(result['state'],'failed',result)
+                self.assertIn('MCP',result['error'])
+                self.assertFalse((self.root/'exec-started').exists())
+                self.assertFalse((self.root/'server-started').exists())
+                self.assertFalse((self.root/'input-received').exists())
+                self.assertEqual(config.read_bytes(),original)
+                self.assertEqual(saved.read_bytes(),prior)
+                self.assertEqual(len(list(self.bundle.glob('summaries/*/summary.json'))),1)
 
     def test_reload_copy_version_hash_and_malformed_history(self):
         first = record(self.source, self.skill, 'codex', 'synthetic', 'Earlier success', None, provider_warning=True)
@@ -197,9 +248,15 @@ if text: Path('''+repr(str(input_marker))+''').touch()
                  b'{"type":"system","subtype":"init","tools":""}'+claude_success]
         for data in cases:
             with self.subTest(data=data), self.assertRaises(DigestError):
-                parse_result(data)
-        text,model,admission = parse_result(b'{"type":"system","subtype":"init","tools":[],"model":"reported"}\n{"type":"result","subtype":"success","result":"# Summary"}')
+                parse_result('claude',data)
+        text,model,admission = parse_result('claude',b'{"type":"system","subtype":"init","tools":[],"model":"reported"}\n{"type":"result","subtype":"success","result":"# Summary"}')
         self.assertEqual((text,model,admission['init_tools']),('# Summary','reported',[]))
+        codex_success=b'\n{"type":"item.completed","item":{"type":"agent_message","text":"# Summary"}}\n{"type":"turn.completed"}'
+        for prefix in (b'{"type":"error"}',b'{"type":"turn.failed"}',b'{"type":"item.completed","item":{"type":"mcp_tool_call"}}'):
+            with self.subTest(prefix=prefix),self.assertRaises(DigestError):
+                parse_result('codex',prefix+codex_success)
+        with self.assertRaises(DigestError):
+            parse_result('codex',b'{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}')
 
     @unittest.skipIf(os.name == 'nt', 'Mac per-user installation and executable fixture')
     def test_native_cli_fallback_is_available_without_shell_path_configuration(self):

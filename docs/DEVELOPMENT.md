@@ -57,19 +57,33 @@ after validation; unexpected actions, provider
 errors, malformed output and incomplete results cannot publish a summary.
 Claude admission requires its initialization event with an explicit empty tool
 list before its successful final result.
-Codex generation is unavailable and fails before prompt assembly or any Codex
-process starts. CLI0.164.0 has no established blanket MCP disable or inspection
-that shares `exec --ignore-user-config` configuration selection. That flag skips
-user configuration; independent system/cloud defaults can still contain servers.
-Normal `mcp list` is not a faithful substitute: user configuration affects auth
-bootstrap and therefore cloud configuration selection, and listing can perform
-OAuth discovery/auth refresh. See [configuration layers](https://learn.chatgpt.com/docs/config-file/config-basic)
-and [MCP controls](https://learn.chatgpt.com/docs/extend/mcp).
-The reader defaults to Claude and visibly explains this limitation. Forged Codex
-bridge requests receive the same bounded failure, without automatic fallback.
-Saved Codex records, provenance and generic historical warning indicators remain
-supported. The original working-Codex goal is incomplete; there is no API-key,
-alternate provider, configuration-copying or global-settings workaround.
+Codex uses ordinary configuration consistently for `mcp list`, subscription auth
+status and `exec`; it does not use exec-only `--ignore-user-config`, which would
+change auth/cloud bootstrap. One shared set of per-run controls selects the
+built-in first-party provider and official ChatGPT routing, disables action/
+hook/app/plugin features and web search, clears legacy `notify`, disables OTEL
+log/prompt/trace/metrics exporters and analytics, and selects read-only execution
+with no approvals or transcript history. Auth-store/workspace selection remains
+CLI-owned. The built-in OpenAI provider is not replaced by a user-defined provider
+of the same name; the per-run empty `openai_base_url` restores its auth-dependent
+default. See the matching [provider implementation](https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/model-provider-info/src/lib.rs)
+and [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+Before prompt assembly, the job lists configured MCP names, adds one
+`-c mcp_servers.NAME.enabled=false` override per name, then rechecks the exact
+name set and explicit disabled states. Invalid/duplicate/unsafe names, unknown
+states, changed inventories and failed controls stop before source submission.
+Only validated names enter arguments; transport/config values are never copied.
+Both checks and generation share the captured environment, neutral private cwd,
+auth selection and common controls. Nothing edits global config or creates a
+profile/auth copy. Listing is metadata discovery and can perform ordinary OAuth
+discovery/auth refresh; it does not initialize MCP tools. See [MCP controls](https://learn.chatgpt.com/docs/extend/mcp)
+and [configuration layers](https://learn.chatgpt.com/docs/config-file/config-basic).
+CLI/environment configuration must remain stable during the owned job; this is
+not isolation from trusted administrative changes. Structured Codex output still
+rejects actions/fatal errors/incomplete turns; documented nonfatal item warnings
+retain only a generic indicator. The reader keeps Claude as its initial choice
+and permits an explicit Codex choice, with no automatic fallback.
 The app does not claim isolation from trusted admin policy or ordinary CLI
 authentication/cache behavior. Raw prompts/events/stderr never become app logs.
 
