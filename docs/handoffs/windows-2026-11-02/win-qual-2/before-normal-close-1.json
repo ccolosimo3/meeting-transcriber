@@ -1,0 +1,54 @@
+{
+  "processes": [
+    {
+      "ProcessId": 39128,
+      "ParentProcessId": 31084,
+      "Name": "MeetingTranscriber.exe"
+    },
+    {
+      "ProcessId": 39400,
+      "ParentProcessId": 39128,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 15520,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 39404,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 38032,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 9344,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 33512,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    },
+    {
+      "ProcessId": 36236,
+      "ParentProcessId": 39400,
+      "Name": "msedgewebview2.exe"
+    }
+  ],
+  "listeners": [
+    {
+      "LocalAddress": "127.0.0.1",
+      "LocalPort": 60603,
+      "OwningProcess": 39128
+    }
+  ],
+  "sessions": [
+    "MeetingTranscriber-session-d16abb27e3542c752a3130770e4b30a9"
+  ]
+}

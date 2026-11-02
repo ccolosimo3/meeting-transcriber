@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "source_commit_at_build": "e3df247c419d9b912596ae77894e152ee04b2df2",
+  "source_commit_at_return": "1dd42c7176038b1f3ff75ed5eeab6006639b3ea4",
+  "product_source": "c390b35a931bac8bfc4e5f0db73e66e1a0e3dccb",
+  "exe_sha256": "586a5ab5b917b7c029a853cfef7141e79a238d8e3ae309c2aafd5dacdb3f4a1c",
+  "manifest_sha256": "8043aa01b12f18b6b9bdf85feaf7cf358ebb88b705dd5027417644459fe44824",
+  "package_files_unchanged": 102,
+  "preserved_sources_prior_run_sibling": true,
+  "provider_fixture_requests": {
+    "upload": 3,
+    "submit": 2,
+    "poll": 460,
+    "delete": 3
+  },
+  "no_requests_on_final_restart_or_browsing": true,
+  "checks": [
+    "native import picker; local-only import/refresh/setup",
+    "masked fake key save/readiness/entry clearing",
+    "native Locate external pinned FFprobe and real preflight",
+    "explicit transcription; progress; busy native Close/Alt-F4 veto",
+    "navigation/library change preserves origin and current selection",
+    "four-file publication valid before failing DELETE",
+    "usable result; warning persists restart; DELETE-only retry clears warning",
+    "native audio-playing state",
+    "model mismatch + uncertain upload block retry after complete restart",
+    "successful artifacts/source/sibling preserved",
+    "three normal shutdowns clean owned process trees/listeners/private sessions"
+  ],
+  "not_claimed": [
+    "separate Windows File/Quit command (app has none; Close/Alt-F4 routes exercised)",
+    "raw bridge duplicate-call injection (native starts disabled while busy; only one first upload/submission observed)",
+    "summary CLI/Job Object processes",
+    "live providers/models",
+    "recording/microphone",
+    "full release/installer/signing or cross-machine qualification"
+  ],
+  "setup_and_automation_issues": [
+    "missing synthetic HOME/Desktop; created owned directory",
+    "precreated broad synthetic config refused Locate; recreated only empty owned directory through private_mkdir",
+    "nested native dialog UIA indices/focus unavailable; used supported screenshot input",
+    "initial left-border drag selected text; corrected resize with observed right border"
+  ]
+}

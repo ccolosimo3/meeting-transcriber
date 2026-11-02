@@ -1,0 +1,26 @@
+import os,sys,json,subprocess,time
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[3]
+QA=Path('<QA_ROOT>')
+E=ROOT/'tests/artifacts/win-qual-2'
+if sys.argv[1]=='fixture':
+    out=(E/'fixture-process.log').open('ab')
+    child=subprocess.Popen([sys.executable,str(E/'fixture_server.py')],cwd=QA,stdout=out,stderr=out,creationflags=subprocess.CREATE_NO_WINDOW)
+    print('fixture pid',child.pid)
+else:
+    fixture=json.loads((E/'fixture-ready.json').read_text())
+    env=os.environ.copy()
+    for key in list(env):
+        if key.endswith('API_KEY') or key.startswith(('MEETING_TRANSCRIBER_','PYTHON','CODEX','CLAUDE','ANTHROPIC','OPENAI')) or key=='VIRTUAL_ENV':env.pop(key,None)
+    for key,suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local','APPDATA':'home/AppData/Roaming','MEETING_DATA_DIR':'library-a','MEETING_CONFIG_DIR':'config','TEMP':'home/Temp','TMP':'home/Temp'}.items():
+        path=QA/suffix;path.mkdir(parents=True,exist_ok=True);env[key]=str(path)
+    env['MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE']=fixture['url']
+    env['MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL']='0.35'
+    env['MEETING_NOTIFICATIONS']='0'
+    env['PATH']=os.pathsep.join([os.environ['SystemRoot']+'/System32',os.environ['SystemRoot'],os.environ['SystemRoot']+'/System32/Wbem'])
+    index=len(list(E.glob('launch-*.json')))+1
+    app=QA/'package/MeetingTranscriber.exe'
+    child=subprocess.Popen([str(app)],cwd=QA,env=env)
+    report={'pid':child.pid,'exe':str(app),'cwd':str(QA),'environment':{key:env[key] for key in ['HOME','USERPROFILE','LOCALAPPDATA','APPDATA','MEETING_DATA_DIR','MEETING_CONFIG_DIR','MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE','MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL','PATH']},'provider_key_inherited':any(k.endswith('API_KEY') for k in env),'empty_library_at_launch':not any((QA/'library-a').iterdir())}
+    (E/f'launch-{index}.json').write_text(json.dumps(report,indent=2))
+    print(json.dumps(report,indent=2))

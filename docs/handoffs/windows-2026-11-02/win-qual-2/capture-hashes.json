@@ -1,0 +1,27 @@
+[
+  {
+    "file": "wide-light-busy.jpg",
+    "sha256": "2df99f6a480dec9618d099d481e674e4c1a816de966ff32af545073b35b1863c",
+    "original_byte_equality": true
+  },
+  {
+    "file": "restarted-warning.jpg",
+    "sha256": "9c02a1e4300d49d6abfd819347eb6368f88167be32791c75d3d178dfced36718",
+    "original_byte_equality": true
+  },
+  {
+    "file": "narrow-dark-cleanup-confirmed.jpg",
+    "sha256": "a9fee05d6010e321971eaff3dd2b2b92d6a405e79d85e01c764933d5a11a1b9f",
+    "original_byte_equality": true
+  },
+  {
+    "file": "model-mismatch-after-restart.jpg",
+    "sha256": "1565fcd23cf9a1ef90c1849300ad7bbdfad1fe3a556095b3c1f175054279079f",
+    "original_byte_equality": true
+  },
+  {
+    "file": "uncertainty-after-restart.jpg",
+    "sha256": "db38c5c5c94bec15d54d0cabeba8299241ba0cd0c51d82975696d3a3f218e1cb",
+    "original_byte_equality": true
+  }
+]

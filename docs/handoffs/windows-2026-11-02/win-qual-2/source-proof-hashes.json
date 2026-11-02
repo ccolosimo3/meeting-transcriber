@@ -1,0 +1,50 @@
+[
+  {
+    "source_file": "fixture_server.py",
+    "original_sha256": "e581ad32f1902221b7999fb4c82ed83c2bf30bb5a556ce9531cf1b14d364f7c5",
+    "original_bytes": 2537,
+    "tracked_reference": "fixture_server.py.txt",
+    "tracked_sha256": "2fa2372a382ce5c86f083c4f752c0d0293366740ff2bf74089408340940f517b",
+    "tracked_bytes": 2509,
+    "exact_transform": [
+      "Replace only the one final CRLF with LF (all internal lines are LF).",
+      "Replace the one QA-root Path literal with Path('<QA_ROOT>'); its original literal UTF8 SHA256 is recorded separately. No other byte changes."
+    ],
+    "transformed_equality": true,
+    "original_qa_root_literal_utf8_sha256": "e3eb6595bf8b73d6fef4baed418f6a0134ae14f60e12dc2ad3222615e0c50f4e"
+  },
+  {
+    "source_file": "launch_owned.py",
+    "original_sha256": "247da694d839ad47fe72533965b9d785fb99439029f8ea00732181751f57ae32",
+    "original_bytes": 2006,
+    "tracked_reference": "launch_owned.py.txt",
+    "tracked_sha256": "8324e85f3e786c61a4ea70ce69b9befc1a20a97de248d922922a98b24fe69fef",
+    "tracked_bytes": 1978,
+    "exact_transform": [
+      "Replace only the one final CRLF with LF (all internal lines are LF).",
+      "Replace the one QA-root Path literal with Path('<QA_ROOT>'); its original literal UTF8 SHA256 is recorded separately. No other byte changes."
+    ],
+    "transformed_equality": true,
+    "original_qa_root_literal_utf8_sha256": "e3eb6595bf8b73d6fef4baed418f6a0134ae14f60e12dc2ad3222615e0c50f4e"
+  },
+  {
+    "product_file": "desktop/digest_job.py",
+    "sha256": "31f4f46333882229dc184e7ea2f80a68d1971a5ac3bda06850e1967805865fa7"
+  },
+  {
+    "product_file": "desktop/digest_child.py",
+    "sha256": "7f560c407df71ab0241b7f8127c10142525605892027729ab2ef5d31f71b3ab9"
+  },
+  {
+    "product_file": "skills/meeting/SKILL.md",
+    "sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5"
+  },
+  {
+    "product_file": "pyproject.toml",
+    "sha256": "af4390e2894cd3027fabed384bfc73e325912b091f165b54931cf35c62bbafe5"
+  },
+  {
+    "product_file": "uv.lock",
+    "sha256": "bca533e2da95b3b15495a03823fc2dc3bcc352a47409d41f70d1afa8d9de1c09"
+  }
+]

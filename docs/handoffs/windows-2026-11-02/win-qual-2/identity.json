@@ -1,0 +1,16 @@
+{
+  "source": "e3df247c419d9b912596ae77894e152ee04b2df2",
+  "product_source": "c390b35a931bac8bfc4e5f0db73e66e1a0e3dccb",
+  "exe_sha256": "586a5ab5b917b7c029a853cfef7141e79a238d8e3ae309c2aafd5dacdb3f4a1c",
+  "manifest_sha256": "8043aa01b12f18b6b9bdf85feaf7cf358ebb88b705dd5027417644459fe44824",
+  "file_count": 102,
+  "preserve": {
+    "sources/Synthetic planning meeting.wav": "b732803cc84053c3cc3bc7fca664f76189c69b939782f8641a90bb45a47e22a0",
+    "preserve-sibling.txt": "3267d66125b7d3341fc99cd4036278077474c3728014bdc55685f46590bf78b4",
+    "library-b/20261101-100000-Synthetic prior/transcripts/T1/.assemblyai.json": "b02cf9a634e5123cf27c79c5903ff695517ad5a46c4f758de5307f0804b0cfc2",
+    "library-b/20261101-100000-Synthetic prior/transcripts/T1/transcript.html": "2033ed0de285b0f27ae7514da6d3ba6bc443bd13ab4a32dd98854c84154ca4cf",
+    "library-b/20261101-100000-Synthetic prior/transcripts/T1/transcript.json": "ba3f309687a82ace7dac6e21b4ab3af49d47710e9230c8e4ad5beb6d3919248a",
+    "library-b/20261101-100000-Synthetic prior/transcripts/T1/transcript.md": "197a7f106f3d32197bfb3ef4ae9044aad71d1eab5c18cf1c21f9dd19835d2c7c"
+  },
+  "initial_library_a_empty": true
+}

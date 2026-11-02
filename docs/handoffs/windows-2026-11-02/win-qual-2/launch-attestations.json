@@ -1,0 +1,35 @@
+[
+  {
+    "launch": "launch-1",
+    "pid": 39128,
+    "exe": "<QA_ROOT>/package/MeetingTranscriber.exe",
+    "cwd": "<QA_ROOT>",
+    "synthetic_locations_before_first_scan": true,
+    "localhost_provider_base": true,
+    "windows_system_only_path": true,
+    "provider_key_inherited": false,
+    "initial_library_empty": true
+  },
+  {
+    "launch": "launch-2",
+    "pid": 18448,
+    "exe": "<QA_ROOT>/package/MeetingTranscriber.exe",
+    "cwd": "<QA_ROOT>",
+    "synthetic_locations_before_first_scan": true,
+    "localhost_provider_base": true,
+    "windows_system_only_path": true,
+    "provider_key_inherited": false,
+    "initial_library_empty": false
+  },
+  {
+    "launch": "launch-3",
+    "pid": 33980,
+    "exe": "<QA_ROOT>/package/MeetingTranscriber.exe",
+    "cwd": "<QA_ROOT>",
+    "synthetic_locations_before_first_scan": true,
+    "localhost_provider_base": true,
+    "windows_system_only_path": true,
+    "provider_key_inherited": false,
+    "initial_library_empty": false
+  }
+]

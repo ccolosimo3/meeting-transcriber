@@ -1,0 +1,42 @@
+"""Localhost control around the existing canonical HTTP fixture, metadata only."""
+import os,sys,json,time,threading
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[3]
+QA=Path('<QA_ROOT>')
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith('MEETING_TRANSCRIBER_'): os.environ.pop(key,None)
+for key,suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local','MEETING_DATA_DIR':'library-a','MEETING_CONFIG_DIR':'config'}.items(): os.environ[key]=str(QA/suffix)
+sys.path[:0]=[str(ROOT),str(ROOT/'lib')]
+from tests.test_assemblyai_adapter import ScenarioServer,ScenarioHandler,completed_response
+from transcript_run import validate_managed_run
+E=ROOT/'tests/artifacts/win-qual-2'
+def control():return json.loads((QA/'control.json').read_text())
+class Handler(ScenarioHandler):
+    def _record(self,body=b''):
+        row={'time':time.time(),'method':self.command,'path':self.path,'body_bytes':len(body),'authorization_present':bool(self.headers.get('Authorization'))}
+        if self.command=='DELETE':
+            validations=[]
+            for path in (QA/'library-a').glob('*/transcripts/*'):
+                try: validate_managed_run(path); validations.append(True)
+                except ValueError: validations.append(False)
+            row['published_run_validations_before_delete']=validations
+        with (E/'request-metadata.jsonl').open('a',encoding='utf-8') as stream:stream.write(json.dumps(row)+'\n')
+    def do_POST(self):
+        if self.path=='/v2/upload':
+            selected=control()
+            response=completed_response()
+            if selected['mode']=='mismatch':response['speech_model_used']='unsupported-synthetic-model'
+            self.server.scenario={'delete_statuses':selected.get('delete_statuses',[200]),'poll_responses':[response]}
+            if selected['mode']=='unknown':self.server.scenario['upload_status']=500
+        super().do_POST()
+    def do_GET(self):
+        if control().get('hold'):
+            self._record(); self._respond(200,{'id':'job-123','status':'processing'}); return
+        super().do_GET()
+server=ScenarioServer({})
+server.RequestHandlerClass=Handler
+server.timeout=.3
+(E/'fixture-ready.json').write_text(json.dumps({'pid':os.getpid(),'url':f'http://127.0.0.1:{server.server_port}','synthetic_root':str(QA)}))
+while not (QA/'stop-fixture').exists():server.handle_request()
+server.server_close()
+(E/'fixture-stopped.json').write_text(json.dumps({'pid':os.getpid(),'stopped':True}))
