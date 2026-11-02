@@ -1,0 +1,23 @@
+{
+  "before_observed": {
+    "original_python_registration": "PythonCore/3.12",
+    "added_launcher": "user-local-bin/python3.13.exe",
+    "added_launcher_target": "task-tooling/python/cpython-3.13.15-windows-x86_64-none/python.exe",
+    "added_registry": "HKCU/Software/Python/Astral/CPython3.13.15",
+    "added_registry_target": "task-tooling/python/cpython-3.13.15-windows-x86_64-none/python.exe"
+  },
+  "after_observed": {
+    "task_launcher_absent": true,
+    "task_registration_absent": true,
+    "original_python312_registration_present": true,
+    "managed_runtime_present": true,
+    "user_path_contains_task_root": false,
+    "machine_path_contains_task_root": false,
+    "profiles": {
+      "name": "Microsoft.PowerShell_profile.ps1",
+      "last_write_utc": "2026-05-13T13:23:13.3560456Z",
+      "sha256": "B108475E5FAE968E0304891B6EAB04B6D832082E1DD1D6FF61ACE5E1E985DC4D"
+    }
+  },
+  "limitation": "No pre-setup PATH/profile byte snapshot was taken; unchanged status is supported by command history and current profile timestamps, not before/after equality. No command edited PATH or a shell profile. Only inspected task-owned launcher and registry entries were removed."
+}

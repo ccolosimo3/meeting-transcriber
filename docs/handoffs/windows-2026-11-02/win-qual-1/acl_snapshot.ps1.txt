@@ -1,0 +1,6 @@
+param([Parameter(Mandatory=$true)][string]$TargetPath)
+$taskAcl = Get-Acl -LiteralPath $TargetPath -ErrorAction Stop
+$taskItem = Get-Item -LiteralPath $TargetPath -Force -ErrorAction Stop
+$taskOwnerSid = $taskAcl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+$taskRules = @($taskAcl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object { [ordered]@{sid=$_.IdentityReference.Value; type=$_.AccessControlType.ToString(); rights=$_.FileSystemRights.ToString(); inherited=$_.IsInherited} })
+[ordered]@{path=$TargetPath; owner=$taskOwnerSid; protected=$taskAcl.AreAccessRulesProtected; directory=$taskItem.PSIsContainer; length=$(if($taskItem.PSIsContainer){$null}else{$taskItem.Length}); sddl=$taskAcl.Sddl; rules=$taskRules} | ConvertTo-Json -Depth 5 -Compress

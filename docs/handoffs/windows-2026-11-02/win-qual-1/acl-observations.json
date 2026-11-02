@@ -1,0 +1,1413 @@
+[
+  {
+    "path": "permissive",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:AI(A;OICI;0x1200a9;;;WD)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;SY)(A;OICIID;0x1200a9;;;BU)(A;ID;0x1301bf;;;AU)(A;OICIIOID;SDGXGWGR;;;AU)",
+    "rules": [
+      {
+        "sid": "EVERYONE",
+        "type": "Allow",
+        "rights": "ReadAndExecute, Synchronize",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "USERS",
+        "type": "Allow",
+        "rights": "ReadAndExecute, Synchronize",
+        "inherited": true
+      },
+      {
+        "sid": "AUTHENTICATED_USERS",
+        "type": "Allow",
+        "rights": "Modify, Synchronize",
+        "inherited": true
+      },
+      {
+        "sid": "AUTHENTICATED_USERS",
+        "type": "Allow",
+        "rights": "-536805376",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\.keep.txt.1010ae0407be5cb75ece5ec0.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:AI(A;ID;0x1200a9;;;WD)(A;ID;FA;;;BA)(A;ID;FA;;;SY)(A;ID;0x1200a9;;;BU)(A;ID;0x1301bf;;;AU)",
+    "rules": [
+      {
+        "sid": "EVERYONE",
+        "type": "Allow",
+        "rights": "ReadAndExecute, Synchronize",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "USERS",
+        "type": "Allow",
+        "rights": "ReadAndExecute, Synchronize",
+        "inherited": true
+      },
+      {
+        "sid": "AUTHENTICATED_USERS",
+        "type": "Allow",
+        "rights": "Modify, Synchronize",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child\\.value.txt.f7ef3680bf9e2cdb28788404.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child\\value.txt",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 15,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child\\.value.txt.a78691e9cfc8f635fcb4b103.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child\\value.txt",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 21,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "permissive\\private\\child\\value.txt",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 21,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\..env.99edda56cb47d80dc4b542af.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 35,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 35,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 35,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 35,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\..env.085409c6eb703bb0f44a021f.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:AI(A;;FR;;;WD)(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "EVERYONE",
+        "type": "Allow",
+        "rights": "Read, Synchronize",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:AI(A;;FR;;;WD)(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "EVERYONE",
+        "type": "Allow",
+        "rights": "Read, Synchronize",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "home\\AppData\\Local\\MeetingTranscriber\\.env",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 41,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:AI(A;;FR;;;WD)(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "EVERYONE",
+        "type": "Allow",
+        "rights": "Read, Synchronize",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\recording.partial.wav",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\recording.wav",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 1644,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\recording.wav",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 1644,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;CURRENT_USER)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.transcript.json.08ddc9c7cb7a9a85824aa450.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 254,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\..assemblyai.json.55f8ab94ce374df7b16b7092.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.assemblyai.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 390,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.transcript.md.adfeae50a1d3b2862d39c8f9.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.md",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 238,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.transcript.html.95069d143b837a0d48173694.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.html",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 10045,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\..assemblyai.json.4d578779a2f0716eac7fcddc.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.assemblyai.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 391,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\.assemblyai.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 391,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.html",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 10045,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 254,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\transcripts\\20261102-120000\\transcript.md",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 238,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;CURRENT_USER)(A;ID;FA;;;SY)(A;ID;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "CURRENT_USER",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  }
+]

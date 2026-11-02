@@ -1,0 +1,45 @@
+"""Resume only the summary boundary; retain preceding supported-runtime evidence."""
+import os, sys, json, subprocess
+from pathlib import Path
+SCRATCH=Path(__file__).resolve().parent
+ROOT=SCRATCH.parents[2]
+BASE=SCRATCH/'fixture-qualified-313'
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith('MEETING_TRANSCRIBER_'): os.environ.pop(key,None)
+for key,suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local','MEETING_DATA_DIR':'library','MEETING_CONFIG_DIR':'config'}.items(): os.environ[key]=str(BASE/suffix)
+sys.path[:0]=[str(ROOT/'lib'),str(ROOT)]
+import private_files as pf
+SID=subprocess.check_output(['whoami','/user','/fo','csv','/nh'],text=True).strip().split(',')[-1].strip('"')
+# Microsoft: S-1-3-4 represents the actual object owner, separately verified below.
+ALLOWED={SID,'S-1-3-4','S-1-5-18','S-1-5-32-544'}
+rows=[]
+def snapshot(path):
+    raw=subprocess.check_output(['pwsh','-NoProfile','-NonInteractive','-File',str(SCRATCH/'acl_snapshot.ps1'),'-TargetPath',str(path)],text=True)
+    row=json.loads(raw)
+    row['path']=str(Path(row['path']).relative_to(BASE))
+    rows.append(row)
+    assert row['owner']==SID, row
+    allows={r['sid'] for r in row['rules'] if r['type']=='Allow'}
+    assert allows and allows<=ALLOWED, row
+    return row
+original=pf.verify_private
+def observed(path,*,directory=False):
+    original(path,directory=directory)
+    row=snapshot(path)
+    if Path(path).name.endswith('.tmp'): assert row['length']==0, row
+pf.verify_private=observed
+from meeting_library import Library
+from meeting_digests import record
+library=Library(BASE/'library')
+row=library.scan()['meetings'][0]
+source=library.digest_source(row['id'],row['default_run_id'])
+value=record(source,(ROOT/'skills/meeting/SKILL.md').read_bytes(),'claude','synthetic-fixture','# Synthetic summary',None)
+assert library.publish_digest(source,value)==value
+fresh=Library(BASE/'library')
+row=fresh.scan()['meetings'][0]
+assert fresh.summary_history(row['id'],row['default_run_id'])['summary']['markdown']=='# Synthetic summary'
+for path in source.meeting_path.joinpath('summaries').rglob('*'): snapshot(path)
+with (BASE/'summary-acl-observations.json').open('w',encoding='utf-8') as stream: json.dump(rows,stream,indent=2)
+result={'status':'PASS','revision':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'python':sys.version,'checks':['production summary private zero-byte temp, final publication and Library history reload'],'acl_observations':len(rows),'zero_byte_temp_observations':sum(r['path'].endswith('.tmp') and r['length']==0 for r in rows),'owner_rights_source':'https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers'}
+(BASE/'summary-results.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
+print(json.dumps(result,indent=2))

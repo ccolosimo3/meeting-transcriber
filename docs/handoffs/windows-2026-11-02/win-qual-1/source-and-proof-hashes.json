@@ -1,0 +1,50 @@
+[
+  {
+    "File": ".\\lib\\private_files.py",
+    "Hash": "BA639818940D8F75E0D828C989F7BE2E0A926DC2A0C9C27CA3A26FE747370936"
+  },
+  {
+    "File": ".\\lib\\transcription_config.py",
+    "Hash": "58F8B01449253C2A97510324B517DDAD87369F1DDC25227C083F8A2840816D36"
+  },
+  {
+    "File": ".\\lib\\transcription.py",
+    "Hash": "201415DF5699D38436B1A8999580A51E3D05B7767ECDCCA704E0D80653DB6476"
+  },
+  {
+    "File": ".\\lib\\transcript_bundle.py",
+    "Hash": "3C6EAAC8C53C606ECBA2D18B82877A6FA59B601D31D56C0F5F6B7C0F2A033CDC"
+  },
+  {
+    "File": ".\\lib\\transcribe_assemblyai.py",
+    "Hash": "CA7307920F1FDEE104D9BE3044A48BD81F4569573996C264C8100A318CE1A470"
+  },
+  {
+    "File": ".\\lib\\meeting_library.py",
+    "Hash": "5E6940DC69F405C30F3C41E30443233A001ED6D70953124CE8EFAF4B4E34259D"
+  },
+  {
+    "File": ".\\lib\\meeting_digests.py",
+    "Hash": "63EEBF677F83EF6377BD29B209748D5B30C532799FA81E87289E450EE8147F52"
+  },
+  {
+    "File": ".\\pyproject.toml",
+    "Hash": "AF4390E2894CD3027FABED384BFC73E325912B091F165B54931CF35C62BBAFE5"
+  },
+  {
+    "File": ".\\uv.lock",
+    "Hash": "BCA533E2DA95B3B15495A03823FC2DC3BCC352A47409D41F70D1AFA8D9DE1C09"
+  },
+  {
+    "File": ".\\tests\\artifacts\\win-qual-1\\private_qualification.py",
+    "Hash": "ECB0B20B7BFB73F70067EAC42ADAB0FD86BC272B68A805BBCE2B5BFF315D77B8"
+  },
+  {
+    "File": ".\\tests\\artifacts\\win-qual-1\\summary_qualification.py",
+    "Hash": "87B292E0A80ACD80791774C5A4A7C75F57DB446084D1DB05732D5CE8EB990D4F"
+  },
+  {
+    "File": ".\\tests\\artifacts\\win-qual-1\\acl_snapshot.ps1",
+    "Hash": "7F3F3CF1D54A422279B3562779D9AAFD94F66DD6FC20D33311D051789C3464CE"
+  }
+]

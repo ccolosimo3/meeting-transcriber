@@ -1,0 +1,176 @@
+[
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries\\20261102T145324466397Z-7338f098a7d67c7105fc3ff260c007f6",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries\\20261102T145324466397Z-7338f098a7d67c7105fc3ff260c007f6\\.summary-2031me8d.tmp",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 0,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;OW)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries\\20261102T145324466397Z-7338f098a7d67c7105fc3ff260c007f6\\summary.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 501,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;OW)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries\\20261102T145324466397Z-7338f098a7d67c7105fc3ff260c007f6",
+    "owner": "CURRENT_USER",
+    "protected": true,
+    "directory": true,
+    "length": null,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",
+    "rules": [
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": false
+      }
+    ],
+    "owner_matches_current_user": true
+  },
+  {
+    "path": "library\\20261102-095213-synthetic-source\\summaries\\20261102T145324466397Z-7338f098a7d67c7105fc3ff260c007f6\\summary.json",
+    "owner": "CURRENT_USER",
+    "protected": false,
+    "directory": false,
+    "length": 501,
+    "sddl": "O:CURRENT_USERG:CURRENT_USERD:(A;ID;FA;;;SY)(A;ID;FA;;;BA)(A;ID;FA;;;OW)",
+    "rules": [
+      {
+        "sid": "SYSTEM",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "ADMINISTRATORS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      },
+      {
+        "sid": "OWNER_RIGHTS",
+        "type": "Allow",
+        "rights": "FullControl",
+        "inherited": true
+      }
+    ],
+    "owner_matches_current_user": true
+  }
+]

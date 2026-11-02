@@ -1,0 +1,16 @@
+{
+  "revision": "de3226afe30ad8f26257a470df9389d12f13a6ce",
+  "python": "3.13.15 (main, Aug 14 2026, 15:36:10) [MSC v.1944 64 bit (AMD64)]",
+  "checks": {
+    "permissive inheritance: unsafe zero-byte temporary rejected and original preserved": "PASS",
+    "private directories, zero-byte temps, atomic new and replacement under permissive parent": "PASS",
+    "credential save/read/atomic replacement": "PASS",
+    "unsafe existing credential read and overwrite rejected unchanged": "PASS",
+    "production audio import: private partial before bytes, final ACL and source preservation": "PASS",
+    "canonical, receipt, both views: private publication/replacement and Library reload": "PASS"
+  },
+  "status": "FAIL",
+  "error": "AssertionError: {'path': 'library\\\\20261102-095213-synthetic-source\\\\summaries', 'owner': 'CURRENT_USER', 'protected': True, 'directory': True, 'length': None, 'sddl': 'O:CURRENT_USERG:CURRENT_USERD:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)', 'rules': [{'sid': 'OWNER_RIGHTS', 'type': 'Allow', 'rights': 'FullControl', 'inherited': False}, {'sid': 'SYSTEM', 'type': 'Allow', 'rights': 'FullControl', 'inherited': False}, {'sid': 'ADMINISTRATORS', 'type': 'Allow', 'rights': 'FullControl', 'inherited': False}]}",
+  "observations": 47,
+  "zero_byte_temp_observations": 11
+}

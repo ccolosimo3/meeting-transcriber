@@ -1,0 +1,162 @@
+"""Disposable Windows production-owner proof; synthetic bytes, no provider calls."""
+import os, sys, json, subprocess, wave, hashlib, traceback
+from pathlib import Path
+SCRATCH = Path(__file__).resolve().parent
+ROOT = SCRATCH.parents[2]
+BASE = SCRATCH / sys.argv[1]
+BASE.mkdir(exist_ok=False)
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith('MEETING_TRANSCRIBER_'):
+        os.environ.pop(key, None)
+for key, suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local', 'MEETING_DATA_DIR':'library','MEETING_CONFIG_DIR':'config'}.items():
+    path = BASE / suffix
+    path.mkdir(parents=True, exist_ok=True)
+    os.environ[key] = str(path)
+os.environ['MEETING_NOTIFICATIONS'] = '0'
+sys.path[:0] = [str(ROOT / 'lib'), str(ROOT)]
+import private_files as pf
+LOG = BASE / 'acl-observations.jsonl'
+SID = subprocess.check_output(['whoami','/user','/fo','csv','/nh'], text=True).strip().split(',')[-1].strip('"')
+ALLOWED = {SID, 'S-1-5-18', 'S-1-5-32-544'}
+observations = []
+def snapshot(path, private=True):
+    result = subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(SCRATCH / 'acl_snapshot.ps1'),'-TargetPath',str(path)], capture_output=True, text=True, check=True)
+    row = json.loads(result.stdout)
+    row['path'] = str(Path(row['path']).relative_to(BASE))
+    observations.append(row)
+    with LOG.open('a', encoding='utf-8') as stream:
+        stream.write(json.dumps(row) + '\n')
+    if private:
+        assert row['owner'] == SID, row
+        allows = {r['sid'] for r in row['rules'] if r['type'] == 'Allow'}
+        assert allows and allows <= ALLOWED, row
+    return row
+original_verify = pf.verify_private
+def observed_verify(path, *, directory=False):
+    try:
+        original_verify(path, directory=directory)
+    except pf.PrivateFileError:
+        rejected = snapshot(path, private=False)
+        if Path(path).name.endswith('.tmp'):
+            assert rejected['length'] == 0, rejected
+        raise
+    row = snapshot(path)
+    if Path(path).name.endswith('.tmp') or Path(path).name.startswith('recording.partial'):
+        assert row['length'] == 0, row
+pf.verify_private = observed_verify
+from transcription_config import store_key, read_key, credential_file, SetupError
+from transcription import import_recording
+from transcript_bundle import save_canonical, load_canonical, canonical_to_json
+from transcribe_assemblyai import atomic_write_json
+from meeting_library import Library
+from meeting_digests import record
+from tests.test_assemblyai_adapter import write_published_run
+results = {'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(), 'python':sys.version, 'checks':{}}
+def passed(name):
+    results['checks'][name] = 'PASS'
+    print('PASS ' + name, flush=True)
+try:
+    permissive = BASE / 'permissive'
+    permissive.mkdir()
+    subprocess.run(['icacls',str(permissive),'/grant','*S-1-1-0:(OI)(CI)(RX)'],check=True,capture_output=True)
+    wide = snapshot(permissive, private=False)
+    assert any(r['sid']=='S-1-1-0' and r['type']=='Allow' for r in wide['rules'])
+    unprotected = permissive / 'keep.txt'
+    unprotected.write_text('synthetic-preserve')
+    try: pf.atomic_write_private(unprotected, 'synthetic-must-not-write')
+    except pf.PrivateFileError: pass
+    else: raise AssertionError('permissive temporary accepted')
+    assert unprotected.read_text() == 'synthetic-preserve'
+    assert not list(permissive.glob('.*.tmp'))
+    passed('permissive inheritance: unsafe zero-byte temporary rejected and original preserved')
+    private = permissive / 'private'
+    pf.private_mkdir(private)
+    assert snapshot(private)['protected']
+    directory = pf.Directory(private)
+    directory.mkdir(private / 'child')
+    target = private / 'child/value.txt'
+    pf.atomic_write_private(target, 'synthetic-first')
+    first = target.stat().st_ino
+    pf.atomic_write_private(target, 'synthetic-replacement')
+    assert target.read_text() == 'synthetic-replacement' and target.stat().st_ino != first
+    snapshot(target)
+    passed('private directories, zero-byte temps, atomic new and replacement under permissive parent')
+
+    # Missing credential parent is made by the production owner, with final protected ACL.
+    store_key('synthetic-first')
+    assert read_key() == 'synthetic-first'
+    first = credential_file().stat().st_ino
+    store_key('synthetic-replacement')
+    assert read_key() == 'synthetic-replacement' and credential_file().stat().st_ino != first
+    snapshot(credential_file())
+    passed('credential save/read/atomic replacement')
+    keyfile = credential_file()
+    before = keyfile.read_bytes()
+    subprocess.run(['icacls',str(keyfile),'/grant','*S-1-1-0:(R)'],check=True,capture_output=True)
+    unsafe = snapshot(keyfile, private=False)
+    assert any(r['sid']=='S-1-1-0' for r in unsafe['rules'])
+    for operation in (read_key, lambda: store_key('synthetic-must-not-replace')):
+        try: operation()
+        except SetupError: pass
+        else: raise AssertionError('unsafe credential accepted')
+    assert keyfile.read_bytes() == before
+    passed('unsafe existing credential read and overwrite rejected unchanged')
+
+    libraryroot = Path(os.environ['MEETING_DATA_DIR'])
+    source = BASE / 'synthetic-source.wav'
+    with wave.open(str(source), 'wb') as audio:
+        audio.setparams((1,2,8000,0,'NONE','not compressed'))
+        audio.writeframes(b'\0\0' * 800)
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    copied = import_recording(source, pf.Directory(libraryroot))
+    assert copied.path.read_bytes() == source.read_bytes()
+    snapshot(copied.path)
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == source_hash
+    passed('production audio import: private partial before bytes, final ACL and source preservation')
+
+    # Existing canonical fixture owns the schema; real product owners save/reload it.
+    seed = write_published_run(private / 'seed/transcripts/T0', deletion={'confirmed':True})
+    transcript = load_canonical(seed)
+    receipt = json.loads((seed.parent / '.assemblyai.json').read_bytes())
+    owner = copied.destination
+    transcripts = copied.path.parent / 'transcripts'
+    owner.mkdir(transcripts)
+    run = transcripts / '20261102-120000'
+    owner.mkdir(run)
+    with pf.publication_guard(owner.check):
+        saved = save_canonical(run / 'transcript.json', transcript)
+        assert canonical_to_json(saved) == canonical_to_json(transcript)
+        assert atomic_write_json(run / '.assemblyai.json', receipt) == receipt
+        from render_transcript_markdown import render_markdown
+        from render_transcript_html import render_html
+        render_markdown(run / 'transcript.json')
+        render_html(run / 'transcript.json')
+        receipt['deletion']['confirmed'] = False
+        assert atomic_write_json(run / '.assemblyai.json', receipt) == receipt
+    for path in run.iterdir(): snapshot(path)
+    fresh = Library(libraryroot)
+    row = fresh.scan()['meetings'][0]
+    loaded = fresh.load(row['id'],row['default_run_id'])
+    assert loaded['canonical']['text'] == canonical_to_json(transcript)['text']
+    passed('canonical, receipt, both views: private publication/replacement and Library reload')
+
+    captured = fresh.digest_source(row['id'],row['default_run_id'])
+    value = record(captured,(ROOT / 'skills/meeting/SKILL.md').read_bytes(),'claude','synthetic-fixture','# Synthetic summary',None)
+    assert fresh.publish_digest(captured,value) == value
+    reloaded = Library(libraryroot)
+    row2 = reloaded.scan()['meetings'][0]
+    history = reloaded.summary_history(row2['id'],row2['default_run_id'])
+    assert history['summary']['markdown'] == '# Synthetic summary'
+    for path in copied.path.parent.joinpath('summaries').rglob('*'): snapshot(path)
+    passed('production summary private temp/publication and history reload without model process')
+    results['status'] = 'PASS'
+except BaseException as error:
+    results['status'] = 'FAIL'
+    results['error'] = type(error).__name__ + ': ' + str(error)
+    traceback.print_exc()
+finally:
+    results['observations'] = len(observations)
+    results['zero_byte_temp_observations'] = sum(o['length']==0 for o in observations if o['path'].endswith('.tmp') or Path(o['path']).name.startswith('recording.partial'))
+    (BASE / 'results.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+    print(json.dumps(results,indent=2))
+sys.exit(0 if results['status']=='PASS' else 1)
