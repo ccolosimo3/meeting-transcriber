@@ -1,0 +1,472 @@
+"""Pinned pywebview native boundary. Install before creating any window.
+
+The adapters intentionally target pywebview 6.2.1. Navigation is stopped in the
+native engine, before the framework can inject its privileged document bridge.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import importlib
+import importlib.abc
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import secrets
+import re
+import shutil
+import stat
+import sys
+import tempfile
+import threading
+from urllib.parse import urlsplit
+
+
+class NativeBoundaryError(RuntimeError):
+    """The reader cannot establish its required native boundary."""
+
+
+WEBVIEW2_REQUIRED = (
+    "Microsoft Edge WebView2 Runtime is required. Install the Evergreen Runtime "
+    "from https://developer.microsoft.com/microsoft-edge/webview2/ and reopen "
+    "Meeting Transcriber. The legacy Internet Explorer renderer is disabled."
+)
+
+
+def _dispatch(window, name, params, call_id):
+    """Authorize raw native messages, not only the generated API enumeration."""
+    if not isinstance(name, str) or not isinstance(call_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', call_id):
+        return
+    if name == 'pywebviewAsyncCallback':
+        # Native evaluate_js callbacks are framework-owned, single-use and
+        # registered before a page can deliver a response. No state/DOM/move API.
+        if call_id not in window._callbacks or not callable(window._callbacks[call_id]):
+            return
+    else:
+        arities = {'choose_library': 0, 'refresh_library': 0, 'load_run': 2, 'open_saved_html': 2,
+                   'start_summary': 3, 'summary_status': 1, 'cancel_summary': 1, 'summary_history': 3,
+                   'transcription_setup': 0, 'save_transcription_key': 1, 'locate_ffprobe': 0,
+                   'import_audio': 0, 'start_transcription': 1, 'retry_remote_cleanup': 2,
+                   'operation_status': 1, 'open_operation_result': 1}
+        if name not in arities or not isinstance(params, list) or len(params) != arities[name]:
+            return
+        if name == 'save_transcription_key':
+            if not isinstance(params[0], str) or not params[0] or len(params[0].encode('utf-8')) > 16000 or any(c in params[0] for c in '\n\r\0'):
+                return
+        if name != 'save_transcription_key' and params and (not isinstance(params[0], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[0])):
+            return
+        if len(params) >= 2 and not (name == 'load_run' and params[1] is None):
+            if not isinstance(params[1], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[1]):
+                return
+        if name == 'start_summary' and params[2] not in ('codex', 'claude'):
+            return
+        if name == 'summary_history' and params[2] is not None and (not isinstance(params[2], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[2])):
+            return
+    from webview.util import js_bridge_call
+    js_bridge_call(window, name, params, call_id)
+
+
+from lib.private_files import windows_acl, _current_sid, _private_windows_directory, _windows_api, _sid_string
+
+
+def _network_capability_sid() -> str:
+    """Derive the named Edge stable LPAC identity through Windows itself."""
+    adv, kernel, w = _windows_api()
+    derive = ctypes.WinDLL("kernelbase").DeriveCapabilitySidsFromName
+    derive.argtypes = [w.LPCWSTR, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(w.DWORD), ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(w.DWORD)]
+    groups, capabilities = ctypes.c_void_p(), ctypes.c_void_p()
+    group_count, count = w.DWORD(), w.DWORD()
+    if not derive("lpacEdgeStableNetworkSandbox", ctypes.byref(groups), ctypes.byref(group_count), ctypes.byref(capabilities), ctypes.byref(count)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if count.value != 1:
+            raise NativeBoundaryError("Cannot establish the WebView2 network capability identity.")
+        return _sid_string(ctypes.c_void_p.from_address(capabilities.value).value, adv, kernel, w)
+    finally:
+        for array, size in ((groups, group_count), (capabilities, count)):
+            for index in range(size.value):
+                kernel.LocalFree(ctypes.c_void_p.from_address(array.value + index * ctypes.sizeof(ctypes.c_void_p)).value)
+            kernel.LocalFree(array)
+
+
+
+class Session:
+    """One private, exclusively owned browser/profile/temp directory."""
+
+    def __init__(self):
+        parent = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) if sys.platform == "win32" else Path(tempfile.gettempdir())
+        self.path = parent / ("MeetingTranscriber-session-" + secrets.token_hex(16))
+        if sys.platform == "win32":
+            _private_windows_directory(self.path)
+        else:
+            self.path.mkdir(mode=0o700)
+        self.profile_path = self.path / "profile"
+        self.temp_path = self.path / "tmp"
+        # Python 3.13's Windows mode=0700 replaces the inherited user ACE with
+        # OWNER RIGHTS. Inherit the explicit session DACL unchanged instead.
+        child_mode = 0o777 if sys.platform == "win32" else 0o700
+        self.profile_path.mkdir(mode=child_mode)
+        self.temp_path.mkdir(mode=child_mode)
+        self.error: Exception | None = None
+        self._owner = _current_sid() if sys.platform == "win32" else None
+        self._engine_capabilities: set[str] = set()
+        self.renderer_pids: set[int] = set()
+        self._environment = {key: os.environ.get(key) for key in ("TMP", "TEMP", "TMPDIR")}
+        self._tempdir = tempfile.tempdir
+        self.verify_storage()
+        for key in self._environment:
+            os.environ[key] = str(self.temp_path)
+        tempfile.tempdir = str(self.temp_path)
+        self._closed = False
+
+    def verify_storage(self):
+        allowed = {self._owner, "S-1-5-18", "S-1-5-32-544"} if sys.platform == "win32" else None
+        for path in (self.path, *self.path.rglob("*")):
+            try:
+                info = path.lstat()
+                acl = windows_acl(path) if sys.platform == "win32" else None
+            except FileNotFoundError:
+                if path == self.path:
+                    raise
+                continue  # The native engine removes its transient files concurrently.
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise NativeBoundaryError("Session storage contains a redirected path.")
+            if sys.platform == "win32":
+                owner, trustees = acl
+                permitted = allowed | self._engine_capabilities if path != self.profile_path and path.is_relative_to(self.profile_path) else allowed
+                if owner != self._owner or not trustees or not trustees <= permitted:
+                    raise NativeBoundaryError("Session storage is accessible outside the current user, SYSTEM and administrators.")
+            elif info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise NativeBoundaryError("Session storage must be owned by the current user and private.")
+
+    def __enter__(self):
+        return self
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        for key, previous in self._environment.items():
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
+        tempfile.tempdir = self._tempdir
+        # Do not delete a profile while its renderer still uses it. Interruption
+        # or an engine that refuses shutdown leaves the protected session intact.
+        if sys.platform == "win32":
+            _, kernel, w = _windows_api()
+            kernel.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
+            kernel.OpenProcess.restype = w.HANDLE
+            kernel.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+            for pid in self.renderer_pids:
+                handle = kernel.OpenProcess(0x00100000, False, pid)
+                if handle:
+                    try:
+                        if kernel.WaitForSingleObject(handle, 5000) != 0:
+                            return
+                    finally:
+                        kernel.CloseHandle(handle)
+        try:
+            shutil.rmtree(self.path)
+        except OSError:
+            pass  # A locked leftover has the same private boundary.
+
+    def __exit__(self, *_):
+        self.close()
+
+
+def create_session() -> Session:
+    return Session()
+
+
+def webview2_available() -> bool:
+    """Ask the same native loader used by the pinned engine, not a browser PATH."""
+    from webview.util import interop_dll_path
+    import platform
+
+    architecture = "win-arm64" if platform.machine().lower() in {"arm64", "aarch64"} else "win-x64" if ctypes.sizeof(ctypes.c_void_p) == 8 else "win-x86"
+    try:
+        loader = ctypes.WinDLL(interop_dll_path(architecture) + "/WebView2Loader.dll")
+        probe = loader.GetAvailableCoreWebView2BrowserVersionString
+        probe.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_void_p)]
+        probe.restype = ctypes.c_long
+        version = ctypes.c_void_p()
+        result = probe(None, ctypes.byref(version))
+        try:
+            return result >= 0 and bool(version.value)
+        finally:
+            if version.value:
+                ole = ctypes.WinDLL("ole32")
+                ole.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+                ole.CoTaskMemFree(version)
+    except OSError:
+        return False
+
+
+class _NoLegacyRenderer(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {"webview.platforms.mshtml", "webview.platforms.cef"}:
+            raise NativeBoundaryError(WEBVIEW2_REQUIRED)
+        return None
+
+
+def _configure_windows(webview, document_url: str, session: Session):
+    if not webview2_available():
+        raise NativeBoundaryError(WEBVIEW2_REQUIRED)
+    if "webview.platforms.mshtml" in sys.modules or "webview.platforms.cef" in sys.modules:
+        raise NativeBoundaryError(WEBVIEW2_REQUIRED)
+    sys.meta_path.insert(0, _NoLegacyRenderer())
+    guilib = importlib.import_module("webview.guilib")
+    guilib.forced_gui_ = "edgechromium"
+    native = importlib.import_module("webview.platforms.winforms")
+    if native.renderer != "edgechromium" or not native.is_chromium:
+        raise NativeBoundaryError(WEBVIEW2_REQUIRED)
+    edge = native.Chromium
+    original_ready = edge.EdgeChrome.on_webview_ready
+    original_completed = edge.EdgeChrome.on_navigation_completed
+    origin = urlsplit(document_url)
+
+    def navigation(self, sender, args):
+        args.Cancel = str(args.Uri) != document_url
+
+    def popup(self, sender, args):
+        args.Handled = True
+
+    def download(self, sender, args):
+        args.Cancel = True
+        args.Handled = True
+
+    def message(self, sender, args):
+        if str(args.Source) != document_url:
+            return
+        try:
+            name, encoded_params, call_id = json.loads(args.get_WebMessageAsJson())
+            _dispatch(self.pywebview_window, name, json.loads(encoded_params), call_id)
+        except (TypeError, ValueError, KeyError):
+            return
+
+    def completed(self, sender, args):
+        if str(sender.Source) == document_url:
+            return original_completed(self, sender, args)
+
+    def ready(self, sender, args):
+        if not args.IsSuccess:
+            session.error = NativeBoundaryError("WebView2 could not initialize. Repair the Evergreen Runtime and reopen Meeting Transcriber.")
+            self.form.Close()
+            return
+        try:
+            core = sender.CoreWebView2
+            self.webview.AllowExternalDrop = False
+            self.form.AllowDrop = False
+            core.FrameNavigationStarting += lambda _, event: setattr(event, "Cancel", True)
+            core.Settings.AreHostObjectsAllowed = False
+            core.Settings.IsGeneralAutofillEnabled = False
+            core.Settings.IsPasswordAutosaveEnabled = False
+
+            def resource(_, event):
+                candidate = urlsplit(str(event.Request.Uri))
+                if (
+                    (candidate.scheme, candidate.netloc) != (origin.scheme, origin.netloc)
+                    or event.ResourceContext == edge.CoreWebView2WebResourceContext.Document
+                    and str(event.Request.Uri) != document_url
+                ):
+                    event.Response = core.Environment.CreateWebResourceResponse(None, 403, "Forbidden", "")
+
+            core.AddWebResourceRequestedFilter("*", edge.CoreWebView2WebResourceContext.All)
+            core.WebResourceRequested += resource
+            session.renderer_pids.add(int(core.BrowserProcessId))
+            if Path(str(core.Environment.UserDataFolder)).resolve() != session.profile_path.resolve():
+                raise NativeBoundaryError("The native engine selected an unexpected profile directory.")
+            capability = _network_capability_sid()
+            # AppContainer access intersects the normal-user grant with its
+            # capability grant; this engine SID does not grant other users
+            # access. Keep the session/profile root free of capability grants.
+            # https://learn.microsoft.com/windows/win32/secauthz/implementing-an-appcontainer
+            session._engine_capabilities.add(capability)
+            session.verify_storage()
+            self._reader_resource_guard = resource
+            original_ready(self, sender, args)  # The first app navigation occurs here.
+        except Exception as error:
+            session.error = error
+            self.form.Close()
+
+    edge.EdgeChrome.on_navigation_start = navigation
+    edge.EdgeChrome.on_new_window_request = popup
+    edge.EdgeChrome.on_download_starting = download
+    edge.EdgeChrome.on_script_notify = message
+    edge.EdgeChrome.on_navigation_completed = completed
+    edge.EdgeChrome.on_webview_ready = ready
+    return "edgechromium"
+
+
+def _configure_cocoa(webview, document_url: str, session: Session):
+    import objc
+
+    cocoa = importlib.import_module("webview.platforms.cocoa")
+    wk = cocoa.WebKit
+    store = wk.WKWebsiteDataStore.nonPersistentDataStore()
+    if store.isPersistent():
+        raise NativeBoundaryError("WKWebView did not create a private data store.")
+
+    def evaluate_js(self, script, parse_json):
+        # 6.2.1 waits forever when windowWillClose_ stops Cocoa's event loop
+        # before a queued evaluation or its completion runs. Its existing closed
+        # event also releases bridge replies that finish after the window closes.
+        completed = threading.Event()
+        result = None
+        failure = None
+
+        def evaluate():
+            nonlocal failure
+            if self.closed.is_set():
+                completed.set()
+                return
+            try:
+                self.webview.evaluateJavaScript_completionHandler_(script, handler)
+            except Exception as error:
+                failure = error
+                completed.set()
+
+        def handler(value, error):
+            nonlocal result
+            try:
+                result = json.loads(value) if parse_json and value else value
+            except Exception:
+                cocoa.logger.exception('Failed to parse JSON: ' + value)
+                result = value
+            finally:
+                completed.set()
+
+        if self.closed.is_set():
+            return None
+        cocoa.AppHelper.callAfter(evaluate)
+        while not completed.wait(0.05):
+            if self.closed.is_set():
+                return None
+        if self.closed.is_set():
+            return None
+        if failure is not None:
+            raise failure
+        return result
+
+    original_app_delegate = cocoa.BrowserView.AppDelegate
+
+    class PrivateAppDelegate(original_app_delegate):
+        def applicationShouldTerminate_(self, app):
+            # Pinned pywebview returns YES here, which terminates Cocoa without
+            # returning from webview.start and skips our server/session finally.
+            # Ask the same native close guard, then use ordinary window teardown.
+            instances = tuple(cocoa.BrowserView.instances.values())
+            if any(not cocoa.BrowserView.should_close(item.pywebview_window) for item in instances):
+                return cocoa.Foundation.NO
+            for item in instances:
+                item.window.close()
+            return cocoa.Foundation.NO
+
+    cocoa.BrowserView.AppDelegate = PrivateAppDelegate
+
+    cocoa.BrowserView.evaluate_js = evaluate_js
+
+    host = cocoa.BrowserView.WebKitHost
+
+    def initWithFrame_configuration_(self, frame, config):
+        session.verify_storage()
+        config.setWebsiteDataStore_(store)
+        config.preferences().setValue_forKey_(False, "allowFileAccessFromFileURLs")
+        view = objc.super(host, self).initWithFrame_configuration_(frame, config)
+        view.unregisterDraggedTypes()
+        if view.configuration().websiteDataStore().isPersistent():
+            raise NativeBoundaryError("WKWebView selected persistent browser storage.")
+        return view
+
+    def performDragOperation_(self, sender):
+        return False
+
+    # Extend the existing ObjC class rather than replace its class identity:
+    # its inherited mouse/key handlers explicitly refer to BrowserView.WebKitHost
+    # in super(), so replacing that symbol with a subclass would recurse.
+    objc.classAddMethods(host, [
+        objc.selector(initWithFrame_configuration_, signature=wk.WKWebView.initWithFrame_configuration_.signature),
+        objc.selector(performDragOperation_, signature=host.performDragOperation_.signature),
+    ])
+
+    class PrivateDelegate(cocoa.BrowserView.BrowserDelegate):
+        def webView_decidePolicyForNavigationAction_decisionHandler_(self, view, action, handler):
+            allowed = (
+                action.targetFrame() is not None
+                and action.targetFrame().isMainFrame()
+                and str(action.request().URL().absoluteString()) == document_url
+                and not action.shouldPerformDownload()
+            )
+            handler(wk.WKNavigationActionPolicyAllow if allowed else wk.WKNavigationActionPolicyCancel)
+
+        def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(self, view, config, action, features):
+            return None
+
+        def webView_decidePolicyForNavigationResponse_decisionHandler_(self, view, response, handler):
+            allowed = response.canShowMIMEType() and str(response.response().URL().absoluteString()) == document_url
+            handler(wk.WKNavigationResponsePolicyAllow if allowed else wk.WKNavigationResponsePolicyCancel)
+
+        def webView_navigationAction_didBecomeDownload_(self, view, action, download):
+            download.cancel_(lambda *_: None)
+
+    original_bridge = cocoa.BrowserView.JSBridge
+
+    class PrivateBridge(original_bridge):
+        def userContentController_didReceiveScriptMessage_(self, controller, message):
+            frame = message.frameInfo()
+            if frame.isMainFrame() and str(frame.request().URL().absoluteString()) == document_url:
+                try:
+                    body = json.loads(message.body())
+                    _dispatch(self.window, body['funcName'], body['params'], body['id'])
+                except (TypeError, ValueError, KeyError):
+                    return
+
+    # 6.2.1 also asks for defaultDataStore after constructing WKWebView. Redirect
+    # only this renderer module's lookup, so it never clears the user's global
+    # default store and its later cookie operations address the same private one.
+    class StoreProxy:
+        def defaultDataStore(self):
+            return store
+
+        def __getattr__(self, name):
+            return getattr(wk.WKWebsiteDataStore, name)
+
+    class WebKitProxy:
+        WKWebsiteDataStore = StoreProxy()
+
+        def __getattr__(self, name):
+            return getattr(wk, name)
+
+    cocoa.WebKit = WebKitProxy()
+    cocoa.BrowserView.BrowserDelegate = PrivateDelegate
+    cocoa.BrowserView.JSBridge = PrivateBridge
+    return "cocoa"
+
+
+def configure_webview(webview_module, exact_document_url: str, session: Session) -> str:
+    """Install the process-local native policy before create_window/start."""
+    if importlib.metadata.version("pywebview") != "6.2.1":
+        raise NativeBoundaryError("This desktop build requires pywebview 6.2.1.")
+    url = urlsplit(exact_document_url)
+    if url.scheme != "http" or url.hostname != "127.0.0.1" or not url.port or url.username or url.password or url.fragment:
+        raise NativeBoundaryError("The reader document must use its exact loopback session URL.")
+    if webview_module.windows:
+        raise NativeBoundaryError("The native boundary must be installed before creating a window.")
+    session.verify_storage()
+    webview_module.settings.update({
+        "ALLOW_FILE_URLS": False,
+        "ALLOW_DOWNLOADS": False,
+        "OPEN_EXTERNAL_LINKS_IN_BROWSER": False,
+        "OPEN_DEVTOOLS_IN_DEBUG": False,
+        "IGNORE_SSL_ERRORS": False,
+        "REMOTE_DEBUGGING_PORT": None,
+        "WEBVIEW2_RUNTIME_PATH": None,
+    })
+    if sys.platform == "win32":
+        return _configure_windows(webview_module, exact_document_url, session)
+    if sys.platform == "darwin":
+        return _configure_cocoa(webview_module, exact_document_url, session)
+    raise NativeBoundaryError("The desktop reader supports Windows and macOS.")

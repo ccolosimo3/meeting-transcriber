@@ -1,0 +1,24 @@
+{
+  "time": "2026-11-02T16:20:42.218157+00:00",
+  "all3_alive_birth_bound_handles_held": true,
+  "processes": [
+    {
+      "pid": 23504,
+      "birth_filetime": 134381100110151997,
+      "role": "child",
+      "console_window_present": false
+    },
+    {
+      "pid": 33312,
+      "birth_filetime": 134381100110951091,
+      "role": "grandchild",
+      "console_window_present": false
+    },
+    {
+      "pid": 38788,
+      "birth_filetime": 134381100109282632,
+      "role": "provider",
+      "console_window_present": false
+    }
+  ]
+}

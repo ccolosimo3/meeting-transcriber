@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -187,24 +185,7 @@ def canonical_to_json(transcript: CanonicalTranscript) -> dict[str, Any]:
     }
 
 
-def atomic_write_private(path: Path, content: str) -> None:
-    """Atomically replace path with private 0600 content."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
-        path.chmod(0o600)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+from private_files import atomic_write_private
 
 
 def load_canonical(path: Path, *, require_speaker_names: bool = True) -> CanonicalTranscript:

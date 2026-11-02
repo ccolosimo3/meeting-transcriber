@@ -1,5 +1,8 @@
 # Meeting Transcriber
 
+For the current cross-machine checkpoint and remaining Windows qualification,
+see [the continuation handoff](docs/CONTINUATION.md).
+
 A small macOS utility with one job: record a room meeting to a private local
 file, transcribe it with AssemblyAI speaker diarization, and save one canonical
 transcript with a clean browser view and an agent-friendly Markdown view.
@@ -11,9 +14,123 @@ and one complete transcription command.
 
 ## Platform support
 
-macOS only. The app relies on FFmpeg AVFoundation recording, Homebrew,
-notifications, and Finder. Transcription requires an internet
+Recording and transcription commands currently support macOS and rely on
+FFmpeg AVFoundation, Homebrew, notifications, and Finder. Transcription requires an internet
 connection, an AssemblyAI API key, and a paid AssemblyAI account.
+
+The optional **desktop app** supports Apple Silicon macOS and targets Windows
+x64 with Microsoft Edge WebView2. Import audio, explicitly transcribe it with
+AssemblyAI, read/listen, and optionally generate a summary through your signed-in
+Codex or Claude Code CLI. Reading and local import need no API key or FFprobe.
+Windows packages require separate native lifecycle and ACL qualification; Mac
+verification does not establish Windows behavior. Microphone recording remains a
+Mac CLI feature.
+
+## Desktop library and audio viewer
+
+From a checkout with [uv](https://docs.astral.sh/uv/) installed:
+
+```text
+uv sync --frozen --extra desktop
+uv run --frozen --extra desktop python -m desktop.main
+```
+
+Choose **Import audio** to copy one audio file into a new private meeting
+folder. The original stays unchanged and nothing is uploaded. Open the saved
+recording, then choose **Transcribe** to send it to your paid AssemblyAI account.
+An existing audio-only meeting can also be transcribed; **Transcribe again**
+creates a new saved version without replacing earlier transcripts or summaries.
+
+Open **More actions → Transcription setup** to save a masked AssemblyAI key and
+check FFprobe. CLI and desktop share one private credential file:
+`~/Library/Application Support/MeetingTranscriber/.env` on Mac, or
+`%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows. Existing checkout `.env`
+files are no longer searched: manually move the single-assignment file to this
+location with private permissions, or save the key again. No credential is
+migrated automatically. FFprobe must already be installed; the app checks PATH
+and usual installed-tool locations. **Locate FFprobe** saves an executable path
+when packaged launch cannot find it. The app does not bundle or download it.
+
+A global status shows import, checking, upload, waiting, saving and remote
+cleanup. You can browse during the operation; its destination stays attached
+to the original library. **Open transcript** returns to its result. Normal
+window close and Quit are blocked during import, transcription and remote
+cleanup: keep the app open until the operation finishes. There is no Cancel for
+these operations. Force quit, crash or power loss may leave remote state
+unresolved; receipts remain the evidence, with no automatic resume or re-upload.
+If local save succeeds but remote deletion is unconfirmed, the transcript stays
+usable with **Retry remote cleanup**, including after relaunch. Cleanup sends
+only deletion requests. An unknown failed attempt asks you to contact AssemblyAI
+support before retrying.
+
+The reader starts with `~/Transcriptions` if present. Open **Library**, then its
+**Library folder** control to choose another folder or refresh. Search titles
+and use **Show** to narrow the list to transcripts, audio only or meetings that
+need attention. Library collapses to give the transcript more space; on narrow
+windows, choosing a meeting returns to the reader.
+
+Use **Find** for literal passage search and speaker filtering. Closing Find
+keeps the filters active, with visible chips to clear each one. **Details** holds
+the meeting metadata and saved-version selector; a selected non-default version
+stays identified when Details closes. Click a passage to hear its audio, and
+open **Listening** for speed, optional Follow and Jump to playing passage.
+Collapsing a panel keeps playback running. The **More actions** menu holds theme
+choice and **Open saved HTML** for the selected version. Layout, library and
+theme choices last for the current session.
+
+Use **Generate with** to choose Claude or Codex, then **Generate summary** to send
+the selected saved transcript. Claude is selected by default; the app never
+switches providers for you. Install the selected provider's native CLI and sign in with
+your own subscription outside the app first. Summary generation does not sign you in, use
+API keys, install a CLI or automatically retry with another provider. The CLI's
+default model and your account's data controls apply. Generation never starts
+automatically after transcription and follow-up suggestions remain text only.
+The app checks `PATH` and the usual per-user `~/.local/bin` native install
+directory, including when launched from Finder.
+Before submitting a transcript to Codex, the app discovers configured MCP server
+names, disables each for that invocation and verifies that all remain disabled.
+Discovery and generation use the same ordinary configuration, authentication
+selection, working directory, environment and common restrictions. Your global
+configuration is unchanged. If the check cannot establish safety, generation
+stops with a bounded explanation and keeps earlier summaries.
+
+Successful summaries stay under `summaries` in the meeting folder, with earlier
+successes retained. **Summary** opens first when the selected **Saved version**
+has a summary; otherwise the reader opens **Transcript**. The summary selector
+lists that version's history newest first and identifies provider, time and source
+revision. A speaker-name edit can make a summary refer to an earlier revision;
+it remains available with that label. Choose another saved transcript version to
+read its own summaries. Summary Markdown renders headings, lists, emphasis,
+tables and code locally. Generated links, images and HTML remain inert text;
+instructions cannot act on the app. If formatting is unavailable or exceeds
+the reader's bounds, the entire original Markdown remains readable with a notice.
+Earlier summaries with nonfatal CLI warnings retain a generic indicator without
+their raw message.
+
+You can keep browsing while generation runs. Its status and **Cancel summary**
+remain visible above the reader, and the result stays attached to the version
+you originally selected. Closing the app stops its owned generation processes.
+An error or cancellation keeps earlier summaries and the original transcript.
+
+Copy an entire meeting folder into the other computer's library and use
+**Library folder → Refresh**. Keep the recording beside its `transcripts`
+directory. Missing or unsupported media leaves the transcript readable. Multiple recording files are
+reported as ambiguous; partial recordings are never treated as finished audio.
+**Open saved HTML** opens the existing export in the system browser through a
+temporary local URL while the app is running; it does not rewrite the export.
+
+To build a self-contained folder package on Windows or `.app` on Apple Silicon
+Mac (build on the target OS):
+
+```text
+uv sync --frozen --extra desktop --group desktop-build
+uv run --frozen --extra desktop --group desktop-build python -m desktop.build
+```
+
+Packages appear in `.local-artifacts/desktop-build/dist`. Windows requires the
+[Evergreen WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+The app fails clearly if it is missing; it does not use the legacy IE renderer.
+These local builds are not publicly signed/notarized installers.
 
 ## Quick start
 
@@ -98,15 +215,22 @@ Run `meeting help` or `meeting <command> --help` for details.
   private receipt. An unconfirmed deletion is reported prominently with a
   single `meeting cleanup` recovery command; the local transcript remains
   usable either way.
-- The AssemblyAI API key is stored only in the checkout-root `.env`, as exactly
+- The AssemblyAI API key is stored in the shared per-user `.env` above, as exactly
   one `ASSEMBLYAI_API_KEY=<value>` assignment. The app requires this untracked
-  file to be a regular non-symlink file with mode `0600`, parses it as data, and
+  file to be a regular non-symlink private file (mode `0600` on Mac, verified
+  owner/DACL on Windows), parses it as data, and
   passes the key only to the AssemblyAI adapter — never recorders, renderers,
   notifications, openers, command lines, transcripts, or receipts. A one-command
   process-level `ASSEMBLYAI_API_KEY` override takes precedence without changing
   `.env`.
 - Giving a transcript to an agent is a separate, deliberate disclosure governed
   by that workspace's data controls.
+- Desktop **Generate summary** sends the selected transcript snapshot plus the
+  bundled meeting instructions through the selected CLI. Restrictive CLI controls
+  disable ordinary tool, hook and integration execution; the app does not promise
+  OS isolation from the CLI or trusted organization/host policy. It saves only
+  successful summary text and provenance, with no raw prompt, event or error
+  logs. It never sends the recording for summary generation.
 - Record only with participant consent. Recordings and transcripts are retained
   until you remove them.
 - Meeting directories use mode `0700` and generated files use `0600`.
@@ -126,6 +250,8 @@ immutable dated run beneath it:
 ~/Transcriptions/
 └── 20260826-100000-weekly-sync/
     ├── recording.wav
+    ├── summaries/                  (optional desktop generations)
+    │   └── <UTC>-<random-id>/summary.json
     └── transcripts/
         └── 20260826-105401/
             ├── transcript.json
@@ -180,7 +306,7 @@ It reports separate Recording and Transcription readiness. A missing AssemblyAI
 key blocks transcription but recording remains available.
 
 If upgrading from a version that stored the key in macOS Keychain, run
-`meeting setup` to create the checkout-root `.env`. The app does not read,
+`meeting setup` to create the shared per-user `.env` above. The app does not read,
 migrate, change, or delete the old Keychain item. You may remove that item
 manually with Keychain Access after confirming transcription readiness.
 

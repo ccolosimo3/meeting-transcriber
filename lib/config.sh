@@ -7,78 +7,33 @@ unset ASSEMBLYAI_API_KEY
 _meeting_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 meeting_env_file() {
-  printf '%s/.env\n' "$(cd "${_meeting_lib_dir}/.." && pwd)"
+  "$(meeting_python_bin)" "${_meeting_lib_dir}/transcription_config.py" path
 }
 
-# Load the single app-owned assignment as data. Returns 0 when a key is ready,
-# 1 when the file is absent, and 2 when it is unsafe or malformed.
+# The shared Python parser owns persistent credentials. The shell retains a
+# one-command override privately; helpers and unrelated children never get it.
 meeting_load_assemblyai_key() {
-  local env_file content byte_count expected_count mode
-  # shellcheck disable=SC2034 # Outputs are consumed by scripts that source this file.
   meeting_assemblyai_key=""
-  # shellcheck disable=SC2034 # Outputs are consumed by scripts that source this file.
   meeting_assemblyai_key_error=""
   if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
     meeting_assemblyai_key="$meeting_inherited_assemblyai_key"
     return 0
   fi
-  env_file="$(meeting_env_file)"
-  if [[ ! -e "$env_file" && ! -L "$env_file" ]]; then
-    return 1
+  local error_file status
+  error_file="$(mktemp "${TMPDIR:-/tmp}/meeting-key-error.XXXXXX")" || return 2
+  status=0
+  # shellcheck disable=SC2034 # Secret output is consumed by the sourcing caller.
+  meeting_assemblyai_key="$("$(meeting_python_bin)" "${_meeting_lib_dir}/transcription_config.py" read 2>"$error_file")" || status=$?
+  if [[ "$status" -gt 1 ]]; then
+    # shellcheck disable=SC2034 # Error output is consumed by the sourcing caller.
+    meeting_assemblyai_key_error="$(< "$error_file")"
   fi
-  if [[ ! -f "$env_file" || -L "$env_file" ]]; then
-    # shellcheck disable=SC2034
-    meeting_assemblyai_key_error="${env_file} must be a regular non-symlink file"
-    return 2
-  fi
-  mode="$(stat -f '%Lp' "$env_file" 2>/dev/null || true)"
-  if [[ "$mode" != "600" ]]; then
-    # shellcheck disable=SC2034
-    meeting_assemblyai_key_error="${env_file} must have mode 0600 (found ${mode:-unknown})"
-    return 2
-  fi
-  content="$(< "$env_file")"
-  byte_count="$(LC_ALL=C wc -c < "$env_file" | tr -d ' ')"
-  expected_count=$(( ${#content} + 1 ))
-  if [[ "$byte_count" -ne "$expected_count" \
-    || "$content" != ASSEMBLYAI_API_KEY=* \
-    || "$content" == *$'\n'* \
-    || -z "${content#ASSEMBLYAI_API_KEY=}" ]]; then
-    # shellcheck disable=SC2034
-    meeting_assemblyai_key_error="${env_file} must contain exactly one non-empty ASSEMBLYAI_API_KEY=<value> assignment"
-    return 2
-  fi
-  # shellcheck disable=SC2034
-  meeting_assemblyai_key="${content#ASSEMBLYAI_API_KEY=}"
+  rm -f "$error_file"
+  return "$status"
 }
 
 meeting_store_assemblyai_key() {
-  local key="$1"
-  local env_file temporary inherited_key
-  [[ -n "$key" && "$key" != *$'\n'* ]] || return 2
-  env_file="$(meeting_env_file)"
-  if [[ -e "$env_file" || -L "$env_file" ]]; then
-    inherited_key="$meeting_inherited_assemblyai_key"
-    meeting_inherited_assemblyai_key=""
-    if ! meeting_load_assemblyai_key; then
-      meeting_inherited_assemblyai_key="$inherited_key"
-      return 2
-    fi
-    meeting_inherited_assemblyai_key="$inherited_key"
-  fi
-  temporary="$(mktemp "${env_file}.XXXXXX")" || return 2
-  if ! chmod 600 "$temporary"; then
-    rm -f "$temporary"
-    return 2
-  fi
-  if ! printf 'ASSEMBLYAI_API_KEY=%s\n' "$key" > "$temporary"; then
-    rm -f "$temporary"
-    return 2
-  fi
-  if ! mv "$temporary" "$env_file"; then
-    rm -f "$temporary"
-    return 2
-  fi
+  printf '%s' "$1" | "$(meeting_python_bin)" "${_meeting_lib_dir}/transcription_config.py" store
 }
 
 meeting_data_root() {

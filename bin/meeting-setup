@@ -89,7 +89,10 @@ fi
 recording_device="${recording_device:-$current_device}"
 
 temporary_config="$(mktemp "${config_root}/.config.XXXXXX")"
-printf 'recording_device=%s\n' "$recording_device" > "$temporary_config"
+if [[ -f "$config_file" ]]; then
+  awk '!/^recording_device=/' "$config_file" > "$temporary_config"
+fi
+printf 'recording_device=%s\n' "$recording_device" >> "$temporary_config"
 mv "$temporary_config" "$config_file"
 printf 'Configuration: %s\n' "$config_file"
 
@@ -138,6 +141,7 @@ printf '%s\n' \
   'settings are owned by your paid AssemblyAI account. Recording works without' \
   'a key; transcription does not.'
 env_file="$(meeting_env_file)"
+printf 'Existing users: manually move the one-assignment checkout .env to %s; no old credential file is read or moved automatically.\n' "$env_file"
 if meeting_load_assemblyai_key && [[ -z "$meeting_inherited_assemblyai_key" ]]; then
   printf 'AssemblyAI API key: already stored in %s\n' "$env_file"
 elif [[ -n "$meeting_assemblyai_key_error" ]]; then

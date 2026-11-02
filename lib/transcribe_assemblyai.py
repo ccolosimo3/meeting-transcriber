@@ -7,7 +7,6 @@ import math
 import os
 from pathlib import Path
 import sys
-import tempfile
 import time
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
@@ -21,6 +20,7 @@ from transcript_bundle import (
     TimedWord,
     save_canonical,
 )
+from private_files import atomic_write_private, open_regular
 from transcript_run import ManagedRunError, validate_managed_run
 
 
@@ -81,26 +81,7 @@ def format_elapsed(seconds: float) -> str:
 
 
 def atomic_write_json(path: Path, value: dict[str, Any]) -> dict[str, Any]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", dir=path.parent
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
-        path.chmod(0o600)
-    except BaseException:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        temporary_path.unlink(missing_ok=True)
-        raise
+    atomic_write_private(path, json.dumps(value, ensure_ascii=False))
     with path.open(encoding="utf-8") as stream:
         loaded = json.load(stream)
     if not isinstance(loaded, dict):
@@ -210,12 +191,14 @@ class AssemblyAIAdapter:
         poll_interval: float = 3.0,
         transient_attempts: int = TRANSIENT_ATTEMPTS,
         stderr: Any = sys.stderr,
+        on_progress=None,
     ) -> None:
         if not api_key:
             raise ValueError("ASSEMBLYAI_API_KEY is required")
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("invalid AssemblyAI API base URL")
+        self.on_progress = on_progress or (lambda phase: None)
         self.api_key = api_key
         self.parsed_base = parsed
         self.poll_interval = poll_interval
@@ -292,13 +275,17 @@ class AssemblyAIAdapter:
     def _upload(self, audio: Path) -> dict[str, Any]:
         connection = self._connection()
         try:
-            connection.putrequest("POST", self._path("/v2/upload"))
-            connection.putheader("Authorization", self.api_key)
-            connection.putheader("Content-Type", "application/octet-stream")
-            connection.putheader("Content-Length", str(audio.stat().st_size))
-            connection.endheaders()
-            with audio.open("rb") as stream:
+            with (self.audio_opener() if hasattr(self, 'audio_opener') else open_regular(audio)) as stream:
+                before = os.fstat(stream.fileno())
+                connection.putrequest("POST", self._path("/v2/upload"))
+                connection.putheader("Authorization", self.api_key)
+                connection.putheader("Content-Type", "application/octet-stream")
+                connection.putheader("Content-Length", str(before.st_size))
+                connection.endheaders()
                 self._send_stream(connection, stream)
+                after = os.fstat(stream.fileno())
+                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise ProviderTransportError('Recording changed during upload')
             return self._decode_response(connection.getresponse(), "upload")
         except ProviderError:
             raise
@@ -403,6 +390,7 @@ class AssemblyAIAdapter:
             raise ProviderError(f"AssemblyAI poll returned unknown status: {status!r}")
 
     def _delete(self) -> bool:
+        self.on_progress("deleting")
         assert self.transcript_id is not None
         self._start_phase()
         last_error = "unknown deletion failure"
@@ -442,6 +430,10 @@ class AssemblyAIAdapter:
     ) -> tuple[Path, bool]:
         """Transcribe audio and return (canonical JSON path, deletion confirmed)."""
         self.receipt_path = output_dir / RECEIPT_NAME
+        # This existing uncertainty receipt must be durable before any upload
+        # byte. A stop or later receipt-write failure must survive application restart.
+        self._save("unknown_after_upload")
+        self.on_progress("uploading")
         self._start_phase()
         try:
             upload_response = self._upload(audio)
@@ -460,6 +452,7 @@ class AssemblyAIAdapter:
             raise ProviderError("AssemblyAI upload response had no upload_url")
         self._save("upload_succeeded")
         self._finish_phase("Uploading recording...")
+        self.on_progress("transcribing")
 
         request: dict[str, Any] = {
             "audio_url": upload_url,
@@ -513,6 +506,7 @@ class AssemblyAIAdapter:
             used_model = str(completed.get("speech_model_used") or "unknown")
             self._save("completed", provider_status="completed", used_model=used_model)
             try:
+                self.on_progress("saving")
                 canonical = convert_response(completed)
                 canonical_path = output_dir / f"{output_name}.json"
                 save_canonical(canonical_path, canonical)
@@ -625,9 +619,10 @@ class AssemblyAIAdapter:
                 f"cleanup receipt did not reload as confirmed: {self.receipt_path}"
             )
 
-    def cleanup(self, canonical_path: Path) -> int:
+    def cleanup(self, canonical_path: Path, *, check_selection=lambda: None) -> int:
         """Recovery-only remote deletion for one published run. Never uploads."""
         assert self.receipt_path is not None and self.transcript_id is not None
+        check_selection()
         deletion = self.receipt.get("deletion")
         if isinstance(deletion, dict) and deletion.get("confirmed") is True:
             print(
@@ -643,6 +638,7 @@ class AssemblyAIAdapter:
         via_absent = False
         for attempt in range(1, self.transient_attempts + 1):
             attempts = attempt
+            check_selection()
             try:
                 self._json_request(
                     "DELETE",
@@ -742,10 +738,19 @@ def _receipt_created_at(receipt: dict[str, Any]) -> str:
     return "unavailable"
 
 
-def failure_block(
-    adapter: AssemblyAIAdapter, audio: Path, error: BaseException
-) -> list[str]:
-    """One failure block, one recommended action, chosen by remote state."""
+def retry_decision(receipt) -> tuple[bool, str | None]:
+    """Persisted failure admission shared by the CLI outcome and desktop reload."""
+    if receipt.get('used_model') is not None and receipt['used_model'] != REQUESTED_MODEL:
+        return False, 'model_mismatch'
+    deletion = receipt.get('deletion')
+    retry = receipt.get('state') == 'upload_rejected' or (
+        isinstance(receipt.get('transcript_id'), str) and bool(receipt['transcript_id']) and isinstance(deletion, dict) and deletion.get('confirmed') is True
+    )
+    return (True, None) if retry else (False, 'remote_unconfirmed')
+
+
+def failure_details(adapter: AssemblyAIAdapter, error: BaseException) -> dict[str, Any]:
+    """One safe failure outcome shared by terminal and desktop presentation."""
     receipt = adapter.receipt
     state = receipt.get("state")
     deletion = receipt.get("deletion")
@@ -774,46 +779,42 @@ def failure_block(
     else:
         problem = "AssemblyAI did not finish the transcript"
 
-    lines = ["", "Transcription stopped", f"  Problem     {problem}"]
-    lines.append(f"  Recording   safe at {audio}")
-
+    if deletion_confirmed:
+        remote = 'Remote transcript and audio deletion is confirmed'
+    elif transcript_id:
+        remote = f'Remote data deletion unconfirmed for transcript {transcript_id}'
+    else:
+        remote = 'Uploaded audio may remain remotely; no transcript ID is known'
+    retry_safe, _ = retry_decision(receipt)
     if isinstance(error, ModelMismatchError):
-        if deletion_confirmed:
-            lines.append("  Remote transcript and audio deletion is confirmed")
-        elif transcript_id:
-            lines.append(
-                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
-            )
-        lines.append(
-            f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
-            f"and reported model {error.reported!r}"
-        )
-        return lines
+        action = f'{SUPPORT_ACTION} with receipt timestamp {created_at} and reported model {error.reported!r}'
+        retry_safe = False
+        if not deletion_confirmed and not transcript_id:
+            remote = ''
+    elif state == 'upload_rejected':
+        remote = 'No audio or transcript was stored remotely'
+        retry_safe = True
+        action = 'You can start a new transcription explicitly.'
+    elif retry_safe:
+        action = 'You can start a new transcription explicitly.'
+    elif transcript_id:
+        action = f'{SUPPORT_ACTION} with transcript {transcript_id} and receipt timestamp {created_at} before retrying'
+    else:
+        action = f'{SUPPORT_ACTION} with receipt timestamp {created_at} before retrying'
+    return {'code': 'retry_available' if retry_safe else 'support_before_retry',
+            'problem': problem, 'remote': remote, 'action': action, 'retry_safe': retry_safe}
 
-    if state == "upload_rejected":
-        lines.append("  No audio or transcript was stored remotely")
-        lines.append(f"  Retry       meeting transcribe {audio}")
-        return lines
 
-    if transcript_id:
-        if deletion_confirmed:
-            lines.append("  Remote transcript and audio deletion is confirmed")
-            lines.append(f"  Retry       meeting transcribe {audio}")
-        else:
-            lines.append(
-                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
-            )
-            lines.append(
-                f"  Action      {SUPPORT_ACTION} with transcript {transcript_id} "
-                f"and receipt timestamp {created_at} before retrying"
-            )
-        return lines
+def failure_block(adapter: AssemblyAIAdapter, audio: Path, error: BaseException) -> list[str]:
+    """Keep the CLI's single failure block and one recovery action."""
+    return format_failure(failure_details(adapter, error), audio)
 
-    lines.append("  Uploaded audio may remain remotely; no transcript ID is known")
-    lines.append(
-        f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
-        f"before retrying"
-    )
+
+def format_failure(failure, audio):
+    lines = ['', 'Transcription stopped', f"  Problem     {failure['problem']}", f'  Recording   safe at {audio}']
+    if failure['remote']:
+        lines.append('  ' + failure['remote'])
+    lines.append(f'  Retry       meeting transcribe {audio}' if failure['retry_safe'] else '  Action      ' + failure['action'])
     return lines
 
 

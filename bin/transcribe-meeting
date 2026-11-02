@@ -13,7 +13,6 @@ while [[ -L "$script_source" ]]; do
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
 source "${utility_root}/lib/config.sh"
-source "${utility_root}/lib/format.sh"
 python_bin="${utility_root}/.venv/bin/python"
 speakers=""
 
@@ -27,22 +26,6 @@ fail() {
 }
 
 input=""
-
-# One local preflight/setup failure block: what stopped, source safety, the
-# not-applicable remote state, and exactly one recovery.
-setup_problem() {
-  local problem="$1"
-  local fix_label="$2"
-  local fix="$3"
-  ui_heading 'Setup problem'
-  ui_row 'Problem' "$problem"
-  if [[ -n "$input" ]]; then
-    ui_row 'Recording' "safe at ${input}"
-  fi
-  ui_line 'No audio left this Mac'
-  ui_row "$fix_label" "$fix"
-  exit 2
-}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -71,94 +54,12 @@ output_root="$2"
 [[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
 [[ -z "$speakers" || "$speakers" =~ ^[1-9][0-9]*$ ]] || fail '--speakers requires a positive integer'
 
-# Contain the credential: it is read here, removed from the environment, and
-# exported only to the provider adapter child.
-if ! meeting_load_assemblyai_key; then
-  if [[ -n "$meeting_assemblyai_key_error" ]]; then
-    setup_problem "$meeting_assemblyai_key_error" 'Fix' 'repair the .env file manually, then run meeting doctor'
-  fi
-  setup_problem "No AssemblyAI API key is configured at $(meeting_env_file)" 'Fix' 'meeting setup'
-fi
-assemblyai_key="$meeting_assemblyai_key"
-meeting_assemblyai_key=""
-
-if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
-  [[ -x "$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" ]] \
-    || setup_problem "AssemblyAI adapter executable not found: $MEETING_TRANSCRIBER_ASSEMBLYAI_BIN" 'Fix' 'meeting doctor'
-else
-  [[ -x "$python_bin" ]] \
-    || setup_problem "Python executable not found: $python_bin" 'Fix' 'meeting doctor'
-  [[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] \
-    || setup_problem 'AssemblyAI adapter is missing' 'Fix' 'meeting doctor'
-fi
-
-if [[ -n "${MEETING_TRANSCRIBER_FFPROBE_BIN:-}" ]]; then
-  ffprobe_bin="$MEETING_TRANSCRIBER_FFPROBE_BIN"
-else
-  ffmpeg_prefix="$(brew --prefix ffmpeg@7 2>/dev/null)" \
-    || setup_problem 'Homebrew ffmpeg@7 is not installed' 'Fix' 'meeting doctor'
-  ffprobe_bin="${ffmpeg_prefix}/bin/ffprobe"
-fi
-[[ -x "$ffprobe_bin" ]] \
-  || setup_problem "FFprobe executable not found: $ffprobe_bin" 'Fix' 'meeting doctor'
-
-input_bytes="$(stat -f '%z' "$input")"
-if [[ "$input_bytes" -gt 2200000000 ]]; then
-  setup_problem 'The recording is larger than the 2.2 GB AssemblyAI upload limit' \
-    'Action' 'Split or compress the recording before transcribing'
-fi
-duration="$("$ffprobe_bin" -v error -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 "$input")" \
-  || setup_problem 'FFprobe could not determine the recording duration' 'Fix' 'meeting doctor'
-[[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]] \
-  || setup_problem 'FFprobe returned an invalid recording duration' 'Fix' 'meeting doctor'
-if awk -v duration="$duration" 'BEGIN { exit !(duration > 36000) }'; then
-  setup_problem 'The recording is longer than the 10 hours AssemblyAI accepts' \
-    'Action' 'Split the recording before transcribing'
-fi
-
-mkdir -p "$output_root"
-[[ -d "$output_root" && -w "$output_root" ]] || fail "output root is not writable: $output_root"
-
-if [[ -n "${MEETING_TRANSCRIBER_RUN_ID:-}" ]]; then
-  [[ "$MEETING_TRANSCRIBER_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail 'MEETING_TRANSCRIBER_RUN_ID contains invalid characters'
-  run_id="$MEETING_TRANSCRIBER_RUN_ID"
-else
-  run_id="$(date '+%Y%m%d-%H%M%S')"
-fi
-output_dir="${output_root}/${run_id}"
-[[ ! -e "$output_dir" ]] || fail "output directory already exists: $output_dir"
-mkdir "$output_dir"
-
-if [[ -n "${MEETING_TRANSCRIBER_ASSEMBLYAI_BIN:-}" ]]; then
-  command=("$MEETING_TRANSCRIBER_ASSEMBLYAI_BIN")
-else
-  command=("$python_bin" "${utility_root}/lib/transcribe_assemblyai.py")
-fi
-command+=(
-  --input "$input"
-  --output-dir "$output_dir"
-  --output-name transcript
-)
+command=("$python_bin" "${utility_root}/lib/transcription_cli.py" run "$input" "$output_root")
 if [[ -n "$speakers" ]]; then
   command+=(--speakers "$speakers")
 fi
-
-set +e
-ASSEMBLYAI_API_KEY="$assemblyai_key" "${command[@]}" >/dev/null
-run_status=$?
-set -e
-unset assemblyai_key
-
-if [[ "$run_status" -eq 0 || "$run_status" -eq 3 ]]; then
-  json_output="${output_dir}/transcript.json"
-  if [[ ! -s "$json_output" ]]; then
-    printf 'Error: transcription did not create the expected JSON output: %s\n' "$json_output" >&2
-    exit 1
-  fi
-  if [[ -n "${MEETING_TRANSCRIBER_RESULT_FILE:-}" ]]; then
-    printf '%s\n' "$output_dir" > "$MEETING_TRANSCRIBER_RESULT_FILE"
-  fi
-  printf '%s\n' "$json_output"
+if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
+  ASSEMBLYAI_API_KEY="$meeting_inherited_assemblyai_key" "${command[@]}"
+else
+  "${command[@]}"
 fi
-exit "$run_status"

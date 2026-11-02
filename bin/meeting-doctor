@@ -155,9 +155,14 @@ if [[ "$assemblyai_available" -eq 1 ]]; then
     ok "AssemblyAI API key is available in $(meeting_env_file)"
   fi
 elif [[ -n "$meeting_assemblyai_key_error" ]]; then
-  bad "$meeting_assemblyai_key_error"
+  bad "$meeting_assemblyai_key_error Recording remains available; run meeting setup"
 else
   bad "No AssemblyAI API key at $(meeting_env_file); transcription is not ready. Recording remains available; run meeting setup"
+fi
+if ffprobe_path="$("$(meeting_python_bin)" "${utility_root}/lib/transcription_config.py" ffprobe 2>/dev/null)"; then
+  ok "FFprobe ready: $ffprobe_path"
+else
+  bad 'FFprobe is missing or the saved path is unavailable; install FFprobe or use Locate FFprobe in the desktop app'
 fi
 # shellcheck disable=SC2034 # Clear the sourced secret-bearing global.
 meeting_assemblyai_key=""

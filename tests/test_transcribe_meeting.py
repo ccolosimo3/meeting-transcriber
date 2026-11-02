@@ -14,11 +14,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class TranscribeMeetingPreflightTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         (self.root / "bin").mkdir()
         (self.root / "lib").mkdir()
         shutil.copy2(PROJECT_ROOT / "bin" / "transcribe-meeting", self.root / "bin")
-        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", self.root / "lib")
+        shutil.copytree(PROJECT_ROOT / "lib", self.root / "lib", dirs_exist_ok=True)
         shutil.copy2(PROJECT_ROOT / "lib" / "format.sh", self.root / "lib")
         (self.root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         self.adapter_marker = self.root / "adapter-launched"
@@ -51,6 +51,8 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         environment = os.environ.copy()
         environment.update(
             {
+                "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "ASSEMBLYAI_API_KEY": "test-key",
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_BIN": str(self.adapter),
                 "MEETING_TRANSCRIBER_FFPROBE_BIN": str(self.ffprobe),

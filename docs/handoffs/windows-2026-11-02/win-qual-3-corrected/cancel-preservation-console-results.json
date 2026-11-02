@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "all_prior_fixture_hashes_unchanged": true,
+  "four_summary_records_retained": true,
+  "new_WindowsTerminal_OpenConsole_hosts_while_held": 0,
+  "all6_native_calls_GetConsoleWindow_null": true,
+  "console_oracle_correction": "Initial blanket assertion no new conhost processes was overbroad; actual requested failure is visible console intrusion. Raw held snapshot retains conhost observations, not classified as visible windows. No product edit or test replay."
+}

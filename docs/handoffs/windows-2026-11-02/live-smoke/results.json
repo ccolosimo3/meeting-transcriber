@@ -1,0 +1,126 @@
+{
+  "outcome": "PASS with retained Codex nonfatal provider warning",
+  "scope": "One approved fictional recording through the real Windows app, AssemblyAI and both subscription CLIs",
+  "date": "2026-11-02",
+  "integration_base": "f91f866c856e6a4db41aa6591662d8709a841241",
+  "product_source": "2640f2903f4b9e4ebda97697410798bdfaf514a7",
+  "exe_sha256": "d5100f870006597c9698a4f92b50fb7b8054a8e7eb71d20cde13a2eba18191db",
+  "original_package_manifest_sha256": "686b95151906c2b8165efbb99444b84907f77aef64590cabb321bb8998271918",
+  "package_file_count": 102,
+  "all_package_hashes_unchanged": true,
+  "input": {
+    "name": "cedar-lantern-meeting.wav",
+    "sha256": "f817f03f07c2a8beb90aa8498068a05651f7caf0d86f70da731b0e2d1638462d",
+    "duration_seconds": 91.29741496598639,
+    "bytes": 4026262,
+    "provenance": "Offline installed Windows System.Speech; fictional Maya Chen and Theo Park; Microsoft Zira Desktop and Microsoft David Desktop",
+    "original_and_imported_unchanged": true
+  },
+  "request_scope": {
+    "speech_models": [
+      "universal-3-5-pro"
+    ],
+    "speaker_labels": true,
+    "punctuate": true,
+    "format_text": true,
+    "language_detection": true,
+    "speakers_expected_omitted": true
+  },
+  "transcription": {
+    "native_transcribe_actions": 1,
+    "upload_requests": 1,
+    "submission_requests": 1,
+    "count_basis": "Single successful app lifecycle and unchanged production adapter: each upload/submission owner is called once without POST retry. No independent wire capture.",
+    "published_run_count": 1,
+    "provider_status": "completed",
+    "used_model": "universal-3-5-pro",
+    "speaker_turns": 4,
+    "speaker_sequence": [
+      "SPEAKER_00",
+      "SPEAKER_01",
+      "SPEAKER_00",
+      "SPEAKER_01"
+    ],
+    "four_file_production_validator_passed": true,
+    "remote_deletion_confirmed": true,
+    "manual_delete_only_retries": 0,
+    "poll_and_delete_wire_attempt_counts": "not independently instrumented",
+    "canonical_sha256": "0675abbefa870b9c7c88011baf3ebf3a8ca60808d83337cd7161de0e8fc47e90",
+    "saved_files_unchanged_after_summaries_and_restart": true
+  },
+  "subscription_generation_invocations": {
+    "claude": 1,
+    "codex": 1,
+    "additional_generations": 0,
+    "internal_provider_HTTP_attempt_counts": "not observed"
+  },
+  "summaries": {
+    "claude": {
+      "cli_version": "2.1.280 (Claude Code)",
+      "reported_model": "claude-opus-5-5[1m]",
+      "provider_warning": false,
+      "source_hash_matches": true,
+      "skill_hash_matches": true,
+      "record_sha256": "3f176082d3e205a84e026f7b9b7d91c9a895330e356c6bcb313bf6caf6d96211"
+    },
+    "codex": {
+      "cli_version": "codex-cli 0.163.0",
+      "reported_model": null,
+      "provider_warning": true,
+      "source_hash_matches": true,
+      "skill_hash_matches": true,
+      "record_sha256": "fc85ce847542ceabebf902e6d6868556ac1b090360b5d39779fd9a9b69d854b9"
+    }
+  },
+  "readiness": {
+    "both_native_executables": true,
+    "both_subscription_auth_predicates_passed": true,
+    "both_required_control_sets_present": true,
+    "codex_mcp_suppression_verified": true,
+    "independent_preflight_counts": {
+      "codex_version": 1,
+      "codex_auth": 1,
+      "codex_help": 1,
+      "codex_mcp_before": 1,
+      "codex_mcp_disabled": 1,
+      "claude_version": 1,
+      "claude_auth": 1,
+      "claude_help": 1
+    },
+    "native_generation_metadata_route": "Each app job additionally ran its ordinary version/auth/help checks; Codex also performed its two MCP checks.",
+    "key_setup": "Operator hidden terminal input through existing store_key; native setup refresh key_ready true. No key readback/export."
+  },
+  "native_observations": {
+    "readable_punctuated_diarized_transcript": true,
+    "passage2_playback_and_seek_seconds": 23.541,
+    "native_audio_playing_and_pause_control_observed": true,
+    "full_restart_shows_both_summaries": true,
+    "codex_warning_survives_restart": true,
+    "source_skill_provenance_matches": true,
+    "final_owned_app_processes": 0,
+    "final_owned_listeners": 0,
+    "final_private_sessions": 0
+  },
+  "spend": {
+    "approved_assemblyai_cap_usd": 0.1,
+    "estimated_assemblyai_usd": 0.00584,
+    "estimate_basis": "Mac lead verified async Universal3.5 Pro plus diarization rate; approximate input-duration estimate",
+    "actual_billed_usd": "unknown; not queried",
+    "budget_enforcement": "Procedural bound, not a provider-enforced budget",
+    "summary_route": "Existing subscriptions; no API-key model route"
+  },
+  "quality": "Both summaries preserve committed page scope, Maya/Theo actions and deadlines, approval-before-publication, and the unapproved gallery; undecided tool/budget remain undecided. Claude explicitly labels date and identity inference.",
+  "inspection_calibration": "An ad-hoc Windows default-codepage read initially displayed mojibake; existing production parse_record(bytes) verified original UTF8 text. No source or generated output changed.",
+  "limits": [
+    "This small live run does not establish broad model quality or full release qualification.",
+    "Prior synthetic lifecycle/ACL/guard evidence is reused; no live cancellation or failure replay.",
+    "Raw auth/config/env/MCP/CLI logs, credential stores, provider IDs/receipts, URLs, audio and executable binaries are excluded."
+  ],
+  "exported_artifact_hashes": {
+    "claude-summary.jpg": "a4021bcd1bcd05ee31b41925fc4b5641de216717f2ce9854835d26e661d73ab3",
+    "claude-summary.md": "c2df9e082c5c555598b4cb85ee3a783d6fa68cd5850f9133031adbf44717fb39",
+    "codex-summary.jpg": "96339ff8c592562d5f6f9718d255b07366bea517f408589d582915fa96101143",
+    "codex-summary.md": "adb777e85a84acd387ebd7d1b6536b6c826002429c46bca44a4ab4a3516e6a8d",
+    "transcript.md": "4861d9009ce07838f0ed818d975d0e3e6820e56731e95dbe859e69c10d75adc2"
+  }
+}

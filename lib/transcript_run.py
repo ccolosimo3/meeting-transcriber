@@ -16,11 +16,14 @@ discovery; it never mutates anything.
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
 import sys
 from pathlib import Path
+from typing import BinaryIO, Callable
 
-from transcript_bundle import CanonicalTranscriptError, load_canonical
+from transcript_bundle import CanonicalTranscriptError, load_canonical, parse_canonical
 
 
 RECEIPT_NAME = ".assemblyai.json"
@@ -34,14 +37,22 @@ class ManagedRunError(ValueError):
     """A run does not satisfy the current app-managed publication contract."""
 
 
-def _regular_file(path: Path) -> bool:
+def _regular_file(path: Path, opener: Callable[[Path], BinaryIO] | None = None) -> bool:
+    if opener is not None:
+        try:
+            with opener(path) as stream:
+                return stat.S_ISREG(os.fstat(stream.fileno()).st_mode)
+        except FileNotFoundError:
+            return False
     return path.is_file() and not path.is_symlink()
 
 
-def _load_receipt(path: Path) -> dict[str, object] | None:
+def _load_receipt(
+    path: Path, opener: Callable[[Path], BinaryIO] | None = None
+) -> dict[str, object] | None:
     try:
-        with path.open(encoding="utf-8") as stream:
-            payload: object = json.load(stream)
+        with (opener(path) if opener is not None else path.open(encoding="utf-8")) as stream:
+            payload: object = json.loads(stream.read().decode("utf-8")) if opener is not None else json.load(stream)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     if not isinstance(payload, dict):
@@ -104,7 +115,14 @@ def validate_managed_run(run_dir: Path) -> tuple[Path, Path, dict[str, object], 
     return json_path, receipt_path, receipt, transcript_id
 
 
-def classify(run_dir: Path) -> tuple[str, Path, str | None] | None:
+def classify(
+    run_dir: Path, *, opener: Callable[[Path], BinaryIO] | None = None
+) -> tuple[str, Path, str | None] | None:
+    """Classify a run, optionally reading through a caller's verified handles.
+
+    The desktop reader supplies containment-checked handles. Default callers
+    retain the existing CLI filesystem contract and classification predicates.
+    """
     if not run_dir.is_dir() or run_dir.is_symlink():
         return None
     json_path = run_dir / "transcript.json"
@@ -114,15 +132,25 @@ def classify(run_dir: Path) -> tuple[str, Path, str | None] | None:
         markdown_path = run_dir / "transcript.md"
         html_path = run_dir / "transcript.html"
         required = (json_path, markdown_path, html_path, receipt_path)
-        if not all(_regular_file(path) for path in required):
+        if not all(_regular_file(path, opener) for path in required):
             return None
-        if markdown_path.stat().st_size == 0 or html_path.stat().st_size == 0:
+        def size(path: Path) -> int:
+            if opener is None:
+                return path.stat().st_size
+            with opener(path) as stream:
+                return os.fstat(stream.fileno()).st_size
+
+        if size(markdown_path) == 0 or size(html_path) == 0:
             return None
         try:
-            load_canonical(json_path)
+            if opener is None:
+                load_canonical(json_path)
+            else:
+                with opener(json_path) as stream:
+                    parse_canonical(json.loads(stream.read().decode("utf-8")))
         except (CanonicalTranscriptError, OSError, json.JSONDecodeError, UnicodeDecodeError):
             return None
-        receipt = _load_receipt(receipt_path)
+        receipt = _load_receipt(receipt_path, opener)
         if receipt is None or receipt.get("state") != "published":
             return None
         if _deletion_confirmed(receipt):
@@ -132,11 +160,11 @@ def classify(run_dir: Path) -> tuple[str, Path, str | None] | None:
         return ("cleanup-required", json_path, identifier)
 
     html_path = run_dir / "transcript.html"
-    if not _regular_file(json_path) or not _regular_file(html_path):
+    if not _regular_file(json_path, opener) or not _regular_file(html_path, opener):
         return None
     historical_receipt_path = run_dir / HISTORICAL_RECEIPT_NAME
-    if _regular_file(historical_receipt_path):
-        receipt = _load_receipt(historical_receipt_path)
+    if _regular_file(historical_receipt_path, opener):
+        receipt = _load_receipt(historical_receipt_path, opener)
         if receipt is not None and not _deletion_confirmed(receipt):
             transcript_id = receipt.get("transcript_id")
             identifier = transcript_id if isinstance(transcript_id, str) else None

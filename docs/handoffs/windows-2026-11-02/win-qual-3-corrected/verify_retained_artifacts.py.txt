@@ -1,0 +1,32 @@
+"""Verify retained artifacts only; no product/fixture process is launched."""
+import os,json,hashlib,sys
+from pathlib import Path
+E=Path(__file__).resolve().parent;ROOT=E.parents[3];QA=Path('<CORRECTED_QA_ROOT>')
+launch=json.loads((E/'native-launch-1.json').read_text())
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith(('MEETING_TRANSCRIBER_','CODEX','CLAUDE','OPENAI','ANTHROPIC')):os.environ.pop(key,None)
+os.environ.update(launch['environment'])
+sys.path[:0]=[str(ROOT/'lib'),str(ROOT)]
+from desktop.digest_job import cli_command,codex_controls
+from meeting_library import Library
+from meeting_digests import prompt
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+assert all(sha(QA/p)==h for p,h in json.loads((E/'preserved-fixture-hashes.json').read_text()).items())
+manifest=json.loads((E/'package-manifest.json').read_text());assert all(sha(QA/'package'/r['path'])==r['sha256'] for r in manifest)
+library=Library(QA/'library');row=library.scan()['meetings'][0];source=library.digest_source(row['id'],row['default_run_id']);skill=(ROOT/'skills/meeting/SKILL.md').read_bytes()
+assert len(library.summary_history(row['id'],row['default_run_id'])['summaries'])==4
+rows=json.loads((E/'fixture-events-metadata.json').read_text());assert len(rows)==12
+controls=codex_controls()+[a for name in ['local_docs','synthetic_api'] for a in ['-c','mcp_servers.'+name+'.enabled=false']]
+for begin in [0,6]:
+    chain=rows[begin:begin+6]
+    assert all(not r['console_window_present'] for r in chain)
+    assert all(r['environment_hashes']==chain[0]['environment_hashes'] and r['cwd_sha256']==chain[0]['cwd_sha256'] for r in chain)
+    assert all(r['stdin_bytes']==0 for r in chain[:-1])
+    assert chain[-1]['args']==cli_command('codex','fixture',controls)[1:]
+    assert chain[-1]['stdin_sha256']==hashlib.sha256(prompt(source,skill)).hexdigest()
+for key in ['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','CODEX_HOME','CLAUDE_CONFIG_DIR']:
+    assert all(r['environment_hashes'][key]==hashlib.sha256(launch['environment'][key].encode()).hexdigest() for r in rows)
+for case in ['cancel','close']:
+    value=json.loads((E/(case+'-observer-results.json')).read_text());assert value['status']=='PASS' and value['pre_action_all3_live'] and value['all3_original_handles_signaled'] and value['hold_mode_unchanged']
+assert all(v==0 for v in json.loads((E/'active-close-cleanup-results.json').read_text()).values())
+print('PASS retained artifact bindings, actual process-handle outcomes, streams/control delivery and preservation')

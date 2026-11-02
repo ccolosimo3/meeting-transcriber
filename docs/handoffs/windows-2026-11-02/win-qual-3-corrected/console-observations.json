@@ -1,0 +1,18 @@
+{
+  "baseline_console_process_count": 31,
+  "cases": [
+    {
+      "case": "cancel",
+      "new_WindowsTerminal_OpenConsole": 0,
+      "new_conhost_observations": 5,
+      "all_fixture_GetConsoleWindow_values_null": true
+    },
+    {
+      "case": "close",
+      "new_WindowsTerminal_OpenConsole": 0,
+      "new_conhost_observations": 11,
+      "all_fixture_GetConsoleWindow_values_null": true
+    }
+  ],
+  "oracle_note": "Initial blanket absence-of-conhost assertion was overbroad. Conhost process existence is not the visible-window invariant. Original held snapshots are retained locally; native API, original app captures and no new WindowsTerminal/OpenConsole establish scoped visible-console outcome."
+}

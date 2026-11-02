@@ -1,0 +1,157 @@
+{
+  "source_tip": "2dda750389550e553cecd68bd59ec49fa9f37196",
+  "source_base": "66f9b22e0bf311cd2df8c02f4d802292f7686cec",
+  "environment": {
+    "macos": "26.5.2",
+    "arch": "arm64",
+    "engine": "Cocoa/WKWebView",
+    "python": "3.13.15",
+    "pywebview": "6.2.1",
+    "pyinstaller": "6.22.3",
+    "launch": "relocated frozen executable; isolated synthetic home/config/library/temp; no Python on PATH"
+  },
+  "package": {
+    "regular_non_symlink_files": 45,
+    "all_six_asset_bytes_match_source": true,
+    "sha256_by_relative_path": {
+      "Contents/Frameworks/AppKit/_AppKit.cpython-313-darwin.so": "e09511c384b8e58148bef7d9be5024f3197e6a8fab99ef318e007b5c8761cd20",
+      "Contents/Frameworks/AppKit/_inlines.cpython-313-darwin.so": "06ce08c43507c6f2db9b6609c3bc84953912365117d8da7b1a44c6068de10908",
+      "Contents/Frameworks/CoreFoundation/_CoreFoundation.cpython-313-darwin.so": "b1167598713be90c77bbb3659dc25d0c87c67f3fca876a479b5b14c88b1550ff",
+      "Contents/Frameworks/CoreFoundation/_inlines.cpython-313-darwin.so": "079d35832dd8eeffc684c53b29c56efb97cb8450b2f7ab29ce004ceff0099a09",
+      "Contents/Frameworks/Foundation/_Foundation.cpython-313-darwin.so": "5e9eff387e30fcbf8df2b3bd21b128401bbf3d2dcec38404fde2b0523dff682f",
+      "Contents/Frameworks/Foundation/_inlines.cpython-313-darwin.so": "9f5ebaef12da14e4a91e525b69947e23d008bca62c7f75e5ef4404ed108fbcb4",
+      "Contents/Frameworks/WebKit/_WebKit.cpython-313-darwin.so": "53b01cf528c3bdc2802a721d98a7aa8a6e2f5e0c6189f4e2e1c9e7788c5403b4",
+      "Contents/Frameworks/libpython3.13.dylib": "6dff70a97691b3b020af4663acc58cc7dea31f5e3a36080989a7978ac3342e03",
+      "Contents/Frameworks/objc/_machsignals.cpython-313-darwin.so": "bf078fa84a9f732d22770c346b99c038c0d12ac85f128d768c0a1cf24de23136",
+      "Contents/Frameworks/objc/_objc.cpython-313-darwin.so": "4530fa31f9997d16ea478732e4bd54d156cc4a533f415bd56dd83427d32956cf",
+      "Contents/Info.plist": "16fe955526bbe87ed24d6c3d067955eef989e6b591f43bf61cc327da591748fb",
+      "Contents/MacOS/MeetingTranscriber": "c03c63bd3ae9c5f9d0477ffd536c25e3b5c1c4fea133d0d835f3ed4d3069600f",
+      "Contents/Resources/base_library.zip": "fac8345b21c5f5cc2f919775db282d368a93cf71d7c029c483dc0ada5adec594",
+      "Contents/Resources/desktop/assets/app.css": "eb82981fe2cbdddea2ff137119f6abf4b7593b11d6b10947f0ac86d977ed7747",
+      "Contents/Resources/desktop/assets/app.js": "8986d74a6d5b7a45c1d8ebd3b7a10d3424d949fe6d41a029dd07f6713c27fbce",
+      "Contents/Resources/desktop/assets/index.html": "1ee350742d7f025f14fc9ffce692728f3126c0ebc603dd23339245ebdd4a8782",
+      "Contents/Resources/desktop/assets/summary-markdown.js": "b80e69a0afc9807652fc06b376c9854c8c42965ef9d2e5d4b7ae89db6936b4b8",
+      "Contents/Resources/desktop/assets/vendor/markdown-it.LICENSES.txt": "0b2ece9c2df0b3ae40b46d17811bc57caca9c1803200b1dc8cd2cde214dc06c9",
+      "Contents/Resources/desktop/assets/vendor/markdown-it.umd.min.js": "391f2aa638e75e6c7859d0a5c5650ef0956722a45998f17e05b83bc655778e1e",
+      "Contents/Resources/icon-windowed.icns": "b90a3b56e59169be0f86fe0410699f42ccaa16a0c85d980ef0eb6068032f0b36",
+      "Contents/Resources/pywebview-6.2.1.dist-info/INSTALLER": "e6184ce10e266134fdcfa401e8f1a95005bcd4f18d16b62b757323e2833fe9a9",
+      "Contents/Resources/pywebview-6.2.1.dist-info/METADATA": "8e7f87b5e50b992bc44d9f1dc03fb5218f0b6da5d6c4b9f21f93916bf44569c7",
+      "Contents/Resources/pywebview-6.2.1.dist-info/RECORD": "ad6ef2d0305b9ffac0fbccb894a956dfe8e8bf796b75bcfd0b592e022c3f7abb",
+      "Contents/Resources/pywebview-6.2.1.dist-info/REQUESTED": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "Contents/Resources/pywebview-6.2.1.dist-info/WHEEL": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9",
+      "Contents/Resources/pywebview-6.2.1.dist-info/entry_points.txt": "f4b0b8e4f0af704f8a11ff469c43a04689bf75e2ec0b1a215163ac5dfe34287f",
+      "Contents/Resources/pywebview-6.2.1.dist-info/licenses/LICENSE": "4a988dd3598832cd3653de20dc33cb677d0fb53ab5551c879ca31280ae653675",
+      "Contents/Resources/pywebview-6.2.1.dist-info/top_level.txt": "7794a9695d720645a4ded6abf95ac4397f9b04cf635cf955755369379150af10",
+      "Contents/Resources/skills/meeting/SKILL.md": "8a6678c11dcd9c7ba33d8acdc6956cd67d36583c978953c787c77630cf701828",
+      "Contents/Resources/webview/js/api.js": "cb68b8bed427fa356aea26376e497552f55d91329c093c026a65230d074e2b27",
+      "Contents/Resources/webview/js/customize.js": "ed14d0b594266dfe3834cc8565b44a8157420432aeef4f733ab505bd6ed89b8a",
+      "Contents/Resources/webview/js/finish.js": "751443083dd1d2b2ef4142692f25bc4f6e04f8de4d82c455c73473700f00c8cb",
+      "Contents/Resources/webview/js/lib/dom_json.js": "70fae2a8a8ebc790dc616aa7976074cedd802275c173c90ad4bf3bd14163f9c4",
+      "Contents/Resources/webview/js/lib/polyfill.js": "481a08f5337a770acf49b38c2f58dd0c95f92bf9dbd92bf82b596836ea343ab5",
+      "Contents/Resources/webview/js/state.js": "68ee87ec01563cbcab77a57704a32f19b47436c9d5e254bfba9675a51c132075",
+      "Contents/Resources/webview/lib/Microsoft.Web.WebView2.Core.dll": "8219a3135436c147f8eb02fb831e99596103eebc18b6d7b794ca93f4c67018a2",
+      "Contents/Resources/webview/lib/Microsoft.Web.WebView2.WinForms.dll": "c48f8d729dc531288d2c53a6241effe7922ed1b947850b2442008a945c098c48",
+      "Contents/Resources/webview/lib/WebBrowserInterop.x64.dll": "f6a646470f0e1058224a52e8e2e217501dca46939b30bfc9a5dd4dcdd43f088d",
+      "Contents/Resources/webview/lib/WebBrowserInterop.x86.dll": "4e527297fbea7c5a0419f3a6af307c2681787beb0bf0ef3fea849a7fd85a08dc",
+      "Contents/Resources/webview/lib/pywebview-android.jar": "3f9d3eeeda09ce58badbd742a981a463c067c339c8b4e70b404c00ebb4ec73a3",
+      "Contents/Resources/webview/lib/runtimes/win-arm64/native/WebView2Loader.dll": "0937030efc718f3da77c5e0978fb5046e381d0bb7b01acaad31a535a1b588a33",
+      "Contents/Resources/webview/lib/runtimes/win-x64/native/WebView2Loader.dll": "eb5335edeaa6f2122c044e82aab2351dc8c9b4e0fe5e578c71922fb61be285e7",
+      "Contents/Resources/webview/lib/runtimes/win-x86/native/WebView2Loader.dll": "04814b2c59314c6452d61b821a4a3a5c5f8e8577b55b985f6a7a4b59f8907ec5",
+      "Contents/Resources/webview/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "Contents/_CodeSignature/CodeResources": "829cb6cabe0354e45ae61144eb2d80d14f9e9672c891d7ac03fe4cad7b23d235"
+    }
+  },
+  "library": {
+    "initial_files": 17,
+    "final_equals_initial": true,
+    "sha256_by_relative_path": {
+      "20261102-100000-Rendered-cedar/recording.wav": "365ad446685cc0858298d7e3e79b7374c711a129ebec78dc39c3d4d3113ab267",
+      "20261102-100000-Rendered-cedar/summaries/20261101T111111000000Z-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/summary.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349580726Z-e5a24039df7ca4fd600d573f71066dd8/summary.json": "b4751178bf3239029998a27402d716ec7db971fd7cecc5b7c47d7c412720091a",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349582014Z-830cf4c000cf5f8aa820eecea54ff8a4/summary.json": "c3ab6339b36ee46499615dce9bb5f27217ad47cbb0eb922d474834b3e69c952c",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349582718Z-0abf3bfaeead76f120378228cfca05fa/summary.json": "f6d3b2c541e16f1e867d81d011659e44c7167a8dbaffc677d5482e08a603c7e9",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349583390Z-baefad64d3892c8a59b5c4137a65d550/summary.json": "88e419237e25295c94176829c6977008415c7a80283dedd3f465b91a54292727",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349585070Z-bda90d480f74d34cced626ca02cdb886/summary.json": "b258d7ae6325fb240d183bfea2fb249e9fdd6b915f3e20a901313948731d61a1",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349585710Z-18339dd1307c98360045798200decc4f/summary.json": "792b7e0a66ce7bc5fcf2958423528878cd323f8012f8d47d95a04f74bbf47b2d",
+      "20261102-100000-Rendered-cedar/summaries/20261102T192349588000Z-8260c8024ee454f7428184c59d9b393f/summary.json": "0e992c346fb12ae295fdea9c60a285dd144e8eceb0714991e7dd8b6ab0d1877f",
+      "20261102-100000-Rendered-cedar/transcripts/T1/.assemblyai.json": "b02cf9a634e5123cf27c79c5903ff695517ad5a46c4f758de5307f0804b0cfc2",
+      "20261102-100000-Rendered-cedar/transcripts/T1/transcript.html": "335fca8574f060eea24ebcdae6b78f32414f5de03da1084fd0e73d710768e3a9",
+      "20261102-100000-Rendered-cedar/transcripts/T1/transcript.json": "ba3f309687a82ace7dac6e21b4ab3af49d47710e9230c8e4ad5beb6d3919248a",
+      "20261102-100000-Rendered-cedar/transcripts/T1/transcript.md": "90d1ad2be6f8a8b504e1ace60202f267144264bc7e382c00110cf218ee93a5db",
+      "20261102-100000-Rendered-cedar/transcripts/T2/.assemblyai.json": "b02cf9a634e5123cf27c79c5903ff695517ad5a46c4f758de5307f0804b0cfc2",
+      "20261102-100000-Rendered-cedar/transcripts/T2/transcript.html": "335fca8574f060eea24ebcdae6b78f32414f5de03da1084fd0e73d710768e3a9",
+      "20261102-100000-Rendered-cedar/transcripts/T2/transcript.json": "6056a738a504059a97e2cbf31165640539c28e5bf4cfc0c6c4168b31e72b61ff",
+      "20261102-100000-Rendered-cedar/transcripts/T2/transcript.md": "90d1ad2be6f8a8b504e1ace60202f267144264bc7e382c00110cf218ee93a5db"
+    },
+    "compact_fixture": "393-byte production-published addition retained outside original library after qualification; all17 originals preserved"
+  },
+  "native_observations": {
+    "wide_light_width": 1200,
+    "narrow_dark_width": 627,
+    "rich_summaries_and_four_row_table": true,
+    "history_provenance_earlier_revision_provider_warnings": true,
+    "literal_code_nested_lists_local_scroll_and_drag_selection": true,
+    "sparse_1540_byte_notice": true,
+    "compact_393_byte_sparse_full_normalized_source": true,
+    "compact_admission_cells": 4288,
+    "deep_full_normalized_source_and_tail": true,
+    "deep_selection_ms": 1075,
+    "near_bytes": 131067,
+    "valid_near_selection_ms": 1019,
+    "near_full_source_and_tail_in_actual_native_selected_text": true,
+    "near_visual_tail_located_by_scrolling": false,
+    "formatting_recovery": true,
+    "unavailable_history_error_preserves_code_body": true,
+    "refresh_clears_transient_error_preserves_saved_warning": true,
+    "T2_T1_T2_replaces_body": true,
+    "summary_transcript_navigation_ms": 1194,
+    "timestamp_selects_first_passage": true,
+    "native_play_reaches_eight_second_end": true,
+    "return_to_summary": true,
+    "same_package_restart_rich_table_history_warnings": true,
+    "normal_closes": 2,
+    "owned_app_pids_gone": true,
+    "selected_listeners_closed": true,
+    "private_sessions_remaining": 0,
+    "all17_original_library_hashes_unchanged": true,
+    "all45_regular_package_hashes_unchanged": true
+  },
+  "reused_scope": [
+    "approved Windows source gates at2dda",
+    "Windows served-reader full hostile/request/fault/budget matrix",
+    "unchanged provider/auth/close/security gates"
+  ],
+  "mac_scope_limits": [
+    "Per-node native AX text observations cap512 characters. UI Select All exposed the complete131067-byte source and tail; no claim of a visually located near-tail screenshot or universal complexity bound.",
+    "Some native popup attempts did not select the requested item. Failed selection attempts are not renderer timings. Same-byte temporary isolation plus normal Refresh selected code/near; all original records restored.",
+    "Existing intermittent AX subtree omission required visual inspection of transcript/player.",
+    "Rapid timestamp autoplay followed immediately by native toggle interrupted an initial play promise and showed the existing notice. Independent native Play advanced to8seconds; Refresh cleared transient notices. No audio/source correction.",
+    "Shutdown measured owned app PIDs, selected listener ports and private sessions; no claim about unrelated system WebKit processes.",
+    "No broad Mac suite/provider/model call or new dependency. Personal unsigned/ad hoc package, no installer/clean-machine/signing/notarization/sustained-memory claim."
+  ],
+  "capture_files": {
+    "table-wide-light.jpg": {
+      "sha256": "b62b2e46a0e32e056f631fcf5c45440bc22afe52afa4a0e6192b6aa7dbb0038a",
+      "bytes": 475076
+    },
+    "rich-narrow-dark.jpg": {
+      "sha256": "e884a2024c7ae89eb01df85edefd3a898893c2d37322cd5d60cd9358c2bdead4",
+      "bytes": 272674
+    },
+    "deep-fallback-narrow-dark.jpg": {
+      "sha256": "0c300a25d2f923f213158dcf02f48bf1eeccb11e12817b05985ed7aad4522265",
+      "bytes": 224200
+    },
+    "code-selection-narrow-dark.jpg": {
+      "sha256": "057201b5fac11d13cd3ff4d856a8644bffc82ec5d97a169e74eafd5f169d1d34",
+      "bytes": 231445
+    },
+    "codex-warning-narrow-dark.jpg": {
+      "sha256": "593217e030711bf91c3bc6ffe499cebcd9bc86fe24386e6ee5ca8235fe16705c",
+      "bytes": 350618
+    }
+  },
+  "review_state": "APPROVED: same original source outer, evidence-only completion, test quality PASS, no findings",
+  "reviewed_evidence_tip": "f7d733c9d3e04118ed21caa9a7e72d57e66c598c",
+  "review_limit": "Reviewer inspected evidence and unchanged source/bindings; did not execute Mac or independently rehash its remote package/library."
+}

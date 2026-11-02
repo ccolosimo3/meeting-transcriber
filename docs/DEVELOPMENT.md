@@ -2,6 +2,217 @@
 
 ## Architecture
 
+### Desktop reader
+
+`python -m desktop.main` launches the optional Windows/Mac reader.
+It clears an inherited `ASSEMBLYAI_API_KEY` before importing native rendering,
+and exposes library selection/refresh, run loading, saved-HTML opening and the
+explicit summary job/history actions.
+On Mac, an entry process that inherited the key re-executes with the sanitized
+environment so OS process inspection cannot retain the original key copy.
+`lib/transcription.py` owns local import, captured destination/source identity,
+FFprobe/size/duration preflight, exclusive run allocation and qualified cleanup.
+The Bash presentation and desktop both call these operations. The existing HTTP
+adapter remains the provider state machine and emits phase callbacks. Only
+explicit Transcribe/cleanup work reads credentials for provider delivery.
+`desktop/transcription_job.py` owns one in-memory non-cancellable background
+operation; its result retains the captured Library. Normal close/Quit uses the
+same pywebview closing event and is vetoed while that operation runs. Summary
+subprocess ownership stays separate. Unresolved failed receipts suppress a blind
+desktop retranscription; published cleanup warnings survive Library reload.
+
+`lib/private_files.py` contains the shared Windows owner/DACL primitives and
+private atomic writer. New task directories get protected ACLs at creation;
+private temporary files are verified before bytes are written and replacements
+are verified again. A thread-local publication guard checks captured destination
+identities during shared runs. Windows execution must independently qualify this
+source; POSIX tests are not an ACL proof.
+
+- `lib/meeting_library.py` projects existing bundles through the shared
+  classifier, canonical parser and identity owner. IDs belong to the current
+  library session. It rejects linked/reparse descendants and verifies actual
+  opened-file paths and identities before reading. Media and saved HTML leave
+  this owner as verified binary handles, never arbitrary renderer paths.
+- `desktop/server.py` serves an explicit asset allowlist and capability-bound
+  handles on one ephemeral loopback listener. Media supports ranges without
+  loading whole recordings; no HTTP endpoint lists or reads arbitrary files.
+  Saved HTML opens through a temporary handle-backed URL in the system browser,
+  which has no Python bridge. URLs and document content are never logged.
+- `desktop/native.py` adapts the pinned pywebview renderers before their first
+  app navigation. It blocks other navigation, popups, drops and downloads,
+  protects session storage, and rejects missing WebView2 rather than allowing
+  MSHTML. Windows storage retains required engine AppContainer access within
+  the protected per-user session. Mac uses a nonpersistent WK data store set
+  before webview construction. The browser sandbox remains enabled.
+  On Mac, application Quit uses the same guard and ordinary window teardown
+  so Python returns through server/session cleanup. Pending JavaScript result
+  waits end when the native window closes,
+  so late bridge replies cannot keep the process alive.
+  Native messages also enforce an exact action/arity/input allowlist before the
+  framework dispatcher; hiding private Python attributes from API enumeration
+  alone does not prevent raw dotted-attribute calls.
+- `desktop/assets/` renders escaped canonical text with source-ordinal identity.
+  The actual media element drives interval highlighting; filtering changes the
+  text view, not the audio. Library/Find/Details/Listening disclosure is local
+  presentation state and never replaces the media element. Show categories
+  derive from the library snapshot's eligible runs and exact statuses; selected
+  version labels and warnings derive from the current run. Summary Markdown uses
+  a local token parser and a closed text-node/DOM renderer; it cannot render raw
+  HTML, remote resources or generated actions.
+
+The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
+needed for pinned pywebview's `new Function` bridge registration; document,
+frame/origin, action allowlist and escaped-text controls remain enforced.
+
+#### Summary formatting
+
+`desktop/assets/summary-markdown.js` owns presentation only. Initial load,
+successful-result projection and history selection converge at `renderSummaries`
+in `app.js`; stored Markdown, source hashes and provenance are unchanged. The
+renderer consumes parser tokens and builds a detached fragment from a closed
+element set. It never uses an HTML sink or copies arbitrary token attributes.
+Only fixed app table semantics/classes and a validated ordered-list start are
+set. HTML, link, image, autolink and reference rules are disabled, with `html`,
+`linkify` and `typographer` off. URLs and reference definitions remain visible
+source text. Fence information adds no execution, highlighting or attributes.
+
+Before parsing, UTF-8 input is limited to the existing 128 KiB saved-record
+contract. Normalized physical-line count times (largest literal pipe count per
+line + 1) must be at most 4,096 when any pipes occur. This conservative admission
+bounds table padding before token allocation; it intentionally overcounts code
+and escaped pipes. After parsing, a finite traversal admits at most 10,000 flat
+and inline-child tokens and rejects any level at or above 63 with `maxNesting:64`.
+The latter also catches the parser's deep-block tail omission. No partial tree
+is attached. Any limit, missing parser, error or unsupported structure leaves the
+entire original string in `textContent`/`pre-wrap`, with a separate formatting
+notice alongside existing warnings. A later successful render clears that notice.
+These bounds are not a universal parser-complexity or timing guarantee.
+
+The exact local scripts are allowlisted by `ReaderServer`; the vendor directory
+is not a public directory root. CSP/native restrictions and the packaging route
+are unchanged. Scoped typography uses existing theme tokens, with local table
+and code overflow. No worker, cache, service or asynchronous rendering state is
+introduced.
+
+Vendored dependency: official [markdown-it 15.0.3 registry metadata](https://registry.npmjs.org/markdown-it/15.0.3)
+and [tarball](https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz),
+member `package/dist/browser/markdown-it.umd.min.js`, 100,786 bytes, SHA-256
+`391f2aa638e75e6c7859d0a5c5650ef0956722a45998f17e05b83bc655778e1e`.
+The archive integrity is
+`sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==`.
+The upstream browser source map and [versioned lockfile](https://raw.githubusercontent.com/markdown-it/markdown-it/15.0.3/package-lock.json)
+identify the five embedded packages. `desktop/assets/vendor/markdown-it.LICENSES.txt`
+preserves the original markdown-it MIT notice plus entities 8.1.0 (BSD-2-Clause),
+linkify-it 6.1.0, mdurl 2.1.0, punycode.js 2.3.1 and uc.micro 3.0.0 (MIT) notices
+from their exact official registry archives. The combined notice SHA-256 is
+`0b2ece9c2df0b3ae40b46d17811bc57caca9c1803200b1dc8cd2cde214dc06c9`.
+Scoped Git attributes prevent checkout line-ending translation of both vendor
+files, preserving these exact bytes on Windows and Mac.
+No package manager, dependency resolution, source map or upstream build is part
+of app setup/build; both scripts and all notices ship through the existing assets
+copy. Node is used only for development syntax checks, not by the app/build.
+
+Summary generation is a separate deliberate disclosure, never a transcription
+callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
+already signed-in first-party subscription CLI with a sanitized environment,
+neutral private working directory, stdin input, bounded independent pipe drains
+and restrictive tool/hook/integration controls. Summary generation reads no
+AssemblyAI credential. Claude uses safe/restricted mode, no tools, strict empty
+MCP, denied
+prompts and no session persistence. Its structured output stream is admitted only
+after validation; unexpected actions, provider
+errors, malformed output and incomplete results cannot publish a summary.
+Claude admission requires its initialization event with an explicit empty tool
+list before its successful final result.
+Codex uses ordinary configuration consistently for `mcp list`, subscription auth
+status and `exec`; it does not use exec-only `--ignore-user-config`, which would
+change auth/cloud bootstrap. One shared set of per-run controls selects the
+built-in first-party provider and official ChatGPT routing, disables action/
+hook/app/plugin features and web search, clears legacy `notify`, disables OTEL
+log/prompt/trace/metrics exporters and analytics, and selects read-only execution
+with no approvals or transcript history. Auth-store/workspace selection remains
+CLI-owned. The built-in OpenAI provider is not replaced by a user-defined provider
+of the same name; the per-run empty `openai_base_url` restores its auth-dependent
+default. See the matching [provider implementation](https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/model-provider-info/src/lib.rs)
+and [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+Before prompt assembly, the job lists configured MCP names, adds one
+`-c mcp_servers.NAME.enabled=false` override per name, then rechecks the exact
+name set and explicit disabled states. Invalid/duplicate/unsafe names, unknown
+states, changed inventories and failed controls stop before source submission.
+Only validated names enter arguments; transport/config values are never copied.
+Both checks and generation share the captured environment, neutral private cwd,
+auth selection and common controls. Nothing edits global config or creates a
+profile/auth copy. Listing is metadata discovery and can perform ordinary OAuth
+discovery/auth refresh; it does not initialize MCP tools. See [MCP controls](https://learn.chatgpt.com/docs/extend/mcp)
+and [configuration layers](https://learn.chatgpt.com/docs/config-file/config-basic).
+CLI/environment configuration must remain stable during the owned job; this is
+not isolation from trusted administrative changes. Structured Codex output still
+rejects actions/fatal errors/incomplete turns; documented nonfatal item warnings
+retain only a generic indicator. The reader keeps Claude as its initial choice
+and permits an explicit Codex choice, with no automatic fallback.
+The app does not claim isolation from trusted admin policy or ordinary CLI
+authentication/cache behavior. Raw prompts/events/stderr never become app logs.
+
+`lib/meeting_digests.py` owns the small app-serialized record and consumes the
+bundled repository skill plus a quoted transcript snapshot. `Library` captures
+the exact selected canonical bytes through verified handles and publishes only
+under that captured meeting's private `summaries/<UTC>-<random>/summary.json`.
+Content and app-owned provenance share one atomic record, followed by reload.
+History derives from records for the existing selected transcript run; there is
+no index, latest pointer, background queue or durable recovery service. Source
+hashes expose a later speaker-name/content revision without rewriting history.
+
+Cancellation/timeout/window-close owns the entire subprocess tree. POSIX uses a
+new session/process group; Windows assigns a trusted waiting bootstrap to a
+kill-on-close Job Object before giving it the provider launch header. The app
+retains the Job handle after the root exits so surviving children remain owned.
+Windows private publication checks actual owner/DACL rather than treating POSIX
+mode bits as a Windows privacy proof. Target-OS process/privacy and native package
+tests remain necessary; a Mac run cannot qualify Windows behavior.
+
+The existing embedding/test `MEETING_DATA_DIR` seam also selects the desktop
+library before its first scan. Use a synthetic data root with normal CLI auth
+for native tests; never copy credentials into a synthetic HOME. Deterministic
+digest tests use real executable fixtures, not provider requests. Live synthetic
+subscription checks require the bounded operator authorization for that run.
+
+Install/build separately from the CLI-only route:
+
+```text
+uv sync --frozen --extra desktop --group desktop-build
+uv run --frozen --extra desktop python -m desktop.main
+uv run --frozen --extra desktop --group desktop-build python -m desktop.build
+```
+
+Builds must run on the target OS. Folder packages and the Apple Silicon `.app`
+land under `.local-artifacts/desktop-build/dist`; they are local unsigned/ad hoc
+builds, not public installers. Library choice and theme are session-only.
+
+Focused desktop checks:
+
+```text
+uv run --frozen --extra desktop python -m unittest tests.test_meeting_library tests.test_meeting_digests tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_dispatch tests.test_desktop_native
+```
+
+Set `MEETING_REQUIRE_NATIVE=1` for the actual Windows native-engine navigation
+probe in `tests.test_desktop_native`. Its missing-runtime test forces only the
+runtime-availability decision and never uninstalls the host WebView2 runtime.
+Packaged launch, native picker/permissions and integrated playback still need
+the Windows/WebView2 and Mac/WKWebView operation boundary; an ordinary browser
+test cannot establish both. Use synthetic libraries and a sentinel key, and
+retain the tested revision and captures outside product commits.
+
+For reader layout changes, also interact with the actual served assets in the
+native reader using synthetic bundles. Check wide/light and narrow/dark layouts,
+Library search/Show and folder actions, Find → close → filter chips/clear,
+Details → select a saved version → close, and live playback while collapsing
+Library and Listening. Exercise Escape/focus return, warnings, duplicate speaker
+display names, source passage numbers, no matches, missing audio and saved HTML.
+These native UI checks complement the focused Python checks above.
+
+### Existing CLI
+
 The public interface is `bin/meeting`. It owns the interactive menu, the
 canonical command surface, one-release migration errors for removed commands,
 and dispatch to one owner per command:
@@ -22,17 +233,17 @@ and dispatch to one owner per command:
   single-stdout-line contract. A successful run prints the absolute
   `transcript.json` path as its only stdout line; exit 3 means the transcript
   is usable locally but remote deletion is unconfirmed.
-- `bin/transcribe-meeting` is the narrow internal run owner: credential
-  containment, size/duration preflight, run-directory creation, and launching
-  the provider adapter. It passes the adapter's 0/3 exit codes through and
+- `bin/transcribe-meeting` is a thin private shell entry to the shared Python
+  preflight/run operation through `lib/transcription_cli.py`. It passes the
+  adapter's 0/3 exit codes through and
   writes the run directory to `MEETING_TRANSCRIBER_RESULT_FILE`.
 - `lib/transcribe_assemblyai.py` is the standard-library REST adapter and the
   provider lifecycle owner. It streams the upload, submits exactly one
   Universal-3.5 Pro job, polls with bounded transient retries, converts the
   completion into the typed canonical transcript, publishes canonical JSON and
   both views, compacts the receipt, and then deletes the remote transcript.
-  Its `--cleanup` mode is the recovery-only remote deletion used by
-  `meeting cleanup`; it can only issue DELETE requests.
+  Its cleanup operation is shared by `meeting cleanup` and the desktop; it can
+  only issue DELETE requests.
 - `lib/transcript_bundle.py` owns the named `CanonicalTranscript` type, the
   validation boundary that narrows unknown JSON, and atomic private
   publication with reload verification.
@@ -52,7 +263,8 @@ and dispatch to one owner per command:
 - `bin/meeting-open` opens the latest usable run's saved HTML without
   rewriting anything and surfaces the cleanup-required warning.
 - `bin/meeting-cleanup` resolves the recovery target and contains the
-  credential before invoking the adapter's cleanup mode. Cleanup target proof
+  credential before invoking the shared qualified-cleanup operation. Cleanup
+  target proof
   reuses `lib/transcript_run.py`'s current-schema run validator before the
   adapter can issue DELETE.
 - `bin/meeting-setup` and `bin/meeting-doctor` own configuration and the
@@ -70,9 +282,11 @@ The supported environment is macOS with:
 
 - Homebrew `uv` and keg-only `ffmpeg@7`;
 - a uv-managed pinned Python 3.13 and a small project virtual environment; and
-- the Python standard library only for the installed application.
+- the Python standard library only for the installed CLI.
 
-There are no third-party production runtime dependencies. The single
+The CLI has no third-party production runtime dependencies. The optional
+desktop extra adds pinned pywebview/Bottle and their native renderer bindings;
+the separate desktop-build group pins PyInstaller. The single CLI
 development-only dependency is `aiohttp==3.14.3` in the default `dev`
 dependency group, used by the Chromium DevTools browser test.
 
@@ -82,26 +296,33 @@ dependency group, used by the Chromium DevTools browser test.
   `aiohttp` for the browser gate.
 
 `pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`,
-recordings, transcripts, local configuration, or the checkout-root `.env`.
+recordings, transcripts or local configuration.
 
 ## Provider lifecycle and credential boundary
 
 The managed path uses `https://api.assemblyai.com`, places the raw API key only
-in the adapter child's `Authorization` header, and pins
-`speech_models: ["universal-3-5-pro"]`. The checkout-root `.env` is the only
-persistent credential store and must contain exactly one literal
+in the adapter's `Authorization` header, and pins
+`speech_models: ["universal-3-5-pro"]`. The shared per-user `.env` is the only
+persistent credential store (`~/Library/Application Support/MeetingTranscriber/.env`
+on Mac; `%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows) and must contain
+exactly one literal
 `ASSEMBLYAI_API_KEY=<value>` assignment in a regular non-symlink mode-`0600`
-file. Shell code parses it as data; it never sources or exports the file. A
+file. The shared `transcription_config.py` parser treats it as data; shell wrappers
+never source or export the file. Existing users manually move the one-assignment
+checkout file with private permissions; no old-file fallback or migration runs. A
 process-level override has priority. Every executable captures and unsets an
-inherited value immediately, and only the adapter child receives the selected
-key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
+inherited value immediately, and only the shared provider operation receives
+the selected key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
 doctor/setup, notification, and menu-helper children never inherit it. The
 no-argument menu retains its captured override only as a private shell variable
 until a later transcription selection. The key never appears in argv or output
 artifacts.
 
 Each run atomically persists the hidden mode-`0600` receipt
-`.assemblyai.json` in the run directory:
+`.assemblyai.json` in the run directory. The existing `unknown_after_upload`
+uncertainty is saved before the first upload byte; failure to save it prevents
+upload, and a crash or later receipt-write failure retains the support-before-retry
+warning on desktop reload:
 
 - Before publication it holds the lifecycle state machine
   (`unknown_after_upload`, `upload_rejected`, `upload_succeeded`,
@@ -132,7 +353,8 @@ Each run atomically persists the hidden mode-`0600` receipt
   and historical targets exit 2 without mutation.
 - A managed-model mismatch produces no canonical transcript, reconciles remote
   deletion when an ID is known, and reports a support action — never an
-  automatic or recommended paid retry.
+  automatic or recommended paid retry. Persisted `used_model` evidence keeps
+  that support requirement after desktop reload, even when deletion succeeded.
 
 Ctrl-C uses the interruption path: the receipt records `interrupted` and a
 bounded deletion attempt runs for a known ID. Polling of normal
@@ -194,10 +416,37 @@ shellcheck install.sh bin/* lib/*.sh tests/interface-smoke.sh tests/fixtures/*
   stub: four-file inventory, source immutability, paths with spaces, import
   copy, exit-3 selection, name regeneration, and the permission regression.
 - The recorder PTY test requires macOS and Homebrew `ffmpeg@7`. The rendered
-  HTML browser test requires the dev-group `aiohttp` and a local Google Chrome
-  or Chromium at one of the two supported paths; with
+  HTML and desktop summary browser tests require the dev-group `aiohttp` and
+  an installed supported Chrome/Chromium on Mac, or Chrome/Edge on Windows; with
   `MEETING_REQUIRE_BROWSER=1` it fails (rather than skips) when a prerequisite
   is missing, so the dedicated browser gate cannot silently pass.
+
+For summary presentation changes, the focused gate is:
+
+```bash
+MEETING_REQUIRE_BROWSER=1 .venv/bin/python -m unittest tests.test_desktop_summary_browser -v
+.venv/bin/python -m unittest tests.test_desktop_server tests.test_meeting_digests tests.test_desktop_bridge -q
+node --check desktop/assets/app.js
+node --check desktop/assets/summary-markdown.js
+node --check desktop/assets/vendor/markdown-it.umd.min.js
+git diff --check
+```
+
+On Windows PowerShell, set `$env:MEETING_REQUIRE_BROWSER='1'` for the browser
+command and use `.venv\Scripts\python.exe`; restore the setting afterward.
+The existing transcription Bridge case also needs installed FFprobe; when it is
+outside PATH, select that existing executable with the documented test override.
+The browser fixture creates the ordinary `AppData/Local` and `AppData/Roaming`
+structure inside its synthetic USERPROFILE so Windows known-folder resolution
+can establish that its explicit Chromium profile is non-default. No browser
+profile safety check is disabled. The three reader behavior families cover real
+Bridge/Library projections, generated-content request/action inertness, and
+full-source fallback/recovery with selected response bounds. New HTTP coverage
+checks exact script routes and unchanged security headers. Existing saved-history
+and provider/lifecycle tests remain at their original owners. Native package QA
+uses synthetic homes/libraries and already saved fictional summaries; it needs
+no provider call. Qualify packaged loading, wide/light and narrow/dark layout,
+affected navigation/fallback and normal cleanup on each target OS separately.
 
 Set `MEETING_NOTIFICATIONS=0` during automated verification.
 `MEETING_DATA_DIR`, `MEETING_CONFIG_DIR`, the executable overrides
@@ -218,3 +467,20 @@ transcript runs. Development verification artifacts stay under the ignored
 `tests/artifacts/`. The bundled skill at `skills/meeting/` is the distributable
 source; setup installs it under `~/.codex/skills/meeting` without overwriting a
 different existing copy.
+
+
+### Import/transcription verification
+
+Run the affected Python suites plus `tests.test_transcription` for the shared
+local import → loopback HTTP adapter → Library save/reload seam. Existing
+`tests.test_assemblyai_adapter` remains the provider failure/ordering matrix;
+caller tests cover only their distinct status, explicit-send, navigation and
+lifecycle behavior. Use synthetic HOME, `MEETING_DATA_DIR` and
+`MEETING_CONFIG_DIR` before the first scan in native QA, a fake key, localhost
+`MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE`, and installed/located FFprobe. Build and
+relocate the actual native package and launch without development Python or
+checkout paths on PATH. Native title-bar close and application Quit must both
+stay open while the fixture holds work, then shutdown must release owned server
+and session resources. Retain inspected wide/light and narrow/dark captures in
+ignored task artifacts. Windows WebView2/package/ACL execution remains a separate
+target-OS proof; no actual provider transaction is implied by the fixture.

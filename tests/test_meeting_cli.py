@@ -105,13 +105,13 @@ class TranscribeOrchestrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         self.bin_dir = self.root / "bin"
         self.lib_dir = self.root / "lib"
         self.bin_dir.mkdir()
         self.lib_dir.mkdir()
         shutil.copy2(PROJECT_ROOT / "bin" / "meeting-transcribe", self.bin_dir)
-        shutil.copy2(PROJECT_ROOT / "lib" / "format.sh", self.lib_dir)
+        shutil.copytree(PROJECT_ROOT / "lib", self.lib_dir, dirs_exist_ok=True)
         (self.root / ".venv" / "bin").mkdir(parents=True)
         (self.root / ".venv" / "bin" / "python").symlink_to(VENV_PYTHON)
 
@@ -208,6 +208,8 @@ fi
         environment.pop("ASSEMBLYAI_API_KEY", None)
         environment.update(
             {
+                "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_NOTIFICATIONS": "1",
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
@@ -554,7 +556,7 @@ class DiscoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         self.meetings_root = self.root / "meetings"
         self.meetings_root.mkdir()
         self.open_log = self.root / "open-argv"
@@ -635,6 +637,8 @@ class DiscoveryTests(unittest.TestCase):
         environment = os.environ.copy()
         environment.update(
             {
+                "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
                 "STUB_OPEN_ARGV": str(self.open_log),
@@ -796,6 +800,8 @@ class DiscoveryTests(unittest.TestCase):
         environment = os.environ.copy()
         environment.update(
             {
+                "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
                 "STUB_OPEN_ARGV": str(self.open_log),
@@ -864,7 +870,7 @@ class CleanupCommandTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         self.app_root = self.root / "app"
         (self.app_root / "bin").mkdir(parents=True)
         shutil.copy2(PROJECT_ROOT / "bin" / "meeting-cleanup", self.app_root / "bin")
@@ -892,6 +898,8 @@ class CleanupCommandTests(unittest.TestCase):
         environment.pop("ASSEMBLYAI_API_KEY", None)
         environment.update(
             {
+                "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE": base_url,
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL": "0",
@@ -1024,14 +1032,14 @@ class MenuRecorderResultTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         self.bin_dir = self.root / "bin"
         self.lib_dir = self.root / "lib"
         self.bin_dir.mkdir()
         self.lib_dir.mkdir()
         shutil.copy2(PROJECT_ROOT / "bin" / "meeting", self.bin_dir)
         shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", self.lib_dir)
-        shutil.copy2(PROJECT_ROOT / "lib" / "format.sh", self.lib_dir)
+        shutil.copytree(PROJECT_ROOT / "lib", self.lib_dir, dirs_exist_ok=True)
         (self.root / ".venv" / "bin").mkdir(parents=True)
         (self.root / ".venv" / "bin" / "python").symlink_to(VENV_PYTHON)
         self.recording_path = self.root / "meetings" / "bundle" / "recording.wav"

@@ -33,6 +33,11 @@ CHROME_CANDIDATES = (
     Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
     Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
 )
+if os.name == "nt":
+    CHROME_CANDIDATES += (
+        Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+        Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"),
+    )
 
 
 def browser_prerequisites_available() -> bool:
@@ -45,7 +50,7 @@ if os.environ.get("MEETING_REQUIRE_BROWSER") == "1" and not browser_prerequisite
     raise RuntimeError(
         "MEETING_REQUIRE_BROWSER=1 but the browser gate prerequisites are missing: "
         "the dev-group aiohttp dependency and a local Google Chrome or Chromium "
-        "at one of the two supported paths are required"
+        "at a supported installed path are required"
     )
 
 
@@ -55,9 +60,10 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 class CdpPage:
-    def __init__(self, websocket: aiohttp.ClientWebSocketResponse) -> None:
+    def __init__(self, websocket: aiohttp.ClientWebSocketResponse, events=None) -> None:
         self.websocket = websocket
         self.next_id = 1
+        self.events = events
 
     async def request(
         self, method: str, params: dict[str, object] | None = None
@@ -69,6 +75,8 @@ class CdpPage:
         )
         while True:
             message = await self.websocket.receive_json(timeout=10)
+            if self.events is not None and "method" in message:
+                self.events.append(message)
             if message.get("id") != request_id:
                 continue
             if "error" in message:
@@ -78,6 +86,8 @@ class CdpPage:
     async def wait_for(self, method: str) -> None:
         while True:
             message = await self.websocket.receive_json(timeout=10)
+            if self.events is not None and "method" in message:
+                self.events.append(message)
             if message.get("method") == method:
                 return
 

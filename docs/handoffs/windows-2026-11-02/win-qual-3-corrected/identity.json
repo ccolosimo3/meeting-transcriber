@@ -1,0 +1,9 @@
+{
+  "source": "2640f2903f4b9e4ebda97697410798bdfaf514a7",
+  "exe_sha256": "d5100f870006597c9698a4f92b50fb7b8054a8e7eb71d20cde13a2eba18191db",
+  "manifest_sha256": "686b95151906c2b8165efbb99444b84907f77aef64590cabb321bb8998271918",
+  "package_file_count": 102,
+  "skill_sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5",
+  "native_fixture_sha256": "2206498e937f3709da7a8a26f82cf56e6d21d0fb128e9d4efd43078ace7fae7c",
+  "fixture_source_sha256": "fbaa791ff0ec519c0c63563cccb1a6a8b11e6d38302611c447c752246c0313ad"
+}

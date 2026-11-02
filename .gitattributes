@@ -1,0 +1,3 @@
+# Preserve the approved vendored distribution and notice bytes on every OS.
+/desktop/assets/vendor/markdown-it.umd.min.js -text
+/desktop/assets/vendor/markdown-it.LICENSES.txt -text

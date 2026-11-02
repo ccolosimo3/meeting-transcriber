@@ -1,0 +1,8 @@
+{
+  "owned_app_pid": 34904,
+  "exe_is_owned_corrected_relocated_package": true,
+  "all_eight_locations_synthetic_before_scan": true,
+  "no_provider_keys_inherited": true,
+  "raw_environment_excluded": true,
+  "same_persistent_owned_PID_used_for_two_cases": true
+}
