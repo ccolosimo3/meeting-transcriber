@@ -67,7 +67,16 @@ class TranscriptionTests(RecordingFixture, unittest.TestCase):
             self.assertEqual((self.library / 'preserve').read_text(), 'unowned')
 
     def test_failed_copy_removes_only_exclusive_incomplete_bundle(self):
-        with patch('transcription.shutil.copyfileobj', side_effect=OSError('synthetic failure')):
+        extensionless = self.source.with_suffix('')
+        self.source.rename(extensionless)
+        self.source = extensionless
+        def interrupted_copy(source, output, length):
+            output.write(b'incomplete synthetic bytes')
+            output.flush()
+            rows = Library(self.library).scan()['meetings']
+            self.assertEqual(rows[0]['status'], 'Unfinished recording')
+            raise OSError('synthetic failure')
+        with patch('transcription.shutil.copyfileobj', side_effect=interrupted_copy):
             with self.assertRaises(OSError):
                 import_recording(self.source, Directory(self.library))
         self.assertEqual(list(self.library.iterdir()), [])

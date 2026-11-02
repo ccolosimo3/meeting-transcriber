@@ -85,7 +85,7 @@ def import_recording(source, destination):
         except FileExistsError:
             raise OperationError('The dated meeting bundle already exists. No recording was overwritten.') from None
         target = bundle / ('recording' + source.suffix)
-        partial = bundle / ('recording.partial' + source.suffix)
+        partial = bundle / ('recording.partial' + (source.suffix or '.import'))
         try:
             destination.check(bundle)
             descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
