@@ -21,6 +21,7 @@ from transcript_bundle import (
     TimedWord,
     save_canonical,
 )
+from private_files import atomic_write_private, open_regular
 from transcript_run import ManagedRunError, validate_managed_run
 
 
@@ -81,26 +82,7 @@ def format_elapsed(seconds: float) -> str:
 
 
 def atomic_write_json(path: Path, value: dict[str, Any]) -> dict[str, Any]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", dir=path.parent
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
-        path.chmod(0o600)
-    except BaseException:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        temporary_path.unlink(missing_ok=True)
-        raise
+    atomic_write_private(path, json.dumps(value, ensure_ascii=False))
     with path.open(encoding="utf-8") as stream:
         loaded = json.load(stream)
     if not isinstance(loaded, dict):
@@ -210,12 +192,14 @@ class AssemblyAIAdapter:
         poll_interval: float = 3.0,
         transient_attempts: int = TRANSIENT_ATTEMPTS,
         stderr: Any = sys.stderr,
+        on_progress=None,
     ) -> None:
         if not api_key:
             raise ValueError("ASSEMBLYAI_API_KEY is required")
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("invalid AssemblyAI API base URL")
+        self.on_progress = on_progress or (lambda phase: None)
         self.api_key = api_key
         self.parsed_base = parsed
         self.poll_interval = poll_interval
@@ -292,13 +276,17 @@ class AssemblyAIAdapter:
     def _upload(self, audio: Path) -> dict[str, Any]:
         connection = self._connection()
         try:
-            connection.putrequest("POST", self._path("/v2/upload"))
-            connection.putheader("Authorization", self.api_key)
-            connection.putheader("Content-Type", "application/octet-stream")
-            connection.putheader("Content-Length", str(audio.stat().st_size))
-            connection.endheaders()
-            with audio.open("rb") as stream:
+            with (self.audio_opener() if hasattr(self, 'audio_opener') else open_regular(audio)) as stream:
+                before = os.fstat(stream.fileno())
+                connection.putrequest("POST", self._path("/v2/upload"))
+                connection.putheader("Authorization", self.api_key)
+                connection.putheader("Content-Type", "application/octet-stream")
+                connection.putheader("Content-Length", str(before.st_size))
+                connection.endheaders()
                 self._send_stream(connection, stream)
+                after = os.fstat(stream.fileno())
+                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise ProviderTransportError('Recording changed during upload')
             return self._decode_response(connection.getresponse(), "upload")
         except ProviderError:
             raise
@@ -403,6 +391,7 @@ class AssemblyAIAdapter:
             raise ProviderError(f"AssemblyAI poll returned unknown status: {status!r}")
 
     def _delete(self) -> bool:
+        self.on_progress("deleting")
         assert self.transcript_id is not None
         self._start_phase()
         last_error = "unknown deletion failure"
@@ -441,6 +430,7 @@ class AssemblyAIAdapter:
         self, audio: Path, output_dir: Path, output_name: str, speakers: int | None
     ) -> tuple[Path, bool]:
         """Transcribe audio and return (canonical JSON path, deletion confirmed)."""
+        self.on_progress("uploading")
         self.receipt_path = output_dir / RECEIPT_NAME
         self._start_phase()
         try:
@@ -460,6 +450,7 @@ class AssemblyAIAdapter:
             raise ProviderError("AssemblyAI upload response had no upload_url")
         self._save("upload_succeeded")
         self._finish_phase("Uploading recording...")
+        self.on_progress("transcribing")
 
         request: dict[str, Any] = {
             "audio_url": upload_url,
@@ -513,6 +504,7 @@ class AssemblyAIAdapter:
             used_model = str(completed.get("speech_model_used") or "unknown")
             self._save("completed", provider_status="completed", used_model=used_model)
             try:
+                self.on_progress("saving")
                 canonical = convert_response(completed)
                 canonical_path = output_dir / f"{output_name}.json"
                 save_canonical(canonical_path, canonical)

@@ -10,7 +10,23 @@ and exposes library selection/refresh, run loading, saved-HTML opening and the
 explicit summary job/history actions.
 On Mac, an entry process that inherited the key re-executes with the sanitized
 environment so OS process inspection cannot retain the original key copy.
-The CLI and its provider lifecycle below retain their existing behavior.
+`lib/transcription.py` owns local import, captured destination/source identity,
+FFprobe/size/duration preflight, exclusive run allocation and qualified cleanup.
+The Bash presentation and desktop both call these operations. The existing HTTP
+adapter remains the provider state machine and emits phase callbacks. Only
+explicit Transcribe/cleanup work reads credentials for provider delivery.
+`desktop/transcription_job.py` owns one in-memory non-cancellable background
+operation; its result retains the captured Library. Normal close/Quit uses the
+same pywebview closing event and is vetoed while that operation runs. Summary
+subprocess ownership stays separate. Unresolved failed receipts suppress a blind
+desktop retranscription; published cleanup warnings survive Library reload.
+
+`lib/private_files.py` contains the shared Windows owner/DACL primitives and
+private atomic writer. New task directories get protected ACLs at creation;
+private temporary files are verified before bytes are written and replacements
+are verified again. A thread-local publication guard checks captured destination
+identities during shared runs. Windows execution must independently qualify this
+source; POSIX tests are not an ACL proof.
 
 - `lib/meeting_library.py` projects existing bundles through the shared
   classifier, canonical parser and identity owner. IDs belong to the current
@@ -50,8 +66,7 @@ Summary generation is a separate deliberate disclosure, never a transcription
 callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
 already signed-in first-party subscription CLI with a sanitized environment,
 neutral private working directory, stdin input, bounded independent pipe drains
-and restrictive tool/hook/integration controls. No credential is read or copied
-by the app. Claude uses safe/restricted mode, no tools, strict empty MCP, denied
+and restrictive tool/hook/integration controls. Summary generation reads no AssemblyAI credential. Claude uses safe/restricted mode, no tools, strict empty MCP, denied
 prompts and no session persistence. Its structured output stream is admitted only
 after validation; unexpected actions, provider
 errors, malformed output and incomplete results cannot publish a summary.
@@ -166,17 +181,16 @@ and dispatch to one owner per command:
   single-stdout-line contract. A successful run prints the absolute
   `transcript.json` path as its only stdout line; exit 3 means the transcript
   is usable locally but remote deletion is unconfirmed.
-- `bin/transcribe-meeting` is the narrow internal run owner: credential
-  containment, size/duration preflight, run-directory creation, and launching
-  the provider adapter. It passes the adapter's 0/3 exit codes through and
+- `bin/transcribe-meeting` is a thin private shell entry to the shared Python
+  preflight/run operation through `lib/transcription_cli.py`. It passes the adapter's 0/3 exit codes through and
   writes the run directory to `MEETING_TRANSCRIBER_RESULT_FILE`.
 - `lib/transcribe_assemblyai.py` is the standard-library REST adapter and the
   provider lifecycle owner. It streams the upload, submits exactly one
   Universal-3.5 Pro job, polls with bounded transient retries, converts the
   completion into the typed canonical transcript, publishes canonical JSON and
   both views, compacts the receipt, and then deletes the remote transcript.
-  Its `--cleanup` mode is the recovery-only remote deletion used by
-  `meeting cleanup`; it can only issue DELETE requests.
+  Its cleanup operation is shared by `meeting cleanup` and the desktop; it can
+  only issue DELETE requests.
 - `lib/transcript_bundle.py` owns the named `CanonicalTranscript` type, the
   validation boundary that narrows unknown JSON, and atomic private
   publication with reload verification.
@@ -196,7 +210,7 @@ and dispatch to one owner per command:
 - `bin/meeting-open` opens the latest usable run's saved HTML without
   rewriting anything and surfaces the cleanup-required warning.
 - `bin/meeting-cleanup` resolves the recovery target and contains the
-  credential before invoking the adapter's cleanup mode. Cleanup target proof
+  credential before invoking the shared qualified-cleanup operation. Cleanup target proof
   reuses `lib/transcript_run.py`'s current-schema run validator before the
   adapter can issue DELETE.
 - `bin/meeting-setup` and `bin/meeting-doctor` own configuration and the
@@ -227,17 +241,19 @@ dependency group, used by the Chromium DevTools browser test.
 - Development bootstrap: `uv sync --frozen` — the default dev group installs
   `aiohttp` for the browser gate.
 
-`pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`,
-recordings, transcripts, local configuration, or the checkout-root `.env`.
+`pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`, recordings, transcripts or local configuration.
 
 ## Provider lifecycle and credential boundary
 
 The managed path uses `https://api.assemblyai.com`, places the raw API key only
 in the adapter child's `Authorization` header, and pins
-`speech_models: ["universal-3-5-pro"]`. The checkout-root `.env` is the only
-persistent credential store and must contain exactly one literal
+`speech_models: ["universal-3-5-pro"]`. The shared per-user `.env` is the only
+persistent credential store (`~/Library/Application Support/MeetingTranscriber/.env`
+on Mac; `%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows) and must contain exactly one literal
 `ASSEMBLYAI_API_KEY=<value>` assignment in a regular non-symlink mode-`0600`
-file. Shell code parses it as data; it never sources or exports the file. A
+file. The shared `transcription_config.py` parser treats it as data; shell wrappers
+never source or export the file. Existing users manually move the one-assignment
+checkout file with private permissions; no old-file fallback or migration runs. A
 process-level override has priority. Every executable captures and unsets an
 inherited value immediately, and only the adapter child receives the selected
 key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
@@ -364,3 +380,20 @@ transcript runs. Development verification artifacts stay under the ignored
 `tests/artifacts/`. The bundled skill at `skills/meeting/` is the distributable
 source; setup installs it under `~/.codex/skills/meeting` without overwriting a
 different existing copy.
+
+
+### Import/transcription verification
+
+Run the affected Python suites plus `tests.test_transcription` for the shared
+local import → loopback HTTP adapter → Library save/reload seam. Existing
+`tests.test_assemblyai_adapter` remains the provider failure/ordering matrix;
+caller tests cover only their distinct status, explicit-send, navigation and
+lifecycle behavior. Use synthetic HOME, `MEETING_DATA_DIR` and
+`MEETING_CONFIG_DIR` before the first scan in native QA, a fake key, localhost
+`MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE`, and installed/located FFprobe. Build and
+relocate the actual native package and launch without development Python or
+checkout paths on PATH. Native title-bar close and application Quit must both
+stay open while the fixture holds work, then shutdown must release owned server
+and session resources. Retain inspected wide/light and narrow/dark captures in
+ignored task artifacts. Windows WebView2/package/ACL execution remains a separate
+target-OS proof; no actual provider transaction is implied by the fixture.

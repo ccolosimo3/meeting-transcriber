@@ -111,18 +111,8 @@ def parse_record(data: bytes) -> dict:
 
 
 def verify_private(path: Path, *, directory: bool) -> None:
-    info = path.lstat()
-    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
-        raise DigestError("Summary storage contains a linked path.")
-    if (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)) is False:
-        raise DigestError("Summary storage is unavailable.")
-    if sys.platform == "win32":
-        from desktop.native import windows_acl, _current_sid
-        owner, allowed = windows_acl(path)
-        sid = _current_sid()
-        if owner != sid or not allowed or not allowed <= {sid, "S-1-3-4", "S-1-5-18", "S-1-5-32-544"}:
-            raise DigestError("Summary storage is not private to this account.")
-    else:
-        import os
-        if info.st_uid != os.getuid() or info.st_mode & 0o077:
-            raise DigestError("Summary storage is not private to this account.")
+    from private_files import verify_private as verify, PrivateFileError
+    try:
+        verify(path, directory=directory)
+    except PrivateFileError as error:
+        raise DigestError(str(error)) from None

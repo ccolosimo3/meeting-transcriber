@@ -114,7 +114,10 @@ class Library:
         self._root_identity: tuple[int, int] | None = None
         if root is not None:
             try:
-                self.root = Path(root).expanduser().resolve(strict=True)
+                lexical = Path(root).expanduser()
+                if _linked(lexical.lstat()):
+                    raise OSError('Linked library')
+                self.root = lexical.resolve(strict=True)
                 info = self.root.lstat()
                 if not stat.S_ISDIR(info.st_mode) or _linked(info):
                     raise OSError("Not a directory")
@@ -219,7 +222,7 @@ class Library:
                 status = "Saved HTML available"
         if kind in ("cleanup-required", "historical-unconfirmed"):
             status += "; remote cleanup unconfirmed"
-        return {"status": status, "canonical": canonical}
+        return {"status": status, "canonical": canonical, "cleanup_required": kind == "cleanup-required"}
 
     def scan(self) -> dict[str, object]:
         """Revalidate the snapshot; unchanged entries retain their session IDs."""
@@ -322,6 +325,33 @@ class Library:
                 raise LibraryError("stale_id", "Unknown or expired run. Refresh and select it again.")
             return meeting, run, self._generation
 
+    def _transcription_warning(self, meeting):
+        """Keep unresolved pre-publication disclosure visible after relaunch."""
+        try:
+            candidates = self._names(meeting.path / 'transcripts')
+        except FileNotFoundError:
+            return ''
+        for run in candidates:
+            try:
+                with self._open(run / '.assemblyai.json') as stream:
+                    raw = stream.read(65537)
+                if len(raw) > 65536:
+                    raise ValueError()
+                receipt = json.loads(raw)
+                if not isinstance(receipt, dict):
+                    raise ValueError()
+                if receipt.get('state') == 'published':
+                    continue
+                deletion = receipt.get('deletion')
+                if receipt.get('state') == 'upload_rejected' or isinstance(deletion, dict) and deletion.get('confirmed') is True:
+                    continue
+                return 'An earlier transcription attempt has an unresolved remote outcome. Contact AssemblyAI support with the saved .assemblyai.json receipt before transcribing again.'
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                return 'An earlier transcription receipt is unavailable or malformed. Contact AssemblyAI support before transcribing again.'
+        return ''
+
     def load(self, meeting_id: str, run_id: str | None = None) -> dict[str, object]:
         meeting, run, generation = self._selection(meeting_id, run_id)
         try:
@@ -344,6 +374,8 @@ class Library:
             )
             result = {"title": meeting.title, "added": meeting.added, "status": status,
                       "canonical": description["canonical"] if description else None,
+                      "cleanup_required": bool(description and description["cleanup_required"]),
+                      "transcription_warning": self._transcription_warning(meeting),
                       "media_state": "ready" if len(media) == 1 else "ambiguous" if media else "missing",
                       "media_name": media[0].name if len(media) == 1 else None,
                       "exports": {"html": run is not None}}
@@ -389,6 +421,49 @@ class Library:
                 raise
         except (OSError, LibraryError) as error:
             raise _error(error) from None
+
+    def recording_source(self, meeting_id):
+        from transcription import recording_at
+        from private_files import Directory
+        meeting, _, generation = self._selection(meeting_id)
+        if _identity(self._check(meeting.path)) != meeting.identity:
+            raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
+        candidates = self._media(meeting)
+        if len(candidates) != 1:
+            raise LibraryError('unavailable_source', 'Select one safe complete recording.')
+        destination = Directory(self.root)
+        if destination.identities[destination.path] != self._root_identity:
+            raise LibraryError('unsafe_path', 'Library changed. Choose it again.')
+        self._current(generation)
+        return recording_at(candidates[0], destination)
+
+    def cleanup_source(self, meeting_id, run_id):
+        from private_files import Directory
+        meeting, run, generation = self._selection(meeting_id, run_id)
+        if run is None or _identity(self._check(meeting.path)) != meeting.identity:
+            raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
+        destination = Directory(self.root)
+        if destination.identities[destination.path] != self._root_identity:
+            raise LibraryError('unsafe_path', 'Library changed. Choose it again.')
+        destination.capture(meeting.path)
+        destination.capture(run.path.parent)
+        destination.capture(run.path)
+        for name in ('transcript.json', 'transcript.md', 'transcript.html', '.assemblyai.json'):
+            with self._open(run.path / name):
+                pass
+        self._current(generation)
+        return run.path / 'transcript.json', destination
+
+    def result_selection(self, path):
+        snapshot = self.scan()
+        for row in snapshot['meetings']:
+            meeting = self._meetings[row['id']]
+            if path.parent == meeting.path:
+                return {**snapshot, 'selected_meeting': row['id'], 'selected_run': None}
+            for run in meeting.runs:
+                if path.parent == run.path:
+                    return {**snapshot, 'selected_meeting': row['id'], 'selected_run': run.identifier}
+        raise LibraryError('unavailable_source', 'The saved result is unavailable. Refresh the original library.')
 
     def digest_source(self, meeting_id: str, run_id: str) -> Source:
         meeting, run, generation = self._selection(meeting_id, run_id)

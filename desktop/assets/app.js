@@ -18,14 +18,16 @@
     "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message",
     "summary-view", "transcript-view", "summary-provider", "generate-summary", "summary-disclosure",
     "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-text",
-    "digest-progress", "digest-status", "cancel-summary"
+    "digest-progress", "digest-status", "cancel-summary",
+    "import-audio", "transcribe-audio", "retry-cleanup", "operation-progress", "operation-status", "operation-result",
+    "setup-toggle", "transcription-setup", "setup-close", "setup-status", "credential-location", "key-form", "assemblyai-key", "save-key", "ffprobe-status", "locate-ffprobe", "setup-error"
   ].map(id => [id, byId(id)]));
   const state = {
     meetings: [], meeting: null, runId: null, data: null,
     rows: [], matches: [], matchIndex: -1, audio: null,
     generation: 0, libraryRequest: 0, busy: false, loading: false,
     mediaReady: false, follow: false, activeOrdinals: [], lastFollowOrdinal: null,
-    view: "transcript", digestJob: null, digestGeneration: 0, summaryRequest: 0
+    view: "transcript", digestJob: null, digestGeneration: 0, summaryRequest: 0, operation: null, operationStarting: false
   };
   const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
   const narrowWindow = window.matchMedia("(max-width: 760px)");
@@ -214,6 +216,12 @@
     ui["fallback-open-html"].disabled = state.busy || state.loading;
     ui["find-toggle"].disabled = !state.data?.canonical || state.loading || state.view !== "transcript";
     ui["details-toggle"].disabled = !state.meeting;
+    const operating = state.operationStarting || state.operation?.state === "running";
+    ui["import-audio"].disabled = !available || operating;
+    ui["transcribe-audio"].disabled = !available || operating || state.loading || state.busy || state.data?.media_state !== "ready" || Boolean(state.data?.transcription_warning);
+    ui["transcribe-audio"].textContent = state.runId ? "Transcribe again" : "Transcribe";
+    ui["retry-cleanup"].hidden = !state.data?.cleanup_required;
+    ui["retry-cleanup"].disabled = operating || state.loading || state.busy;
     const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
     ui["generate-summary"].disabled = !state.data?.canonical || !state.runId || state.loading || state.busy || running;
     ui["summary-provider"].disabled = running;
@@ -283,6 +291,111 @@
     }
   }
 
+  function renderOperation() {
+    const job = state.operation;
+    ui["operation-progress"].hidden = !job;
+    if (!job) return;
+    const phases = { importing: "Importing audio", checking: "Checking recording and setup", uploading: "Uploading to AssemblyAI", transcribing: "Waiting for AssemblyAI transcription", saving: "Saving local transcript", deleting: "Deleting remote data" };
+    const terminal = job.state !== "running";
+    const ready = job.state === "ready";
+    const text = ready ? (job.kind === "import" ? "Recording saved" : job.cleanup_required ? "Transcript saved; remote cleanup required. Open the transcript to retry remote cleanup." : job.kind === "cleanup" ? "Remote cleanup confirmed" : "Transcript ready") : job.error || phases[job.phase] || "Working";
+    ui["operation-status"].textContent = `${job.target} · ${text}${!terminal ? " — keep this window open" : ""}${job.close_warning && !terminal ? `\n${job.close_warning}` : ""}`;
+    ui["operation-result"].hidden = !ready;
+    ui["operation-result"].textContent = job.kind === "import" ? "Open recording" : "Open transcript";
+    updateLibraryControls();
+  }
+
+  async function pollOperation(identifier) {
+    try {
+      const result = await api().operation_status(identifier);
+      if (state.operation?.id !== identifier) return;
+      if (!result || result.error && !result.state) {
+        ui["operation-status"].textContent = "Operation status is unavailable. Keep this window open and try Refresh.";
+        window.setTimeout(() => pollOperation(identifier), 800);
+        return;
+      }
+      state.operation = result;
+      renderOperation();
+      if (result.state === "running") window.setTimeout(() => pollOperation(identifier), 400);
+      else await scanLibrary(false);
+    } catch (_) {
+      if (state.operation?.id === identifier) window.setTimeout(() => pollOperation(identifier), 800);
+    }
+  }
+
+  async function startOperation(action, args = []) {
+    if (state.operationStarting || state.operation?.state === "running") return;
+    state.operationStarting = true;
+    updateLibraryControls();
+    try {
+      const result = await api()[action](...args);
+      if (result?.cancelled) return;
+      if (!result?.id) {
+        state.operation = { state: "stopped", target: "Operation stopped", error: bounded(result?.error, "This operation could not start.") };
+      } else {
+        state.operation = result;
+        pollOperation(result.id);
+      }
+      renderOperation();
+    } catch (_) {
+      state.operation = { state: "stopped", target: "Operation stopped", error: "This operation could not start. Check setup and refresh." };
+      renderOperation();
+    } finally {
+      state.operationStarting = false;
+      updateLibraryControls();
+    }
+  }
+
+  function renderSetup(result) {
+    if (!result || result.error) {
+      ui["setup-error"].textContent = bounded(result?.error, "Setup is unavailable.");
+      ui["setup-error"].hidden = false;
+      return;
+    }
+    ui["setup-error"].hidden = true;
+    ui["setup-status"].textContent = result.key_ready ? "AssemblyAI key saved and ready. The saved key is never displayed." : result.key_error || "Save your AssemblyAI API key to transcribe. Import works without a key.";
+    ui["credential-location"].textContent = `Shared CLI and desktop credential file: ${result.credential_location}`;
+    ui["ffprobe-status"].textContent = result.ffprobe_ready ? `FFprobe ready: ${result.ffprobe}` : result.ffprobe_error;
+  }
+
+  ui["import-audio"].addEventListener("click", () => startOperation("import_audio"));
+  ui["transcribe-audio"].addEventListener("click", () => { if (state.meeting) startOperation("start_transcription", [state.meeting.id]); });
+  ui["retry-cleanup"].addEventListener("click", () => { if (state.meeting && state.runId) startOperation("retry_remote_cleanup", [state.meeting.id, state.runId]); });
+  ui["operation-result"].addEventListener("click", async () => {
+    const result = await api().open_operation_result(state.operation.id);
+    if (!result || result.error) { notice(bounded(result?.error, "The saved result is unavailable.")); return; }
+    ++state.libraryRequest;
+    clearReader();
+    state.meetings = result.meetings || [];
+    ui["library-path"].textContent = result.library;
+    ui["library-search"].value = "";
+    ui["library-show"].value = "all";
+    renderLibrary();
+    const meeting = state.meetings.find(row => row.id === result.selected_meeting);
+    if (meeting) selectMeeting(meeting, result.selected_run, true);
+  });
+  ui["setup-toggle"].addEventListener("click", async () => {
+    ui["actions-menu"].open = false;
+    ui["transcription-setup"].hidden = false;
+    try { renderSetup(await api().transcription_setup()); } catch (_) { renderSetup(null); }
+    ui["assemblyai-key"].focus();
+  });
+  ui["setup-close"].addEventListener("click", () => {
+    ui["transcription-setup"].hidden = true;
+    ui["assemblyai-key"].value = "";
+  });
+  ui["key-form"].addEventListener("submit", async event => {
+    event.preventDefault();
+    const key = ui["assemblyai-key"].value;
+    ui["assemblyai-key"].value = "";
+    ui["save-key"].disabled = true;
+    try { renderSetup(await api().save_transcription_key(key)); } catch (_) { renderSetup(null); }
+    finally { ui["save-key"].disabled = false; }
+  });
+  ui["locate-ffprobe"].addEventListener("click", async () => {
+    try { const result = await api().locate_ffprobe(); if (!result?.cancelled) renderSetup(result); } catch (_) { renderSetup(null); }
+  });
+
   function needsAttention(status) {
     return /cleanup unconfirmed|unfinished|incomplete|unavailable/i.test(status);
   }
@@ -314,14 +427,14 @@
     ui["library-empty"].hidden = meetings.length > 0;
     ui["library-empty"].textContent = (query || show !== "all") && state.meetings.length
       ? "No meetings match. Try another title or choose Show All."
-      : "No meetings found. Choose a library or refresh after copying a meeting folder here.";
+      : "No meetings found. Import audio to begin, or choose a library.";
     updateLibraryControls();
   }
 
   async function scanLibrary(choose) {
     if (!api() || state.busy) return;
     const request = ++state.libraryRequest;
-    const previous = state.meeting && { meetingId: state.meeting.id, runId: state.runId };
+    const previous = state.meeting && { meetingId: state.meeting.id, runId: state.runId, runLabel: state.meeting.runs.find(run => run.id === state.runId)?.label };
     const previousEmptyText = ui["library-empty"].textContent;
     state.busy = true;
     if (!choose) {
@@ -354,8 +467,8 @@
       renderLibrary();
       const retained = previous && state.meetings.find(meeting => meeting.id === previous.meetingId);
       if (retained) {
-        const validRun = retained.runs.some(run => run.id === previous.runId);
-        selectMeeting(retained, validRun ? previous.runId : retained.default_run_id);
+        const retainedRun = retained.runs.find(run => run.id === previous.runId) || retained.runs.find(run => run.label === previous.runLabel);
+        selectMeeting(retained, retainedRun ? retainedRun.id : retained.default_run_id);
       } else if (previous && !choose) {
         ui["reader-empty-detail"].textContent = "The selected meeting is no longer available. Choose another meeting, or refresh after restoring its folder.";
       }
@@ -474,6 +587,7 @@
         ui["fallback-open-html"].hidden = ui["open-html"].hidden;
       }
       renderSummaries({ summaries: data.summaries || [], summary: data.summary || null, summary_warning: data.summary_warning || "" }, true);
+      if (data.transcription_warning) notice(bounded(data.transcription_warning, "Check the earlier transcription receipt before retrying."));
       bindMedia(data, generation);
     } catch (_) {
       if (generation !== state.generation) return;

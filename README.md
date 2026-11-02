@@ -15,12 +15,13 @@ Recording and transcription commands currently support macOS and rely on
 FFmpeg AVFoundation, Homebrew, notifications, and Finder. Transcription requires an internet
 connection, an AssemblyAI API key, and a paid AssemblyAI account.
 
-The optional **desktop library, audio viewer and summary reader** supports Windows x64 with
-Microsoft Edge WebView2 and Apple Silicon macOS. It reads existing meeting
-folders without transcribing them. Reading needs no API key or FFmpeg. Optional
-summary generation deliberately sends one selected transcript to an already
-signed-in Codex or Claude Code CLI subscription. Desktop recording and
-transcription controls are separate future work.
+The optional **desktop app** supports Apple Silicon macOS and targets Windows
+x64 with Microsoft Edge WebView2. Import audio, explicitly transcribe it with
+AssemblyAI, read/listen, and optionally generate a summary through your signed-in
+Codex or Claude Code CLI. Reading and local import need no API key or FFprobe.
+Windows package, native lifecycle and ACL qualification remain pending; Mac
+verification does not establish Windows support. Microphone recording remains a
+Mac CLI feature.
 
 ## Desktop library and audio viewer
 
@@ -30,6 +31,34 @@ From a checkout with [uv](https://docs.astral.sh/uv/) installed:
 uv sync --frozen --extra desktop
 uv run --frozen --extra desktop python -m desktop.main
 ```
+
+Choose **Import audio** to copy one audio file into a new private meeting
+folder. The original stays unchanged and nothing is uploaded. Open the saved
+recording, then choose **Transcribe** to send it to your paid AssemblyAI account.
+An existing audio-only meeting can also be transcribed; **Transcribe again**
+creates a new saved version without replacing earlier transcripts or summaries.
+
+Open **More actions → Transcription setup** to save a masked AssemblyAI key and
+check FFprobe. CLI and desktop share one private credential file:
+`~/Library/Application Support/MeetingTranscriber/.env` on Mac, or
+`%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows. Existing checkout `.env`
+files are no longer searched: manually move the single-assignment file to this
+location with private permissions, or save the key again. No credential is
+migrated automatically. FFprobe must already be installed; the app checks PATH
+and usual installed-tool locations. **Locate FFprobe** saves an executable path
+when packaged launch cannot find it. The app does not bundle or download it.
+
+A global status shows import, checking, upload, waiting, saving and remote
+cleanup. You can browse during the operation; its destination stays attached
+to the original library. **Open transcript** returns to its result. Normal
+window close and Quit are blocked during import, transcription and remote
+cleanup: keep the app open until the operation finishes. There is no Cancel for
+these operations. Force quit, crash or power loss may leave remote state
+unresolved; receipts remain the evidence, with no automatic resume or re-upload.
+If local save succeeds but remote deletion is unconfirmed, the transcript stays
+usable with **Retry remote cleanup**, including after relaunch. Cleanup sends
+only deletion requests. An unknown failed attempt asks you to contact AssemblyAI
+support before retrying.
 
 The reader starts with `~/Transcriptions` if present. Open **Library**, then its
 **Library folder** control to choose another folder or refresh. Search titles
@@ -49,7 +78,7 @@ theme choices last for the current session.
 Use **Generate with** to choose Claude or Codex, then **Generate summary** to send
 the selected saved transcript. Claude is selected by default; the app never
 switches providers for you. Install the selected provider's native CLI and sign in with
-your own subscription outside the app first. The app does not sign you in, use
+your own subscription outside the app first. Summary generation does not sign you in, use
 API keys, install a CLI or automatically retry with another provider. The CLI's
 default model and your account's data controls apply. Generation never starts
 automatically after transcription and follow-up suggestions remain text only.
@@ -181,9 +210,10 @@ Run `meeting help` or `meeting <command> --help` for details.
   private receipt. An unconfirmed deletion is reported prominently with a
   single `meeting cleanup` recovery command; the local transcript remains
   usable either way.
-- The AssemblyAI API key is stored only in the checkout-root `.env`, as exactly
+- The AssemblyAI API key is stored in the shared per-user `.env` above, as exactly
   one `ASSEMBLYAI_API_KEY=<value>` assignment. The app requires this untracked
-  file to be a regular non-symlink file with mode `0600`, parses it as data, and
+  file to be a regular non-symlink private file (mode `0600` on Mac, verified
+  owner/DACL on Windows), parses it as data, and
   passes the key only to the AssemblyAI adapter — never recorders, renderers,
   notifications, openers, command lines, transcripts, or receipts. A one-command
   process-level `ASSEMBLYAI_API_KEY` override takes precedence without changing
@@ -271,7 +301,7 @@ It reports separate Recording and Transcription readiness. A missing AssemblyAI
 key blocks transcription but recording remains available.
 
 If upgrading from a version that stored the key in macOS Keychain, run
-`meeting setup` to create the checkout-root `.env`. The app does not read,
+`meeting setup` to create the shared per-user `.env` above. The app does not read,
 migrate, change, or delete the old Keychain item. You may remove that item
 manually with Keychain Access after confirming transcription readiness.
 

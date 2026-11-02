@@ -1,7 +1,7 @@
-"""Meeting reader with explicit subscription-CLI summaries. No credential store."""
+"""Meeting import, explicit transcription, reader and subscription-CLI summaries."""
 from __future__ import annotations
 
-# Scrub before importing any renderer or launching children. This slice has no key consumer.
+# Scrub before importing any renderer or launching children.
 import os
 import sys
 _had_inherited_key = 'ASSEMBLYAI_API_KEY' in os.environ
@@ -30,11 +30,17 @@ from desktop.server import ReaderServer
 from desktop.native import create_session, configure_webview
 from desktop.digest_job import DigestJob
 from meeting_digests import DigestError
+from desktop.transcription_job import TranscriptionJob
+from transcription import import_recording, transcribe, cleanup_published_run
+from transcription_config import readiness, store_key, store_ffprobe
+from private_files import Directory, private_mkdir
 
 
 class Bridge:
-    def __init__(self, server, picker, opener=webbrowser.open):
+    def __init__(self, server, picker, opener=webbrowser.open, audio_picker=lambda: None, tool_picker=lambda: None):
         self._server, self._picker, self._opener = server, picker, opener
+        self._audio_picker, self._tool_picker = audio_picker, tool_picker
+        self._operation = TranscriptionJob()
         self._lock = threading.RLock()
         root = Path(os.environ.get('MEETING_DATA_DIR', str(Path.home() / 'Transcriptions')))
         self._library = Library(root) if root.is_dir() else None
@@ -134,6 +140,101 @@ class Bridge:
             except (OSError, ValueError):
                 return {'error': 'Saved summaries are unavailable. Refresh to try again.'}
 
+    def transcription_setup(self):
+        return readiness()
+
+    def save_transcription_key(self, key):
+        try:
+            store_key(key)
+            return readiness()
+        except (OSError, ValueError):
+            return {'error': 'The key could not be saved safely. Check the credential location and repair any existing unsafe or malformed file manually.'}
+
+    def locate_ffprobe(self):
+        chosen = self._tool_picker()
+        if not chosen:
+            return {'cancelled': True}
+        try:
+            store_ffprobe(chosen)
+            return readiness()
+        except (OSError, ValueError):
+            return {'error': 'Choose a regular executable FFprobe file. The existing setting was preserved.'}
+
+    def import_audio(self):
+        with self._lock:
+            if self._operation.busy():
+                return {'error': 'An operation is already in progress.', 'code': 'busy'}
+            # Capture the destination before opening the native picker.
+            try:
+                library = self._library
+                root = library.root if library else Path(os.environ.get('MEETING_DATA_DIR', str(Path.home() / 'Transcriptions')))
+                destination = None
+                if library:
+                    library._check(library.root)
+                    destination = Directory(library.root)
+                chosen = self._audio_picker()
+                if not chosen:
+                    return {'cancelled': True}
+                if library is None:
+                    if not root.exists():
+                        private_mkdir(root)
+                    library = Library(root)
+                    destination = Directory(library.root)
+                    self._library = library
+                return self._operation.start('import', Path(chosen).name, library,
+                    lambda progress: import_recording(chosen, destination))
+            except (OSError, ValueError):
+                return {'error': 'Audio could not be imported. Choose a readable regular file and an available library.'}
+
+    def start_transcription(self, meeting_id):
+        with self._lock:
+            if self._operation.busy():
+                return {'error': 'An operation is already in progress.', 'code': 'busy'}
+            try:
+                if self._library is None:
+                    raise ValueError()
+                warning = self._library.load(meeting_id).get('transcription_warning')
+                if warning:
+                    return {'error': warning}
+                recording = self._library.recording_source(meeting_id)
+                return self._operation.start('transcribe', recording.path.parent.name, self._library,
+                    lambda progress: transcribe(recording, on_progress=progress))
+            except (OSError, ValueError):
+                return {'error': 'This recording changed or is unavailable. Refresh and select it again.'}
+
+    def retry_remote_cleanup(self, meeting_id, run_id):
+        with self._lock:
+            if self._operation.busy():
+                return {'error': 'An operation is already in progress.', 'code': 'busy'}
+            try:
+                if self._library is None:
+                    raise ValueError()
+                path, destination = self._library.cleanup_source(meeting_id, run_id)
+                return self._operation.start('cleanup', path.parent.parent.parent.name, self._library,
+                    lambda progress: cleanup_published_run(path, destination, on_progress=progress))
+            except (OSError, ValueError):
+                return {'error': 'This saved run is unavailable for qualified remote cleanup. Refresh and select it again.'}
+
+    def operation_status(self, operation_id):
+        return self._operation.status(operation_id)
+
+    def open_operation_result(self, operation_id):
+        with self._lock:
+            state = self._operation.status(operation_id)
+            if state.get('state') != 'ready' or self._operation.result_path is None:
+                return {'error': 'The result is not ready.'}
+            try:
+                library = self._operation.library
+                result = library.result_selection(self._operation.result_path)
+                self._server.invalidate()
+                self._library = library
+                return result
+            except (OSError, ValueError):
+                return {'error': 'The original result is unavailable. Choose the original library and refresh.'}
+
+    def _can_close(self):
+        return self._operation.close_allowed()
+
     def _close(self):
         self._digests.close()
 
@@ -150,9 +251,18 @@ def main():
             selected = window.create_file_dialog(webview.FileDialog.FOLDER)
             return selected[0] if selected else None
 
-        bridge = Bridge(server, picker)
+        def audio_picker():
+            selected = window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=False, file_types=('Audio (*.wav;*.mp3;*.m4a;*.mp4;*.flac;*.ogg;*.aac;*.opus;*.aiff;*.aif)', 'All files (*.*)'))
+            return selected[0] if selected else None
+
+        def tool_picker():
+            selected = window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=False)
+            return selected[0] if selected else None
+
+        bridge = Bridge(server, picker, audio_picker=audio_picker, tool_picker=tool_picker)
         window = webview.create_window('Meeting Transcriber', server.document_url, js_api=bridge,
                                        width=1200, height=820, min_size=(400, 500), text_select=True)
+        window.events.closing += bridge._can_close
         window.events.closed += bridge._close
         server.start()
         try:

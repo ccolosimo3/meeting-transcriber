@@ -185,8 +185,7 @@ import_run_dir="${imported_bundle}/transcripts/20260826-122000"
 [[ -s "${import_run_dir}/transcript.json" ]]
 [[ "$(cat "${artifact_root}/import-stdout.txt")" == "${import_run_dir}/transcript.json" ]]
 
-# A canonical-looking symlink must be copied into a new private bundle instead
-# of being treated as the bundle's owned recording.
+# Linked sources are refused without copying, uploading or changing the target.
 symlink_bundle="${data_root}/20260825-230000-symlink"
 symlink_source="${artifact_root}/symlink-source.wav"
 mkdir -p "$symlink_bundle"
@@ -196,17 +195,18 @@ ln -s "$symlink_source" "${symlink_bundle}/recording.wav"
 export MEETING_TRANSCRIBER_RUN_ID=20260826-122500
 export MEETING_TRANSCRIBER_BUNDLE_ID=20260826-122400
 export STUB_ASSEMBLYAI_ARGV="${artifact_root}/assemblyai-symlink-argv.txt"
-ASSEMBLYAI_API_KEY=x meeting transcribe --skip-names --no-open \
-  "${symlink_bundle}/recording.wav" > /dev/null 2>&1
-symlink_imported="${data_root}/20260826-122400-recording/recording.wav"
-[[ -f "$symlink_imported" && ! -L "$symlink_imported" ]]
-[[ "$(shasum -a 256 "$symlink_imported" | awk '{print $1}')" == "$symlink_source_sha" ]]
+if ASSEMBLYAI_API_KEY=x meeting transcribe --skip-names --no-open \
+  "${symlink_bundle}/recording.wav" > /dev/null 2>&1; then
+  fail 'a linked source was accepted'
+fi
+[[ ! -e "$STUB_ASSEMBLYAI_ARGV" ]]
+[[ "$(shasum -a 256 "$symlink_source" | awk '{print $1}')" == "$symlink_source_sha" ]]
 [[ ! -e "${symlink_bundle}/transcripts" ]]
 unset MEETING_TRANSCRIBER_BUNDLE_ID
 
 # Latest discovery selects the newest usable run and opens the saved HTML.
 meeting open > "${artifact_root}/open.txt" 2>&1
-[[ "$(cat "$STUB_OPEN_ARGV")" == "${data_root}/20260826-122400-recording/transcripts/20260826-122500/transcript.html" ]]
+[[ "$(cat "$STUB_OPEN_ARGV")" == "${import_run_dir}/transcript.html" ]]
 if grep -Fq 'Remote cleanup required' "${artifact_root}/open.txt"; then
   fail 'a clean run was reported as cleanup-required'
 fi

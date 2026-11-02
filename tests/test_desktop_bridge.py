@@ -132,5 +132,69 @@ runpy.run_path('desktop/main.py',run_name='__main__')
         self.assertEqual(observed.read_text(), 'clean')
 
 
+
+class TranscriptionBridgeTests(unittest.TestCase):
+    def test_explicit_send_busy_navigation_close_and_result_reload(self):
+        import threading
+        from tests.test_assemblyai_adapter import running_server, ScenarioHandler
+        from transcription_config import store_key
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            library = root / 'first'
+            library.mkdir(mode=0o700)
+            second = root / 'second'
+            second.mkdir()
+            source = root / 'synthetic.wav'
+            import wave
+            with wave.open(str(source), 'wb') as audio:
+                audio.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+                audio.writeframes(b'\0\0' * 8000)
+            server = ReaderServer(ROOT / 'desktop/assets')
+            server.start()
+            entered, release = threading.Event(), threading.Event()
+            original = ScenarioHandler.do_GET
+            def held(handler):
+                entered.set()
+                if not release.wait(10):
+                    raise RuntimeError('Fixture release missing')
+                original(handler)
+            with running_server({}) as (provider, base), patch.dict(os.environ, {'HOME': str(root / 'home'), 'MEETING_DATA_DIR': str(library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}), patch.object(ScenarioHandler, 'do_GET', held):
+                bridge = Bridge(server, lambda: str(second), audio_picker=lambda: str(source))
+                try:
+                    imported = bridge.import_audio()
+                    def terminal(job):
+                        deadline = time.monotonic() + 10
+                        while time.monotonic() < deadline:
+                            state = bridge.operation_status(job['id'])
+                            if state['state'] != 'running': return state
+                            time.sleep(.02)
+                        self.fail('operation did not finish')
+                    self.assertEqual(terminal(imported)['state'], 'ready')
+                    self.assertFalse(provider.requests)
+                    store_key('synthetic-only')
+                    self.assertTrue(bridge.transcription_setup()['key_ready'])
+                    self.assertFalse(provider.requests)
+                    row = bridge.refresh_library()['meetings'][0]
+                    job = bridge.start_transcription(row['id'])
+                    self.assertTrue(entered.wait(5))
+                    self.assertEqual(bridge.start_transcription(row['id'])['code'], 'busy')
+                    self.assertFalse(bridge._can_close())
+                    self.assertIn('keep this window open', bridge.operation_status(job['id'])['close_warning'])
+                    self.assertEqual(bridge.choose_library()['library'], str(second))
+                    self.assertFalse(bridge.refresh_library()['meetings'])
+                    release.set()
+                    self.assertEqual(terminal(job)['state'], 'ready')
+                    self.assertTrue(bridge._can_close())
+                    self.assertFalse(bridge.refresh_library()['meetings'])  # No selection steal.
+                    result = bridge.open_operation_result(job['id'])
+                    self.assertEqual(result['library'], str(library))
+                    self.assertTrue(result['selected_run'])
+                    self.assertTrue(Library(library).scan()['meetings'][0]['runs'])
+                    self.assertEqual(len([r for r in provider.requests if r['path'] == '/v2/transcript' and r['method'] == 'POST']), 1)
+                finally:
+                    release.set()
+                    bridge._close()
+                    server.close()
+
 if __name__ == '__main__':
     unittest.main()

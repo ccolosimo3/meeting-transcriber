@@ -111,45 +111,12 @@ if [[ -z "$input" ]]; then
       *) ui_text 'Cancelled.'; exit 0 ;;
     esac
   fi
-  output_root="$(dirname "$input")/transcripts"
-else
-  [[ -f "$input" && -r "$input" ]] || fail "input is not a readable file: $input"
-  input="$(cd "$(dirname "$input")" && pwd)/$(basename "$input")"
-  mkdir -p "$meetings_root"
-  meetings_root="$(cd "$meetings_root" && pwd)"
-  input_name="$(basename "$input")"
-  input_parent="$(dirname "$input")"
-  if [[ ( "$input_name" == recording || "$input_name" == recording.* ) \
-    && "$input_name" != recording.partial.* \
-    && ! -L "$input" \
-    && "$(dirname "$input_parent")" == "$meetings_root" ]]; then
-    output_root="$(dirname "$input")/transcripts"
-  else
-    source_stem="${input_name%.*}"
-    source_extension=""
-    if [[ "$input_name" == *.* ]]; then
-      source_extension=".${input_name##*.}"
-    fi
-    source_slug="$(printf '%s' "$source_stem" | LC_ALL=C sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
-    [[ -n "$source_slug" ]] || source_slug="meeting"
-    if [[ -n "${MEETING_TRANSCRIBER_BUNDLE_ID:-}" ]]; then
-      [[ "$MEETING_TRANSCRIBER_BUNDLE_ID" =~ ^[A-Za-z0-9._-]+$ ]] \
-        || fail 'MEETING_TRANSCRIBER_BUNDLE_ID contains invalid characters'
-      import_stamp="$MEETING_TRANSCRIBER_BUNDLE_ID"
-    else
-      import_stamp="$(date '+%Y%m%d-%H%M%S')"
-    fi
-    bundle_dir="${meetings_root}/${import_stamp}-${source_slug}"
-    [[ ! -e "$bundle_dir" ]] || fail "dated meeting bundle already exists: $bundle_dir"
-    mkdir "$bundle_dir"
-    imported_recording="${bundle_dir}/recording${source_extension}"
-    cp "$input" "$imported_recording"
-    chmod 600 "$imported_recording"
-    input="$imported_recording"
-    output_root="${bundle_dir}/transcripts"
-    ui_row 'Imported' "$(ui_display_path "$input")"
-  fi
 fi
+
+# Native import and CLI import use the same safe local operation. No key is
+# passed here, and selecting/importing never contacts the provider.
+input="$("$(meeting_python_bin)" "${utility_root}/lib/transcription_cli.py" prepare "$input" "$meetings_root")" || exit $?
+output_root="$(dirname "$input")/transcripts"
 
 ui_heading 'Transcribing'
 ui_row 'Recording' "$(ui_display_path "$input")"

@@ -18,8 +18,11 @@ class CredentialFileTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         (self.root / "lib").mkdir()
-        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", self.root / "lib" / "config.sh")
-        self.env_file = self.root / ".env"
+        shutil.copytree(PROJECT_ROOT / "lib", self.root / "lib", dirs_exist_ok=True)
+        (self.root / '.venv').symlink_to(PROJECT_ROOT / '.venv', target_is_directory=True)
+        self.test_home = self.root / 'home'
+        self.env_file = self.test_home / 'Library' / 'Application Support' / 'MeetingTranscriber' / '.env'
+        self.env_file.parent.mkdir(parents=True, mode=0o700)
 
     def run_shell(
         self,
@@ -29,6 +32,7 @@ class CredentialFileTests(unittest.TestCase):
         path_prefix: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
+        environment["HOME"] = str(self.test_home)
         if key is None:
             environment.pop("ASSEMBLYAI_API_KEY", None)
         else:
@@ -104,17 +108,14 @@ class CredentialFileTests(unittest.TestCase):
         self.env_file.write_text("ASSEMBLYAI_API_KEY=old-value\n", encoding="utf-8")
         self.env_file.chmod(0o600)
         before = self.env_file.read_bytes()
-        tools = self.root / "tools"
-        tools.mkdir()
-        failing_mktemp = tools / "mktemp"
-        failing_mktemp.write_text("#!/usr/bin/env bash\nexit 71\n", encoding="utf-8")
-        failing_mktemp.chmod(0o755)
-        result = self.run_shell(
-            'meeting_store_assemblyai_key replacement', path_prefix=tools
-        )
-        self.assertEqual(result.returncode, 2)
+        environment = dict(os.environ, HOME=str(self.test_home))
+        environment.pop('ASSEMBLYAI_API_KEY', None)
+        result = subprocess.run([str(PROJECT_ROOT / '.venv/bin/python'), '-c',
+            'import sys; from unittest.mock import patch; sys.path.insert(0, sys.argv[1]); from transcription_config import store_key; '
+            'failure=patch("private_files.os.replace", side_effect=PermissionError("synthetic")); failure.start(); store_key("replacement")', str(PROJECT_ROOT / 'lib')], env=environment, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.env_file.read_bytes(), before)
-        self.assertEqual(list(self.root.glob(".env.*")), [])
+        self.assertEqual(list(self.env_file.parent.glob('.env.*')), [])
 
     def test_installer_children_never_inherit_a_process_override(self) -> None:
         install_root = self.root / "install-root"
@@ -171,7 +172,7 @@ class CredentialFileTests(unittest.TestCase):
         (app_root / "lib").mkdir()
         shutil.copy2(PROJECT_ROOT / "bin" / "meeting-doctor", app_root / "bin")
         shutil.copy2(PROJECT_ROOT / "bin" / "meeting", app_root / "bin")
-        shutil.copy2(PROJECT_ROOT / "lib" / "config.sh", app_root / "lib")
+        shutil.copytree(PROJECT_ROOT / "lib", app_root / "lib", dirs_exist_ok=True)
         (app_root / ".venv").symlink_to(PROJECT_ROOT / ".venv", target_is_directory=True)
         environment = os.environ.copy()
         environment.pop("ASSEMBLYAI_API_KEY", None)

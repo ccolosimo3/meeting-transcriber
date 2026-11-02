@@ -45,10 +45,16 @@ def _dispatch(window, name, params, call_id):
             return
     else:
         arities = {'choose_library': 0, 'refresh_library': 0, 'load_run': 2, 'open_saved_html': 2,
-                   'start_summary': 3, 'summary_status': 1, 'cancel_summary': 1, 'summary_history': 3}
+                   'start_summary': 3, 'summary_status': 1, 'cancel_summary': 1, 'summary_history': 3,
+                   'transcription_setup': 0, 'save_transcription_key': 1, 'locate_ffprobe': 0,
+                   'import_audio': 0, 'start_transcription': 1, 'retry_remote_cleanup': 2,
+                   'operation_status': 1, 'open_operation_result': 1}
         if name not in arities or not isinstance(params, list) or len(params) != arities[name]:
             return
-        if params and (not isinstance(params[0], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[0])):
+        if name == 'save_transcription_key':
+            if not isinstance(params[0], str) or not params[0] or len(params[0].encode('utf-8')) > 16000 or any(c in params[0] for c in '\n\r\0'):
+                return
+        if name != 'save_transcription_key' and params and (not isinstance(params[0], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[0])):
             return
         if len(params) >= 2 and not (name == 'load_run' and params[1] is None):
             if not isinstance(params[1], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', params[1]):
@@ -61,49 +67,7 @@ def _dispatch(window, name, params, call_id):
     js_bridge_call(window, name, params, call_id)
 
 
-def _windows_api():
-    from ctypes import wintypes as w
-
-    adv = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    adv.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE)]
-    adv.GetTokenInformation.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD, ctypes.POINTER(w.DWORD)]
-    adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(w.LPWSTR)]
-    adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(w.DWORD)]
-    adv.GetNamedSecurityInfoW.argtypes = [w.LPWSTR, ctypes.c_int, w.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-    adv.GetNamedSecurityInfoW.restype = w.DWORD
-    adv.GetAce.argtypes = [ctypes.c_void_p, w.DWORD, ctypes.POINTER(ctypes.c_void_p)]
-    kernel.GetCurrentProcess.restype = w.HANDLE
-    kernel.CloseHandle.argtypes = [w.HANDLE]
-    kernel.LocalFree.argtypes = [ctypes.c_void_p]
-    kernel.LocalFree.restype = ctypes.c_void_p
-    return adv, kernel, w
-
-
-def _sid_string(sid, adv, kernel, w):
-    value = w.LPWSTR()
-    if not adv.ConvertSidToStringSidW(sid, ctypes.byref(value)):
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        return value.value
-    finally:
-        kernel.LocalFree(value)
-
-
-def _current_sid():
-    adv, kernel, w = _windows_api()
-    token = w.HANDLE()
-    if not adv.OpenProcessToken(kernel.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        size = w.DWORD()
-        adv.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
-        data = ctypes.create_string_buffer(size.value)
-        if not adv.GetTokenInformation(token, 1, data, size, ctypes.byref(size)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        return _sid_string(ctypes.c_void_p.from_buffer(data).value, adv, kernel, w)
-    finally:
-        kernel.CloseHandle(token)
+from private_files import windows_acl, _current_sid, _private_windows_directory, _windows_api, _sid_string
 
 
 def _network_capability_sid() -> str:
@@ -125,53 +89,6 @@ def _network_capability_sid() -> str:
                 kernel.LocalFree(ctypes.c_void_p.from_address(array.value + index * ctypes.sizeof(ctypes.c_void_p)).value)
             kernel.LocalFree(array)
 
-
-def _private_windows_directory(path: Path):
-    """Create with its final protected DACL atomically; never expose an empty gap."""
-    adv, kernel, w = _windows_api()
-    sid = _current_sid()
-    descriptor = ctypes.c_void_p()
-    sddl = f"O:{sid}D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-    if not adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(descriptor), None):
-        raise ctypes.WinError(ctypes.get_last_error())
-
-    class SecurityAttributes(ctypes.Structure):
-        _fields_ = [("length", w.DWORD), ("descriptor", ctypes.c_void_p), ("inherit", w.BOOL)]
-
-    attributes = SecurityAttributes(ctypes.sizeof(SecurityAttributes), descriptor, False)
-    kernel.CreateDirectoryW.argtypes = [w.LPCWSTR, ctypes.POINTER(SecurityAttributes)]
-    try:
-        if not kernel.CreateDirectoryW(str(path), ctypes.byref(attributes)):
-            raise ctypes.WinError(ctypes.get_last_error())
-    finally:
-        kernel.LocalFree(descriptor)
-
-
-def windows_acl(path: Path) -> tuple[str, set[str]]:
-    """Read the actual owner and allowed trustees, including inherited ACEs."""
-    adv, kernel, w = _windows_api()
-    owner, acl, descriptor = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
-    error = adv.GetNamedSecurityInfoW(str(path), 1, 0x5, ctypes.byref(owner), None, ctypes.byref(acl), None, ctypes.byref(descriptor))
-    if error:
-        raise ctypes.WinError(error)
-    try:
-        if not acl.value:
-            raise NativeBoundaryError("Session storage has an unrestricted Windows DACL.")
-        # ACL header: revision, reserved, size, ACE count, reserved.
-        ace_count = ctypes.c_ushort.from_address(acl.value + 4).value
-        allowed = set()
-        for index in range(ace_count):
-            ace = ctypes.c_void_p()
-            if not adv.GetAce(acl, index, ctypes.byref(ace)):
-                raise ctypes.WinError(ctypes.get_last_error())
-            kind = ctypes.c_ubyte.from_address(ace.value).value
-            if kind == 0:  # ACCESS_ALLOWED_ACE: header + mask + SID
-                allowed.add(_sid_string(ace.value + 8, adv, kernel, w))
-            elif kind != 1:  # Deny ACEs cannot widen access; unknown allow forms fail closed.
-                raise NativeBoundaryError("Session storage has an unsupported Windows ACL entry.")
-        return _sid_string(owner, adv, kernel, w), allowed
-    finally:
-        kernel.LocalFree(descriptor)
 
 
 class Session:

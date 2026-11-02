@@ -208,3 +208,19 @@ audio { display: block; width: 100%; height: 42px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; }
 }
+
+.transcription-tools { padding: 10px 24px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.transcription-tools p { flex: 1 1 360px; font-size: 11px; color: var(--muted); }
+.transcription-setup { flex: 0 0 auto; max-height: 45vh; overflow: auto; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.transcription-setup h2 { font-size: 15px; }
+.transcription-setup form, .setup-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.transcription-setup input { flex: 1 1 180px; max-width: 400px; }
+.transcription-setup .library-path { margin-top: 4px; overflow-wrap: anywhere; }
+.setup-tools p { flex: 1; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+#operation-progress { flex-shrink: 0; }
+@media (max-width: 760px) {
+  .transcription-tools, .transcription-setup { padding-inline: 15px; }
+  .toolbar h1 { font-size: 15px; }
+  .toolbar { gap: 7px; padding-inline: 10px; }
+  #operation-progress { flex-wrap: wrap; }
+}

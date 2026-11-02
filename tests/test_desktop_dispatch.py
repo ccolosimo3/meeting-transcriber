@@ -80,6 +80,12 @@ class DispatchTests(unittest.TestCase):
             ('pywebviewMoveWindow', [1, 2]),
             ('pywebviewAsyncCallback', 'null'),
             ('load_run', [str(outside), None]),
+            ('start_transcription', [str(outside)]),
+            ('retry_remote_cleanup', ['safe-id', str(outside)]),
+            ('save_transcription_key', ['line\nbreak']),
+            ('save_transcription_key', [{'path': str(outside)}]),
+            ('import_audio', [str(outside)]),
+            ('locate_ffprobe', [str(outside)]),
         ]:
             _dispatch(self.window, name, params, '12345')
         _dispatch(self.window, 'refresh_library', [], 'x"];injected()//')

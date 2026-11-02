@@ -65,26 +65,8 @@ fi
 [[ -x "$python_bin" ]] || fail "Python executable not found: $python_bin"
 [[ -f "${utility_root}/lib/transcribe_assemblyai.py" ]] || fail 'AssemblyAI adapter is missing'
 
-# Contain the credential exactly like transcription: read it once, remove it
-# from the environment, and pass it only to the adapter child.
-if ! meeting_load_assemblyai_key; then
-  ui_heading 'Setup problem'
-  if [[ -n "$meeting_assemblyai_key_error" ]]; then
-    ui_row 'Problem' "$meeting_assemblyai_key_error"
-    ui_row 'Fix' 'Repair the .env file manually, then run meeting doctor'
-  else
-    ui_row 'Problem' "No AssemblyAI API key is configured at $(meeting_env_file)"
-    ui_row 'Fix' 'meeting setup'
-  fi
-  exit 2
+if [[ -n "$meeting_inherited_assemblyai_key" ]]; then
+  ASSEMBLYAI_API_KEY="$meeting_inherited_assemblyai_key" "$python_bin" "${utility_root}/lib/transcription_cli.py" cleanup "$json_path"
+else
+  "$python_bin" "${utility_root}/lib/transcription_cli.py" cleanup "$json_path"
 fi
-assemblyai_key="$meeting_assemblyai_key"
-meeting_assemblyai_key=""
-
-set +e
-ASSEMBLYAI_API_KEY="$assemblyai_key" "$python_bin" \
-  "${utility_root}/lib/transcribe_assemblyai.py" --cleanup "$json_path"
-cleanup_status=$?
-set -e
-unset assemblyai_key
-exit "$cleanup_status"
