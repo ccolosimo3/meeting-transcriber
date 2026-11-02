@@ -271,7 +271,10 @@ until a later transcription selection. The key never appears in argv or output
 artifacts.
 
 Each run atomically persists the hidden mode-`0600` receipt
-`.assemblyai.json` in the run directory:
+`.assemblyai.json` in the run directory. The existing `unknown_after_upload`
+uncertainty is saved before the first upload byte; failure to save it prevents
+upload, and a crash or later receipt-write failure retains the support-before-retry
+warning on desktop reload:
 
 - Before publication it holds the lifecycle state machine
   (`unknown_after_upload`, `upload_rejected`, `upload_succeeded`,
@@ -302,7 +305,8 @@ Each run atomically persists the hidden mode-`0600` receipt
   and historical targets exit 2 without mutation.
 - A managed-model mismatch produces no canonical transcript, reconciles remote
   deletion when an ID is known, and reports a support action — never an
-  automatic or recommended paid retry.
+  automatic or recommended paid retry. Persisted `used_model` evidence keeps
+  that support requirement after desktop reload, even when deletion succeeded.
 
 Ctrl-C uses the interruption path: the receipt records `interrupted` and a
 bounded deletion attempt runs for a known ID. Polling of normal

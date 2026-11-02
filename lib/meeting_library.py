@@ -224,6 +224,16 @@ class Library:
             status += "; remote cleanup unconfirmed"
         return {"status": status, "canonical": canonical, "cleanup_required": kind == "cleanup-required"}
 
+    def _run_identity(self, path):
+        fingerprint = [_identity(self._check(path))]
+        for name in ('transcript.json', 'transcript.html', 'transcript.md', '.assemblyai.json', 'transcript.assemblyai.json'):
+            try:
+                info = self._check(path / name)
+                fingerprint.append((_identity(info), info.st_size, info.st_mtime_ns))
+            except FileNotFoundError:
+                fingerprint.append(None)
+        return tuple(fingerprint)
+
     def scan(self) -> dict[str, object]:
         """Revalidate the snapshot; unchanged entries retain their session IDs."""
         with self._lock:
@@ -275,14 +285,7 @@ class Library:
                         try:
                             description = self._run(run_dir)
                             if description is not None:
-                                fingerprint: list[object] = [_identity(self._check(run_dir))]
-                                for name in ("transcript.json", "transcript.html", "transcript.md", ".assemblyai.json", "transcript.assemblyai.json"):
-                                    try:
-                                        info = self._check(run_dir / name)
-                                        fingerprint.append((_identity(info), info.st_size, info.st_mtime_ns))
-                                    except FileNotFoundError:
-                                        fingerprint.append(None)
-                                run_identity = tuple(fingerprint)
+                                run_identity = self._run_identity(run_dir)
                                 old_run = old_runs.get(run_dir)
                                 run_id = old_run.identifier if old_run and old_run.identity == run_identity else secrets.token_urlsafe(24)
                                 runs.append(_Run(run_dir, run_id, run_identity))
@@ -342,9 +345,12 @@ class Library:
                     raise ValueError()
                 if receipt.get('state') == 'published':
                     continue
-                deletion = receipt.get('deletion')
-                if receipt.get('state') == 'upload_rejected' or isinstance(deletion, dict) and deletion.get('confirmed') is True:
+                from transcribe_assemblyai import retry_decision
+                retry_safe, reason = retry_decision(receipt)
+                if retry_safe:
                     continue
+                if reason == 'model_mismatch':
+                    return 'An earlier transcription used an unexpected AssemblyAI model. Contact AssemblyAI support with the saved .assemblyai.json receipt before transcribing again.'
                 return 'An earlier transcription attempt has an unresolved remote outcome. Contact AssemblyAI support with the saved .assemblyai.json receipt before transcribing again.'
             except FileNotFoundError:
                 continue
@@ -435,10 +441,11 @@ class Library:
         meeting, _, generation = self._selection(meeting_id)
         if _identity(self._check(meeting.path)) != meeting.identity:
             raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
+        destination = self.import_destination()
+        destination.capture(meeting.path, expected=meeting.identity)
         candidates = self._media(meeting)
         if len(candidates) != 1:
             raise LibraryError('unavailable_source', 'Select one safe complete recording.')
-        destination = self.import_destination()
         self._current(generation)
         return recording_at(candidates[0], destination)
 
@@ -447,14 +454,20 @@ class Library:
         if run is None or _identity(self._check(meeting.path)) != meeting.identity:
             raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
         destination = self.import_destination()
-        destination.capture(meeting.path)
+        destination.capture(meeting.path, expected=meeting.identity)
         destination.capture(run.path.parent)
-        destination.capture(run.path)
+        destination.capture(run.path, expected=run.identity[0])
+        def check_selection():
+            destination.check(run.path)
+            if self._run_identity(run.path) != run.identity:
+                raise LibraryError('stale_id', 'The selected transcript changed. Refresh and select it again.')
+        check_selection()
         for name in ('transcript.json', 'transcript.md', 'transcript.html', '.assemblyai.json'):
             with self._open(run.path / name):
                 pass
         self._current(generation)
-        return run.path / 'transcript.json', destination
+        check_selection()
+        return run.path / 'transcript.json', destination, check_selection
 
     def result_selection(self, path):
         snapshot = self.scan()

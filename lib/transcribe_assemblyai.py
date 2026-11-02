@@ -429,8 +429,11 @@ class AssemblyAIAdapter:
         self, audio: Path, output_dir: Path, output_name: str, speakers: int | None
     ) -> tuple[Path, bool]:
         """Transcribe audio and return (canonical JSON path, deletion confirmed)."""
-        self.on_progress("uploading")
         self.receipt_path = output_dir / RECEIPT_NAME
+        # This existing uncertainty receipt must be durable before any upload
+        # byte. A stop or later receipt-write failure must survive application restart.
+        self._save("unknown_after_upload")
+        self.on_progress("uploading")
         self._start_phase()
         try:
             upload_response = self._upload(audio)
@@ -616,9 +619,10 @@ class AssemblyAIAdapter:
                 f"cleanup receipt did not reload as confirmed: {self.receipt_path}"
             )
 
-    def cleanup(self, canonical_path: Path) -> int:
+    def cleanup(self, canonical_path: Path, *, check_selection=lambda: None) -> int:
         """Recovery-only remote deletion for one published run. Never uploads."""
         assert self.receipt_path is not None and self.transcript_id is not None
+        check_selection()
         deletion = self.receipt.get("deletion")
         if isinstance(deletion, dict) and deletion.get("confirmed") is True:
             print(
@@ -634,6 +638,7 @@ class AssemblyAIAdapter:
         via_absent = False
         for attempt in range(1, self.transient_attempts + 1):
             attempts = attempt
+            check_selection()
             try:
                 self._json_request(
                     "DELETE",
@@ -733,6 +738,17 @@ def _receipt_created_at(receipt: dict[str, Any]) -> str:
     return "unavailable"
 
 
+def retry_decision(receipt) -> tuple[bool, str | None]:
+    """Persisted failure admission shared by the CLI outcome and desktop reload."""
+    if receipt.get('used_model') is not None and receipt['used_model'] != REQUESTED_MODEL:
+        return False, 'model_mismatch'
+    deletion = receipt.get('deletion')
+    retry = receipt.get('state') == 'upload_rejected' or (
+        isinstance(receipt.get('transcript_id'), str) and bool(receipt['transcript_id']) and isinstance(deletion, dict) and deletion.get('confirmed') is True
+    )
+    return (True, None) if retry else (False, 'remote_unconfirmed')
+
+
 def failure_details(adapter: AssemblyAIAdapter, error: BaseException) -> dict[str, Any]:
     """One safe failure outcome shared by terminal and desktop presentation."""
     receipt = adapter.receipt
@@ -769,7 +785,7 @@ def failure_details(adapter: AssemblyAIAdapter, error: BaseException) -> dict[st
         remote = f'Remote data deletion unconfirmed for transcript {transcript_id}'
     else:
         remote = 'Uploaded audio may remain remotely; no transcript ID is known'
-    retry_safe = deletion_confirmed and bool(transcript_id)
+    retry_safe, _ = retry_decision(receipt)
     if isinstance(error, ModelMismatchError):
         action = f'{SUPPORT_ACTION} with receipt timestamp {created_at} and reported model {error.reported!r}'
         retry_safe = False

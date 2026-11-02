@@ -183,8 +183,10 @@ class Directory:
                 raise PrivateFileError("The selected destination changed. Choose it again.")
         return info
 
-    def capture(self, path):
+    def capture(self, path, *, expected=None):
         info = self.check(path)
+        if expected is not None and identity(info) != expected:
+            raise PrivateFileError("The selected directory changed. Refresh and select it again.")
         if not stat.S_ISDIR(info.st_mode):
             raise PrivateFileError("Destination is not a directory.")
         self.identities[Path(path)] = identity(info)

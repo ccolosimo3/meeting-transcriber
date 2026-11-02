@@ -150,11 +150,12 @@ def transcribe(recording, speakers=None, *, on_progress=lambda phase: None, key_
     key = read_key(key_override)
     preflight(recording)
     destination = recording.destination
-    parent = Path(output_root) if output_root else recording.path.parent / 'transcripts'
+    parent = Path(output_root).expanduser().absolute() if output_root else recording.path.parent / 'transcripts'
     # Narrow internal CLI permits an explicit output root; capture that separate
     # destination instead of letting it redirect the source capability.
     if output_root and parent.parent != recording.path.parent:
         destination = Directory(parent.parent)
+        parent = destination.path / parent.name
     destination.check(parent.parent)
     try:
         destination.mkdir(parent)
@@ -191,10 +192,13 @@ def transcribe(recording, speakers=None, *, on_progress=lambda phase: None, key_
     except (Exception, KeyboardInterrupt) as error:
         # Provider-selected failure distinctions remain owned by the adapter;
         # never expose the exception's raw response or suggest an automatic retry.
+        if not adapter.receipt:
+            raise OperationError('The private lifecycle receipt could not be saved. No audio was uploaded. Check the meeting folder and try again.') from None
         details = failure_details(adapter, error)
         raise OperationError(' '.join(filter(None, (details['problem'], 'The original recording is safe.', details['remote'], details['action']))), code=details['code'], exit_code=130 if isinstance(error, KeyboardInterrupt) else 1, details=details) from None
 
-def cleanup_published_run(canonical_path, destination=None, *, key_override=None, on_progress=lambda phase: None, stderr=None):
+def cleanup_published_run(canonical_path, destination=None, *, key_override=None, on_progress=lambda phase: None, stderr=None, check_selection=lambda: None):
+    check_selection()
     path = Path(canonical_path).expanduser().absolute()
     destination = destination or Directory(path.parent)
     destination.capture(path.parent)
@@ -203,10 +207,14 @@ def cleanup_published_run(canonical_path, destination=None, *, key_override=None
         with open_regular(path.parent / name):
             pass
     receipt_path, receipt, transcript_id = resolve_cleanup_target(path)
+    check_selection()
     adapter = _build_adapter(read_key(key_override))
     adapter.stderr = stderr if stderr is not None else io.StringIO()
     adapter.receipt_path, adapter.receipt, adapter.transcript_id = receipt_path, receipt, transcript_id
     on_progress('deleting')
-    with publication_guard(destination.check):
-        status = adapter.cleanup(path)
+    def check_destination(target):
+        destination.check(target)
+        check_selection()
+    with publication_guard(check_destination):
+        status = adapter.cleanup(path, check_selection=check_selection)
     return Result(path, status == 0)

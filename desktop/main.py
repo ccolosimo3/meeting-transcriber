@@ -208,9 +208,9 @@ class Bridge:
             try:
                 if self._library is None:
                     raise ValueError()
-                path, destination = self._library.cleanup_source(meeting_id, run_id)
+                path, destination, check_selection = self._library.cleanup_source(meeting_id, run_id)
                 return self._operation.start('cleanup', path.parent.parent.parent.name, self._library,
-                    lambda progress: cleanup_published_run(path, destination, on_progress=progress))
+                    lambda progress: cleanup_published_run(path, destination, on_progress=progress, check_selection=check_selection))
             except (OSError, ValueError):
                 return {'error': 'This saved run is unavailable for qualified remote cleanup. Refresh and select it again.'}
 
