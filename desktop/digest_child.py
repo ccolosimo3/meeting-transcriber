@@ -1,5 +1,6 @@
 """Windows job bootstrap. Wait for parent job assignment before starting a CLI."""
 import json
+import os
 import subprocess
 import sys
 
@@ -14,7 +15,8 @@ def main():
     data = sys.stdin.buffer.read(4 * 1024 * 1024 + 1)
     if not isinstance(command, list) or not command or not all(isinstance(s, str) for s in command) or len(data) > 4 * 1024 * 1024:
         raise SystemExit(2)
-    process = subprocess.run(command, input=data, shell=False)
+    process = subprocess.run(command, input=data, shell=False,
+                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     raise SystemExit(process.returncode)
 
 
