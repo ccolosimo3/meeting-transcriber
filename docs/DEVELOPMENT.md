@@ -44,7 +44,9 @@ source; POSIX tests are not an ACL proof.
   MSHTML. Windows storage retains required engine AppContainer access within
   the protected per-user session. Mac uses a nonpersistent WK data store set
   before webview construction. The browser sandbox remains enabled.
-  On Mac, pending JavaScript result waits end when the native window closes,
+  On Mac, application Quit uses the same guard and ordinary window teardown
+  so Python returns through server/session cleanup. Pending JavaScript result
+  waits end when the native window closes,
   so late bridge replies cannot keep the process alive.
   Native messages also enforce an exact action/arity/input allowlist before the
   framework dispatcher; hiding private Python attributes from API enumeration

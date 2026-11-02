@@ -351,6 +351,22 @@ def _configure_cocoa(webview, document_url: str, session: Session):
             raise failure
         return result
 
+    original_app_delegate = cocoa.BrowserView.AppDelegate
+
+    class PrivateAppDelegate(original_app_delegate):
+        def applicationShouldTerminate_(self, app):
+            # Pinned pywebview returns YES here, which terminates Cocoa without
+            # returning from webview.start and skips our server/session finally.
+            # Ask the same native close guard, then use ordinary window teardown.
+            instances = tuple(cocoa.BrowserView.instances.values())
+            if any(not cocoa.BrowserView.should_close(item.pywebview_window) for item in instances):
+                return cocoa.Foundation.NO
+            for item in instances:
+                item.window.close()
+            return cocoa.Foundation.NO
+
+    cocoa.BrowserView.AppDelegate = PrivateAppDelegate
+
     cocoa.BrowserView.evaluate_js = evaluate_js
 
     host = cocoa.BrowserView.WebKitHost
