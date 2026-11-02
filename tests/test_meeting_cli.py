@@ -209,6 +209,7 @@ fi
         environment.update(
             {
                 "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_NOTIFICATIONS": "1",
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
@@ -637,6 +638,7 @@ class DiscoveryTests(unittest.TestCase):
         environment.update(
             {
                 "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
                 "STUB_OPEN_ARGV": str(self.open_log),
@@ -799,6 +801,7 @@ class DiscoveryTests(unittest.TestCase):
         environment.update(
             {
                 "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_OPEN_BIN": str(self.open_stub),
                 "STUB_OPEN_ARGV": str(self.open_log),
@@ -896,6 +899,7 @@ class CleanupCommandTests(unittest.TestCase):
         environment.update(
             {
                 "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "MEETING_DATA_DIR": str(self.meetings_root),
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE": base_url,
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL": "0",

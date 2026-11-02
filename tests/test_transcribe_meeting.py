@@ -52,6 +52,7 @@ class TranscribeMeetingPreflightTests(unittest.TestCase):
         environment.update(
             {
                 "HOME": str(self.root / "home"),
+                "LOCALAPPDATA": str(self.root / "home/AppData/Local"),
                 "ASSEMBLYAI_API_KEY": "test-key",
                 "MEETING_TRANSCRIBER_ASSEMBLYAI_BIN": str(self.adapter),
                 "MEETING_TRANSCRIBER_FFPROBE_BIN": str(self.ffprobe),

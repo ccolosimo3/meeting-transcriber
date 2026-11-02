@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -21,7 +22,7 @@ class CredentialFileTests(unittest.TestCase):
         shutil.copytree(PROJECT_ROOT / "lib", self.root / "lib", dirs_exist_ok=True)
         (self.root / '.venv').symlink_to(PROJECT_ROOT / '.venv', target_is_directory=True)
         self.test_home = self.root / 'home'
-        self.env_file = self.test_home / 'Library' / 'Application Support' / 'MeetingTranscriber' / '.env'
+        self.env_file = (self.test_home / 'AppData/Local' if sys.platform == 'win32' else self.test_home / 'Library/Application Support') / 'MeetingTranscriber/.env'
         self.env_file.parent.mkdir(parents=True, mode=0o700)
 
     def run_shell(
@@ -33,6 +34,7 @@ class CredentialFileTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["HOME"] = str(self.test_home)
+        environment["LOCALAPPDATA"] = str(self.test_home / "AppData/Local")
         if key is None:
             environment.pop("ASSEMBLYAI_API_KEY", None)
         else:
@@ -109,7 +111,7 @@ class CredentialFileTests(unittest.TestCase):
         self.env_file.write_text("ASSEMBLYAI_API_KEY=old-value\n", encoding="utf-8")
         self.env_file.chmod(0o600)
         before = self.env_file.read_bytes()
-        environment = dict(os.environ, HOME=str(self.test_home))
+        environment = dict(os.environ, HOME=str(self.test_home), LOCALAPPDATA=str(self.test_home / "AppData/Local"))
         environment.pop('ASSEMBLYAI_API_KEY', None)
         result = subprocess.run([str(PROJECT_ROOT / '.venv/bin/python'), '-c',
             'import sys; from unittest.mock import patch; sys.path.insert(0, sys.argv[1]); from transcription_config import store_key; '

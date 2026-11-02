@@ -89,7 +89,7 @@ class CallerTests(RecordingFixture, unittest.TestCase):
         import subprocess
         with running_server({}) as (server, base):
             env = {key: value for key, value in os.environ.items() if not key.startswith('MEETING_TRANSCRIBER_') and key != 'ASSEMBLYAI_API_KEY'}
-            env.update(HOME=str(self.root / 'home'), MEETING_DATA_DIR=str(self.library), MEETING_NOTIFICATIONS='0', ASSEMBLYAI_API_KEY='synthetic-only', MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE=base, MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL='0')
+            env.update(HOME=str(self.root / 'home'), LOCALAPPDATA=str(self.root / 'home/AppData/Local'), MEETING_DATA_DIR=str(self.library), MEETING_NOTIFICATIONS='0', ASSEMBLYAI_API_KEY='synthetic-only', MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE=base, MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL='0')
             result = subprocess.run([str(ROOT / 'bin/meeting'), 'transcribe', str(self.source), '--speakers', '2', '--no-open', '--skip-names'], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(len(result.stdout.splitlines()), 1)
@@ -108,7 +108,7 @@ class CallerTests(RecordingFixture, unittest.TestCase):
         server = ReaderServer(ROOT / 'desktop/assets')
         server.start()
         self.addCleanup(server.close)
-        with running_server({'upload_status': 500}) as (provider, base), patch.dict(os.environ, {'HOME': str(self.root / 'home'), 'MEETING_DATA_DIR': str(self.library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}):
+        with running_server({'upload_status': 500}) as (provider, base), patch.dict(os.environ, {'HOME': str(self.root / 'home'), 'LOCALAPPDATA': str(self.root / 'home/AppData/Local'), 'MEETING_DATA_DIR': str(self.library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}):
             store_key('synthetic-only')
             bridge = Bridge(server, lambda: None)
             self.addCleanup(bridge._close)

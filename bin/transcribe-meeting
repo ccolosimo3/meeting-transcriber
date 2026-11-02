@@ -13,7 +13,6 @@ while [[ -L "$script_source" ]]; do
 done
 utility_root="$(cd "$(dirname "$script_source")/.." && pwd)"
 source "${utility_root}/lib/config.sh"
-source "${utility_root}/lib/format.sh"
 python_bin="${utility_root}/.venv/bin/python"
 speakers=""
 
@@ -27,22 +26,6 @@ fail() {
 }
 
 input=""
-
-# One local preflight/setup failure block: what stopped, source safety, the
-# not-applicable remote state, and exactly one recovery.
-setup_problem() {
-  local problem="$1"
-  local fix_label="$2"
-  local fix="$3"
-  ui_heading 'Setup problem'
-  ui_row 'Problem' "$problem"
-  if [[ -n "$input" ]]; then
-    ui_row 'Recording' "safe at ${input}"
-  fi
-  ui_line 'No audio left this Mac'
-  ui_row "$fix_label" "$fix"
-  exit 2
-}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

@@ -68,7 +68,9 @@ Summary generation is a separate deliberate disclosure, never a transcription
 callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
 already signed-in first-party subscription CLI with a sanitized environment,
 neutral private working directory, stdin input, bounded independent pipe drains
-and restrictive tool/hook/integration controls. Summary generation reads no AssemblyAI credential. Claude uses safe/restricted mode, no tools, strict empty MCP, denied
+and restrictive tool/hook/integration controls. Summary generation reads no
+AssemblyAI credential. Claude uses safe/restricted mode, no tools, strict empty
+MCP, denied
 prompts and no session persistence. Its structured output stream is admitted only
 after validation; unexpected actions, provider
 errors, malformed output and incomplete results cannot publish a summary.
@@ -184,7 +186,8 @@ and dispatch to one owner per command:
   `transcript.json` path as its only stdout line; exit 3 means the transcript
   is usable locally but remote deletion is unconfirmed.
 - `bin/transcribe-meeting` is a thin private shell entry to the shared Python
-  preflight/run operation through `lib/transcription_cli.py`. It passes the adapter's 0/3 exit codes through and
+  preflight/run operation through `lib/transcription_cli.py`. It passes the
+  adapter's 0/3 exit codes through and
   writes the run directory to `MEETING_TRANSCRIBER_RESULT_FILE`.
 - `lib/transcribe_assemblyai.py` is the standard-library REST adapter and the
   provider lifecycle owner. It streams the upload, submits exactly one
@@ -212,7 +215,8 @@ and dispatch to one owner per command:
 - `bin/meeting-open` opens the latest usable run's saved HTML without
   rewriting anything and surfaces the cleanup-required warning.
 - `bin/meeting-cleanup` resolves the recovery target and contains the
-  credential before invoking the shared qualified-cleanup operation. Cleanup target proof
+  credential before invoking the shared qualified-cleanup operation. Cleanup
+  target proof
   reuses `lib/transcript_run.py`'s current-schema run validator before the
   adapter can issue DELETE.
 - `bin/meeting-setup` and `bin/meeting-doctor` own configuration and the
@@ -243,22 +247,24 @@ dependency group, used by the Chromium DevTools browser test.
 - Development bootstrap: `uv sync --frozen` — the default dev group installs
   `aiohttp` for the browser gate.
 
-`pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`, recordings, transcripts or local configuration.
+`pyproject.toml` and `uv.lock` own dependency versions. Do not commit `.venv`,
+recordings, transcripts or local configuration.
 
 ## Provider lifecycle and credential boundary
 
 The managed path uses `https://api.assemblyai.com`, places the raw API key only
-in the adapter child's `Authorization` header, and pins
+in the adapter's `Authorization` header, and pins
 `speech_models: ["universal-3-5-pro"]`. The shared per-user `.env` is the only
 persistent credential store (`~/Library/Application Support/MeetingTranscriber/.env`
-on Mac; `%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows) and must contain exactly one literal
+on Mac; `%LOCALAPPDATA%/MeetingTranscriber/.env` on Windows) and must contain
+exactly one literal
 `ASSEMBLYAI_API_KEY=<value>` assignment in a regular non-symlink mode-`0600`
 file. The shared `transcription_config.py` parser treats it as data; shell wrappers
 never source or export the file. Existing users manually move the one-assignment
 checkout file with private permissions; no old-file fallback or migration runs. A
 process-level override has priority. Every executable captures and unsets an
-inherited value immediately, and only the adapter child receives the selected
-key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
+inherited value immediately, and only the shared provider operation receives
+the selected key. Recorder, FFmpeg/FFprobe, status, speaker, renderer, browser/Finder,
 doctor/setup, notification, and menu-helper children never inherit it. The
 no-argument menu retains its captured override only as a private shell variable
 until a later transcription selection. The key never appears in argv or output

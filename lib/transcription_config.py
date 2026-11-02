@@ -43,10 +43,8 @@ def read_key(override=None):
         raise SetupError('The credential file is not valid UTF-8.') from None
 
 def _create_parent(path):
-    missing = []
     current = path
     while not current.exists():
-        missing.append(current)
         current = current.parent
     target = Directory(current)
     destination = target.path

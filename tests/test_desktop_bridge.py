@@ -158,7 +158,7 @@ class TranscriptionBridgeTests(unittest.TestCase):
                 if not release.wait(10):
                     raise RuntimeError('Fixture release missing')
                 original(handler)
-            with running_server({}) as (provider, base), patch.dict(os.environ, {'HOME': str(root / 'home'), 'MEETING_DATA_DIR': str(library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}), patch.object(ScenarioHandler, 'do_GET', held):
+            with running_server({}) as (provider, base), patch.dict(os.environ, {'HOME': str(root / 'home'), 'LOCALAPPDATA': str(root / 'home/AppData/Local'), 'MEETING_DATA_DIR': str(library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}), patch.object(ScenarioHandler, 'do_GET', held):
                 bridge = Bridge(server, lambda: str(second), audio_picker=lambda: str(source))
                 try:
                     imported = bridge.import_audio()
