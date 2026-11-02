@@ -71,8 +71,8 @@ this slice; streaming and release/onboarding polish remain future work.
 Reader source and bounded native reader QA passed on Windows and Mac at their
 recorded reader revisions. Mac summary generation was exercised with both
 subscription routes at `8c718b2`. November 2 Windows synthetic qualification is
-described below; final independent assessment of its corrected runtime evidence
-remains with the same outer reviewer.
+described below; its required source and scoped runtime evidence reviews are
+complete. This does not qualify live Windows vendor accounts or a release.
 
 The original Windows machine's unique reader records, synthetic proof scripts,
 design snapshots and safe captures are preserved separately on
@@ -143,10 +143,16 @@ homes, libraries, credentials and executable/provider fixtures:
   publication/reload observations. It also preserves the console intrusion and
   the native descendant-cancellation timing gap; it is not a passing whole report.
 
+The same import/transcription source outer approved WIN-QUAL-1 and WIN-QUAL-2
+in evidence-only mode at the linked revisions. These assessments inspected
+supplied Windows artifacts on Mac; they did not rerun the Windows binaries.
+
 The correction at `2640f29` adds `CREATE_NO_WINDOW` to the actual Windows
 provider launch in `desktop/digest_child.py`, retaining the existing Job and pipe
-owners. The Mac coordinator reports its fresh inner and same outer source reviews
-approved. No further Windows product edit was made.
+owners. Its fresh inner and original outer source reviews both approved.
+No further Windows product edit was made. Windows-specific corrections and their
+native verification are owned by the Windows agent; the Mac lead coordinates
+reviews and integration.
 
 The [corrected WIN-QUAL-3 report](handoffs/windows-2026-11-02/win-qual-3-corrected/README.md)
 records author-observed native PASS for console suppression, Cancel and normal
@@ -159,8 +165,10 @@ SHA-256 is `d5100f870006597c9698a4f92b50fb7b8054a8e7eb71d20cde13a2eba18191db`;
 its original 102-file manifest SHA-256 is
 `686b95151906c2b8165efbb99444b84907f77aef64590cabb321bb8998271918`.
 Earlier passing evidence is reused where this narrow source delta cannot affect
-it. Final corrected runtime evidence awaits the same outer reviewer's assessment;
-the Windows observations do not certify that gate.
+it. The same original digest outer subsequently approved the corrected runtime
+evidence at `3c0e4e0654c6d40930b4d0f1a97e7fe9d403d77f`, against unchanged
+source `2640f29`, with no findings. It independently assessed the exported
+artifacts and captures on Mac; it did not execute Windows or make provider calls.
 
 Actual OS Job-assignment rejection was not forced. The prior launch-PATH
 transformation origin remains unresolved; per-job environment consistency and

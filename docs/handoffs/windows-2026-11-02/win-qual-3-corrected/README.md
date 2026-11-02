@@ -1,6 +1,6 @@
 # Corrected Windows summary package qualification
 
-**PASS for the affected native console, Cancel and active-summary normal-close boundary at `2640f2903f4b9e4ebda97697410798bdfaf514a7`.** Final independent evidence-only assessment remains with the existing outer reviewer. The coordinator reports source inner and outer gates approved; this Windows execution report is not self-certification of those source gates.
+**PASS for the affected native console, Cancel and active-summary normal-close boundary at `2640f2903f4b9e4ebda97697410798bdfaf514a7`.** The original outer reviewer subsequently APPROVED the evidence-only scope at export `3c0e4e0654c6d40930b4d0f1a97e7fe9d403d77f`, with no findings. Source inner and outer gates are also closed. That independent assessment inspected the supplied artifacts on Mac, without executing Windows; this Windows execution report is not self-certification of those gates or full release qualification.
 
 The source delta from `de3226a` is only `desktop/digest_child.py`: import os and apply Windows `CREATE_NO_WINDOW` to the actual provider launch, reusing the existing bootstrap/job/pipe owners. No additional Windows product edit, manifest/lockfile change or shared-ref mutation was needed. Windows owns subsequent platform corrections; the already pushed source fix was reused.
 
