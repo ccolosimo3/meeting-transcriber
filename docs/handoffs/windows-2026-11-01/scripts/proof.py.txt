@@ -1,0 +1,116 @@
+"""Disposable real-webview proof. Synthetic audio; loopback only; no credentials."""
+import json
+import os
+from pathlib import Path
+import platform
+import secrets
+import sys
+import threading
+import time
+import wave
+import webview
+from bottle import Bottle, request, response, static_file
+
+ROOT = Path(os.environ['MEETING_PROOF_DIR']).resolve()
+ROOT.mkdir(parents=True, exist_ok=True)
+SECONDS = int(os.environ.get('MEETING_PROOF_SECONDS', '3600'))
+AUDIO = ROOT / 'synthetic-hour.wav'
+if not AUDIO.exists():
+    with wave.open(str(AUDIO), 'wb') as w:
+        w.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+        for _ in range(SECONDS):
+            w.writeframesraw(bytes(96000))
+TOKEN = secrets.token_urlsafe(24)
+app = Bottle()
+stop = threading.Event()
+finished = threading.Event()
+observations = {'platform': platform.platform(), 'python': sys.version.split()[0],
+                'frozen': bool(getattr(sys, 'frozen', False)), 'audio_bytes': AUDIO.stat().st_size,
+                'ranges': [], 'ui': None}
+
+class API:
+    def ping(self):
+        return {'worker_alive': worker.is_alive(), 'cancelled': stop.is_set()}
+
+    def cancel(self):
+        stop.set()
+        return True
+
+    def finish(self, result):
+        observations['ui'] = result
+        finished.set()
+        return True
+
+def work():
+    stop.wait(100)
+
+worker = threading.Thread(target=work, name='proof-worker')
+
+@app.get('/media/<token>')
+def media(token):
+    if token != TOKEN:
+        response.status = 404
+        return 'Not found'
+    result = static_file(AUDIO.name, root=str(ROOT), mimetype='audio/wav')
+    observations['ranges'].append({'request': request.headers.get('Range'),
+                                 'status': result.status_code,
+                                 'content_range': result.headers.get('Content-Range')})
+    return result
+
+@app.get('/')
+def index():
+    response.content_type = 'text/html'
+    return HTML.replace('__TOKEN__', TOKEN)
+
+HTML = '''<!doctype html><html><meta charset="utf-8"><title>pywebview proof</title>
+<style>body{font:17px system-ui;background:#f6f7f9;color:#1b2433;padding:30px}pre{white-space:pre-wrap}</style>
+<h1>Desktop boundary proof</h1><p>Synthetic silent audio. No microphone or network provider.</p>
+<audio id="audio" controls muted preload="metadata" src="/media/__TOKEN__"></audio><pre id="result">Running…</pre>
+<script>
+const a=document.getElementById('audio');
+function once(event,action){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error(event+' timeout')),15000);a.addEventListener(event,()=>{clearTimeout(timer);resolve()}, {once:true});if(action)action()})}
+window.addEventListener('pywebviewready', async()=>{
+ const out={agent:navigator.userAgent,seeks:[]};
+ try {
+  if(a.readyState<1)await once('loadedmetadata');
+  out.duration=a.duration;
+  out.worker=await pywebview.api.ping();
+  for(const target of [1,a.duration/2,a.duration-10]){
+   await once('seeked',()=>{a.currentTime=target});
+   out.seeks.push({target,actual:a.currentTime});
+  }
+  const before=a.currentTime; await a.play(); await new Promise(r=>setTimeout(r,600)); a.pause();
+  out.playback_advanced=a.currentTime>before;
+  out.denied=[];
+  for(const path of ['/media/wrong','/synthetic-hour.wav','/media/'+ '__TOKEN__' + '/../../proof.py']){
+    out.denied.push({path:path.includes('__TOKEN__')?'traversal':path,status:(await fetch(path)).status});
+  }
+  await pywebview.api.cancel();
+  out.cancel=await pywebview.api.ping();
+  out.pass=out.duration>=3600&&out.seeks.every(s=>Math.abs(s.actual-s.target)<0.2)&&out.playback_advanced&&out.worker.worker_alive&&out.cancel.cancelled&&out.denied.every(x=>x.status===404);
+ } catch(e){out.error=String(e);out.pass=false}
+ document.getElementById('result').textContent=JSON.stringify(out,null,2);
+ await pywebview.api.finish(out);
+});
+</script></html>'''
+
+def closing():
+    stop.set()
+    worker.join(timeout=2)
+    observations['worker_joined_on_close'] = not worker.is_alive()
+
+def monitor(window):
+    if not finished.wait(90):
+        observations['timeout'] = True
+    time.sleep(2)
+    window.destroy()
+
+if __name__ == '__main__':
+    worker.start()
+    window = webview.create_window('Meeting Transcriber — disposable proof', app, js_api=API(), width=820, height=760)
+    window.events.closing += closing
+    try:
+        webview.start(monitor, window, gui='edgechromium' if sys.platform=='win32' else 'cocoa')
+    finally:
+        closing()
+        (ROOT / 'result.json').write_text(json.dumps(observations, indent=2), encoding='utf-8')

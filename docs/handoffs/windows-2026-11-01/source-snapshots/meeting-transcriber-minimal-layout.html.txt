@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Meeting Transcriber · minimal layout study</title>
+  <style>
+    :root { color-scheme:light; --canvas:#f6f7f9; --surface:#fff; --subtle:#f1f3f6; --text:#1b2433; --muted:#566273; --line:#dfe3e9; --strong:#cbd1da; --focus:#2563eb; --active:#edf3ff; --match:#fff0aa; --match-text:#5b3b00; --warning:#8b4a0c; --warning-bg:#fff7e9; --good:#047857; --record:#b42335; --shadow:0 16px 50px #15233422; font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    :root[data-theme="dark"] { color-scheme:dark; --canvas:#101216; --surface:#171a20; --subtle:#1d2129; --text:#eef1f5; --muted:#a6afbd; --line:#2b3039; --strong:#3a414d; --focus:#60a5fa; --active:#1c2a40; --match:#664d14; --match-text:#fff2bc; --warning:#f4bd76; --warning-bg:#30271e; --good:#34d399; --record:#ff99a5; --shadow:0 16px 50px #0006; }
+    * { box-sizing:border-box; } [hidden] { display:none!important; }
+    body { margin:0; background:var(--canvas); color:var(--text); font-size:14px; line-height:1.55; }
+    button,input,select { font:inherit; color:var(--text); border:1px solid var(--strong); border-radius:8px; background:var(--surface); }
+    button,select { min-height:34px; } button { padding:6px 11px; font-size:12px; font-weight:620; cursor:pointer; }
+    button:hover:enabled,summary:hover { background:var(--subtle); border-color:var(--muted); }
+    button:disabled,input:disabled,select:disabled { opacity:.5; cursor:default; }
+    button.primary { background:var(--focus); border-color:var(--focus); color:#fff; }
+    :root[data-theme="dark"] button.primary { color:#101216; }
+    button.primary:hover:enabled { filter:brightness(.93); }
+    button.danger { color:var(--record); border-color:var(--record); }
+    button[aria-pressed="true"] { color:var(--focus); border-color:var(--focus); background:var(--active); }
+    input { min-height:36px; padding:7px 10px; min-width:0; font-size:12px; }
+    input::placeholder { color:var(--muted); opacity:1; }
+    select { padding:5px 28px 5px 9px; min-width:0; max-width:100%; font-size:12px; }
+    :focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+    h1,h2,h3,p { margin:0; } h1,h2,h3 { line-height:1.25; }
+    h1 { font-size:clamp(22px,2.2vw,30px); letter-spacing:-.85px; font-weight:660; overflow-wrap:anywhere; }
+    .muted { color:var(--muted); } .small { font-size:11px; } .warning { color:var(--warning); }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .proposal { padding:10px 22px; background:var(--text); color:var(--surface); }
+    .proposal-top { display:flex; align-items:center; justify-content:space-between; gap:12px 24px; flex-wrap:wrap; }
+    .proposal-title { font-size:12px; font-weight:700; letter-spacing:.05px; }
+    .proposal-caption { font-size:10px; opacity:.85; margin-top:2px; }
+    .preview-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .preview-tools label { font-size:10px; }
+    .preview-tools select { min-height:29px; font-size:11px; max-width:240px; }
+    .preview-tools button { min-height:29px; padding:4px 8px; font-size:10px; }
+    .proposal-details { margin-top:6px; max-width:1100px; font-size:11px; }
+    .proposal-details summary { cursor:pointer; display:inline; color:inherit; padding:2px 0; }
+    .proposal-details summary:hover { background:transparent; text-decoration:underline; }
+    .proposal-details > div { padding:10px 0 5px; line-height:1.7; opacity:.95; }
+    .proposal-details p + p { margin-top:5px; }
+    .app { height:calc(100dvh - var(--proposal-height,105px)); min-height:510px; max-width:1800px; margin:auto; display:flex; flex-direction:column; background:var(--surface); }
+    .appbar { min-height:62px; padding:13px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .brand { display:flex; gap:10px; align-items:center; font-weight:730; font-size:14px; letter-spacing:-.25px; }
+    .brand-mark { width:28px; height:28px; display:grid; place-items:center; color:var(--surface); background:var(--text); border-radius:8px; font:normal 24px/1 Georgia,serif; }
+    .local-badge { border-left:1px solid var(--strong); padding-left:17px; margin-left:8px; color:var(--muted); font-size:10px; font-weight:500; letter-spacing:0; }
+    .appbar-actions { display:flex; gap:8px; align-items:center; }
+    #theme-toggle { border-radius:100px; } #mobile-library { display:none; }
+    .workspace { display:grid; grid-template-columns:280px minmax(0,1fr); flex:1; min-height:0; }
+    .library { min-width:0; min-height:0; display:flex; flex-direction:column; border-right:1px solid var(--line); background:var(--subtle); }
+    .library-head { padding:20px 17px 12px; }
+    .library-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .library-heading h2 { font-size:17px; letter-spacing:-.35px; }
+    .count { padding:1px 7px; font-size:10px; color:var(--muted); border:1px solid var(--line); border-radius:20px; background:var(--surface); }
+    #new-meeting { width:100%; margin-bottom:12px; }
+    .folder { position:relative; margin-bottom:13px; }
+    .folder summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--muted); padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:var(--surface); }
+    .folder summary::-webkit-details-marker { display:none; }
+    .folder-panel { position:absolute; z-index:6; top:37px; left:0; width:100%; padding:12px; border:1px solid var(--strong); border-radius:8px; background:var(--surface); box-shadow:var(--shadow); }
+    .folder-panel p { font-size:10px; overflow-wrap:anywhere; }
+    .folder-panel .folder-path { margin:4px 0 10px; font-size:11px; }
+    .folder-actions { display:flex; gap:6px; margin-top:8px; } .folder-actions button { flex:1; font-size:10px; padding:5px; }
+    .field-label { display:block; font-size:10px; font-weight:600; color:var(--muted); margin-bottom:5px; }
+    #library-search { width:100%; }
+    .filter-grid { margin-top:11px; display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .filter-grid button { min-height:29px; padding:4px 7px; font-size:10px; }
+    .filter-description { margin-top:8px; color:var(--muted); font-size:10px; line-height:1.45; min-height:29px; }
+    .meeting-list { flex:1; min-height:0; overflow:auto; padding:0 9px 10px; scrollbar-gutter:stable; }
+    .meeting-row { width:100%; display:block; text-align:left; background:transparent; border-color:transparent; padding:11px 10px; margin:3px 0; border-radius:8px; }
+    .meeting-row:hover:enabled { border-color:var(--line); }
+    .meeting-row[aria-pressed="true"] { color:var(--text); border-color:var(--strong); background:var(--surface); box-shadow:0 2px 4px #15233406; }
+    .meeting-name { display:block; font-size:12px; font-weight:680; line-height:1.5; overflow-wrap:anywhere; }
+    .row-meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:3px 5px; color:var(--muted); font-size:10px; font-weight:400; margin-top:5px; }
+    .meeting-status { display:block; color:var(--muted); font-size:10px; font-weight:500; line-height:1.4; margin-top:4px; }
+    .meeting-status.attention { color:var(--warning); }
+    .library-empty { padding:12px; color:var(--muted); font-size:12px; }
+    .library-footer { padding:12px 18px; border-top:1px solid var(--line); color:var(--muted); font-size:10px; }
+    .reader { min-width:0; min-height:0; display:flex; flex-direction:column; position:relative; background:var(--surface); }
+    .reader-header { padding:23px 30px 15px; border-bottom:1px solid var(--line); }
+    .eyebrow { text-transform:uppercase; letter-spacing:1.5px; font-size:9px; font-weight:750; color:var(--muted); margin-bottom:8px; }
+    .meeting-meta { display:flex; flex-wrap:wrap; gap:5px 14px; font-size:11px; color:var(--muted); margin-top:9px; }
+    .version-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:15px; }
+    .version-control { display:flex; gap:9px; align-items:center; min-width:0; }
+    .version-control label { color:var(--muted); font-size:11px; white-space:nowrap; }
+    #version-select { max-width:380px; }
+    .export-menu { position:relative; flex:0 0 auto; }
+    .export-menu summary { list-style:none; cursor:pointer; border:1px solid var(--strong); border-radius:8px; font-size:11px; font-weight:600; padding:7px 10px; }
+    .export-menu summary::-webkit-details-marker { display:none; }
+    .export-panel { position:absolute; z-index:5; right:0; top:39px; background:var(--surface); border:1px solid var(--strong); padding:7px; border-radius:8px; box-shadow:var(--shadow); width:210px; }
+    .export-panel button { width:100%; text-align:left; border-color:transparent; font-weight:500; }
+    .notice { border:1px solid var(--strong); border-left:3px solid var(--warning); border-radius:6px; padding:9px 11px; margin-top:12px; font-size:11px; color:var(--warning); background:var(--warning-bg); }
+    .transcript-tools { display:flex; align-items:stretch; gap:8px; margin-top:17px; }
+    .find-box { flex:1; min-width:100px; display:flex; gap:4px; }
+    .find-box input { flex:1; min-width:0; width:100%; }
+    .find-box button { width:33px; flex:0 0 33px; padding:4px; font-size:16px; }
+    #speaker-filter { max-width:200px; }
+    .transcript-summary { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; font-size:10px; color:var(--muted); margin-top:8px; }
+    .passages { flex:1; min-height:0; overflow:auto; padding:16px 22px 30px; overscroll-behavior:contain; scrollbar-gutter:stable; }
+    .passage { max-width:940px; margin:0 auto 4px; display:grid; grid-template-columns:51px minmax(0,1fr); gap:14px; border:1px solid transparent; border-radius:8px; padding:13px 11px; scroll-margin:15px; }
+    .passage:hover { background:var(--subtle); }
+    .passage.active { border-color:var(--focus); background:var(--active); }
+    .passage.current-match { box-shadow:inset 3px 0 0 var(--focus); }
+    .passage-rail { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+    .ordinal { color:var(--muted); font-size:9px; font-variant-numeric:tabular-nums; }
+    .timestamp { border:0; background:transparent; color:var(--focus); padding:0; min-height:26px; font-size:11px; font-variant-numeric:tabular-nums; }
+    .timestamp:hover:enabled { background:transparent; text-decoration:underline; }
+    .timestamp:disabled { opacity:1; color:var(--muted); }
+    .speaker { color:var(--focus); font-size:11px; font-weight:750; margin-bottom:5px; overflow-wrap:anywhere; }
+    .speaker[data-speaker="SPEAKER_01"] { color:#c2410c; } :root[data-theme="dark"] .speaker[data-speaker="SPEAKER_01"] { color:#fb923c; }
+    .speaker[data-speaker="SPEAKER_02"] { color:var(--good); }
+    .speaker-code { color:var(--muted); font-size:9px; font-weight:500; margin-left:8px; }
+    .passage-text { font-size:14px; line-height:1.85; overflow-wrap:anywhere; white-space:pre-wrap; }
+    mark { color:var(--match-text); background:var(--match); border-radius:2px; }
+    .empty-reader { max-width:560px; margin:auto; padding:48px 26px; text-align:center; }
+    .empty-reader h2 { font-size:25px; letter-spacing:-.6px; margin:12px 0; }
+    .empty-reader p { color:var(--muted); font-size:13px; line-height:1.8; }
+    .empty-mark { margin:auto; width:52px; height:52px; display:grid; place-items:center; font:32px Georgia,serif; color:var(--focus); background:var(--subtle); border:1px solid var(--line); border-radius:15px; }
+    .empty-reader button { margin-top:20px; }
+    .player { flex:0 0 auto; background:var(--subtle); border-top:1px solid var(--line); padding:12px 28px 11px; }
+    .player-heading { display:flex; justify-content:space-between; flex-wrap:wrap; gap:3px 12px; font-size:10px; color:var(--muted); }
+    .player-main { display:flex; align-items:center; gap:10px; margin:9px 0; }
+    #play-toggle { min-width:57px; }
+    #seek { accent-color:var(--focus); min-width:50px; width:100%; border:0; padding:0; min-height:26px; }
+    .player-time { font-size:11px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .player-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    .tool-group { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .player-tools button,.player-tools select { min-height:29px; font-size:10px; padding:4px 8px; }
+    .player-status { min-height:16px; color:var(--muted); font-size:10px; margin-top:7px; }
+    .unavailable-audio { margin-top:8px; padding:9px 12px; border:1px dashed var(--strong); border-radius:7px; font-size:11px; color:var(--muted); }
+    .creation { min-height:0; flex:1; overflow:auto; padding:28px 34px 40px; }
+    .creation-inner { max-width:710px; margin:0 auto; }
+    .flow-step { font-size:11px; color:var(--muted); margin:13px 0 24px; }
+    .flow-step strong { color:var(--text); font-weight:650; }
+    .creation-card { border:1px solid var(--line); border-radius:10px; background:var(--surface); padding:24px; margin-top:22px; }
+    .creation-card h2 { font-size:19px; font-weight:650; letter-spacing:-.3px; margin-bottom:10px; }
+    .creation-card p { font-size:12px; color:var(--muted); line-height:1.75; }
+    .choice-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:22px; }
+    .choice-card { padding:22px 18px; text-align:left; border-color:var(--line); }
+    .choice-card strong { display:block; font-size:16px; font-weight:650; }
+    .choice-card span { display:block; font-size:12px; font-weight:400; color:var(--muted); line-height:1.7; margin-top:8px; }
+    .form-field { margin:18px 0; } .form-field label { display:block; font-size:11px; color:var(--muted); font-weight:600; margin-bottom:6px; }
+    .form-field input,.form-field select { width:100%; font-size:13px; min-height:40px; }
+    .preflight { padding:13px 15px; margin:18px 0; border:1px solid var(--line); border-radius:8px; background:var(--subtle); }
+    .preflight p { display:flex; justify-content:space-between; gap:12px; font-size:11px; margin:4px 0; }
+    .preflight p span:last-child { color:var(--good); }
+    .meter { display:flex; align-items:end; height:34px; gap:3px; margin-top:10px; }
+    .meter span { width:5px; border-radius:2px; height:8px; background:var(--good); opacity:.8; }
+    .level-caption { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:5px; }
+    .card-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; }
+    .card-actions button { min-height:38px; }
+    .recording-clock { font-size:52px; font-variant-numeric:tabular-nums; font-weight:550; letter-spacing:-2px; line-height:1.2; margin:16px 0; }
+    .recording-label { color:var(--record); font-size:12px; font-weight:700; }
+    .recording-label::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--record); margin-right:8px; }
+    .file-card { background:var(--subtle); border:1px solid var(--line); border-radius:8px; padding:14px 15px; margin:18px 0; }
+    .file-card strong { display:block; font-size:13px; overflow-wrap:anywhere; }
+    .file-card span { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
+    .cloud-boundary { border-top:1px solid var(--line); padding-top:17px; margin-top:20px; }
+    .cloud-boundary h3 { font-size:13px; margin-bottom:8px; }
+    .job-status { display:flex; gap:12px; align-items:center; margin:20px 0; padding:15px; border-radius:8px; background:var(--subtle); }
+    .job-status strong { font-size:13px; }
+    .progress-line { width:100%; height:5px; margin-top:10px; border-radius:5px; background:var(--line); overflow:hidden; }
+    .progress-line span { display:block; width:44%; height:100%; background:var(--focus); }
+    .state-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:50%; border:1px solid var(--line); font-size:20px; color:var(--focus); flex:0 0 auto; }
+    .check-list { padding:0; margin:16px 0 0; list-style:none; color:var(--muted); font-size:12px; }
+    .check-list li { padding:4px 0; }
+    .check-list li::before { content:"✓"; color:var(--good); margin-right:9px; }
+    dialog { width:min(530px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); color:var(--text); background:var(--surface); border:1px solid var(--strong); border-radius:12px; padding:25px; box-shadow:var(--shadow); overflow:auto; }
+    dialog::backdrop { background:#10121688; }
+    dialog h2 { font-size:20px; letter-spacing:-.4px; margin-bottom:11px; }
+    dialog p { font-size:13px; color:var(--muted); line-height:1.75; }
+    dialog .card-actions { justify-content:flex-end; }
+    .dialog-preview { border:1px solid var(--line); border-radius:8px; padding:16px; margin:16px 0; }
+    .dialog-preview h3 { font-size:16px; margin-bottom:10px; }
+    .dialog-preview .small { margin-top:10px; }
+    .toast { position:fixed; z-index:30; bottom:18px; left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100vw - 32px); padding:12px 18px; border:1px solid var(--strong); border-radius:9px; background:var(--surface); color:var(--text); box-shadow:var(--shadow); font-size:12px; }
+    @media (min-width:1500px) { .reader-header { padding-inline:42px; } .passages { padding-inline:34px; } .player { padding-inline:40px; } }
+    @media (max-width:1000px) { .reader-header { padding:20px 22px 13px; } .version-row { align-items:flex-start; } .version-control { flex-direction:column; align-items:flex-start; gap:4px; } #version-select { max-width:100%; width:100%; } .transcript-tools { flex-wrap:wrap; } #speaker-filter { max-width:100%; } .passages { padding-inline:10px; } .player { padding-inline:20px; } .creation { padding:24px; } .proposal { padding-inline:16px; } }
+    @media (max-width:760px) {
+      .proposal { padding:9px 13px; } .proposal-title { font-size:11px; } .proposal-top { gap:7px; } .preview-tools { gap:6px; width:100%; } .preview-tools label { display:none; } .preview-tools select { flex:1; width:90px; max-width:none; } .preview-tools button { font-size:9px; }
+      .app { min-height:500px; } .appbar { padding:11px 14px; min-height:59px; } .brand { font-size:12px; gap:7px; } .brand-mark { width:26px; height:26px; } .local-badge { display:none; } .appbar-actions { gap:6px; } #theme-toggle { padding:5px 8px; font-size:10px; min-height:31px; } #mobile-library { display:block; min-height:31px; padding:5px 8px; font-size:10px; }
+      .workspace { display:block; position:relative; min-height:0; } .library { position:absolute; z-index:10; inset:0; border-right:0; display:none; } .workspace[data-library-open="true"] .library { display:flex; } .workspace[data-library-open="true"] .reader { visibility:hidden; } .reader { height:100%; }
+      .library-head { padding:17px 18px 11px; } .filter-grid { grid-template-columns:repeat(4,1fr); } .filter-grid button { font-size:9px; padding-inline:3px; } .filter-description { min-height:15px; } .meeting-row { padding:11px; } .library-footer { padding:10px 20px; }
+      .reader-header { padding:18px 17px 12px; } h1 { font-size:23px; } .eyebrow { font-size:8px; } .meeting-meta { font-size:10px; gap:3px 10px; } .version-row { margin-top:12px; gap:8px; } .version-control { flex:1; } .version-control label { font-size:10px; } #version-select { font-size:10px; min-height:32px; } .export-menu summary { font-size:10px; padding:6px 8px; } .transcript-tools { margin-top:12px; gap:6px; } .find-box { flex-basis:100%; } #speaker-filter { flex:1; } .transcript-summary { font-size:9px; margin-top:7px; } .notice { font-size:10px; padding:7px 9px; margin-top:9px; }
+      .passages { padding:10px 7px 20px; } .passage { grid-template-columns:39px minmax(0,1fr); gap:8px; padding:11px 8px; } .passage-text { font-size:13px; line-height:1.8; } .speaker { font-size:10px; } .speaker-code { font-size:8px; margin-left:5px; } .timestamp { font-size:10px; } .ordinal { font-size:8px; }
+      .player { padding:10px 15px; } .player-heading { font-size:9px; } .player-main { gap:7px; margin:7px 0; } #play-toggle { min-width:49px; font-size:10px; padding:5px 7px; } .player-time { font-size:10px; } .player-tools { gap:5px; } .tool-group { gap:4px; } .player-tools button,.player-tools select { font-size:9px; padding:3px 6px; min-height:27px; } .player-status { font-size:9px; margin-top:5px; }
+      .creation { padding:20px 16px 30px; } .creation-card { padding:18px; margin-top:17px; } .creation-card h2 { font-size:18px; } .choice-grid { grid-template-columns:1fr; gap:9px; } .choice-card { padding:17px; } .choice-card strong { font-size:15px; } .choice-card span { margin-top:4px; } .flow-step { font-size:10px; margin:10px 0 20px; } .recording-clock { font-size:45px; }
+    }
+    @media (max-height:680px) and (min-width:761px) { .app { min-height:480px; } .reader-header { padding-block:15px 11px; } h1 { font-size:24px; } .version-row { margin-top:9px; } .transcript-tools { margin-top:10px; } .player { padding-block:9px; } }
+    @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto!important; } }
+
+    /* Study variant: keep original fixture/workflow behavior; change disclosure only. */
+    .reader>.player{margin-top:auto}
+    .proposal {padding:5px 14px}.proposal-top{gap:4px 16px}.proposal-title{font-size:10px}.proposal-caption,.preview-tools label{display:none}.preview-tools select{min-height:26px;font-size:10px;max-width:215px}.preview-tools button{min-height:26px}.proposal-details{margin-top:1px;font-size:11px;max-width:1180px}.proposal-details summary{font-size:10px}
+    .study-notes{max-height:65vh;overflow:auto;padding:14px!important;opacity:1!important;background:var(--surface);color:var(--text);border-radius:8px;margin-top:8px}.study-notes h2{font-size:21px;margin-bottom:12px}.study-notes h3{font-size:15px;margin:20px 0 8px}.study-notes p{margin:10px 0!important;font-size:12px}.study-notes a{color:var(--focus)}.study-notes table{border-collapse:collapse;width:100%;font-size:11px}.study-notes th,.study-notes td{padding:9px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+    .app{min-height:440px}.appbar{min-height:56px;padding:8px 18px;gap:14px}.brand{gap:8px;min-width:0;flex:1}.brand-mark,.local-badge,.brand>span:not(.study-future-title){display:none}.study-future-title{font-size:15px}.appbar #meeting-title{font-size:19px;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:100%;line-height:1.45}.appbar-actions{gap:6px}.appbar-actions button,.appbar-actions summary{min-height:32px;font-size:11px}.appbar #mobile-library,#theme-toggle{display:none!important}
+    .workspace{grid-template-columns:260px minmax(0,1fr)}.workspace.study-library-hidden{grid-template-columns:minmax(0,1fr)}.workspace.study-library-hidden>.library{display:none}
+    .library-head{padding:15px 14px 10px}.library-heading{margin-bottom:9px}.library-heading h2{font-size:16px}.folder{margin-bottom:9px}.folder summary{padding:5px 8px;min-height:30px}.field-label[for=library-search]{display:none}#library-search{min-height:34px}.filter-grid,.filter-description,#new-meeting{display:none!important}.study-library-filter{display:flex;align-items:center;gap:7px;margin-top:7px;font-size:11px;color:var(--muted)}.study-library-filter select{min-height:30px;flex:1}.library-footer{font-size:10px;padding:8px 15px}.meeting-row{padding:9px 9px;margin:1px 0}.meeting-name{font-size:12px;font-weight:650}.row-meta{margin-top:3px;gap:2px;font-size:10px}.row-meta>span:last-child{display:none}.meeting-status{font-size:10px;margin-top:2px}
+    .reader-header{padding:0 24px;border-bottom:0}.reader-header>.eyebrow{display:none}.study-details{padding:14px 0;border-bottom:1px solid var(--line)}.meeting-meta{margin-top:0;font-size:11px}.version-row{margin-top:9px}.version-control{flex:1;flex-direction:row;align-items:center}.version-control label{font-size:11px}#version-select{max-width:100%;flex:1}.notice{margin:10px 0;padding:8px 10px;font-size:11px}.study-find{padding:10px 0;border-bottom:1px solid var(--line)}.transcript-tools{margin-top:0}.transcript-summary{margin-top:5px}.study-find-close{margin-left:auto}.study-active{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;padding:8px 0}.study-active:empty{display:none}.study-active button{min-height:26px;font-size:10px;padding:3px 8px}.study-version{font-size:11px;color:var(--warning);padding:7px 0}.study-version:empty{display:none}
+    .passages{padding:14px 24px 24px}.passage{max-width:860px;grid-template-columns:44px minmax(0,1fr);gap:13px;padding:12px 10px}.passage-text{font-size:15px;line-height:1.85}.speaker{font-size:11px}.ordinal{display:block;font-size:9px}.speaker-code{font-size:9px}.library-footer{display:none}.study-active .study-filter-chip{background:var(--subtle);border-color:var(--strong);font-size:11px;min-height:28px;padding:4px 9px}.study-has-attempt .empty-reader{margin:18px auto;padding:12px 24px;text-align:left;width:100%;max-width:760px}.study-has-attempt .empty-reader .empty-mark{display:none}.study-has-attempt .empty-reader h2{font-size:16px;letter-spacing:0}.study-has-attempt .empty-reader p{font-size:12px}
+    .player{padding:9px 20px;position:relative}.player-heading{display:none}.player-main{margin:0;gap:9px}.player-time{font-size:11px}.player-main #back-ten{min-height:32px;padding:4px 7px;font-size:10px}.player-main #play-toggle{min-height:32px;min-width:50px}.player-main #seek{flex:1}.player-status{margin-top:5px;min-height:15px;font-size:10px}.study-listening{position:relative;flex:0 0 auto}.study-listening summary{cursor:pointer;list-style:none;border:1px solid var(--strong);border-radius:7px;padding:5px 9px;min-height:32px;font-size:11px;white-space:nowrap}.study-listening summary::-webkit-details-marker{display:none}.study-listening[open]>#player-tools{position:absolute;right:0;bottom:42px;width:280px;background:var(--surface);border:1px solid var(--strong);border-radius:9px;box-shadow:var(--shadow);padding:12px;z-index:15}.study-listening #player-tools .tool-group{gap:8px}.study-listening #player-tools button,.study-listening #player-tools select{font-size:11px;min-height:32px}.unavailable-audio{margin-top:0;padding:8px 10px}.study-menu{position:relative}.study-menu>summary{list-style:none;cursor:pointer;border:1px solid var(--strong);border-radius:8px;padding:5px 10px;font-size:13px;min-width:35px;text-align:center}.study-menu>summary::-webkit-details-marker{display:none}.study-menu-body{position:absolute;top:39px;right:0;z-index:20;min-width:210px;background:var(--surface);border:1px solid var(--strong);box-shadow:var(--shadow);border-radius:9px;padding:7px}.study-menu-body button{display:block;width:100%;text-align:left;border-color:transparent;font-size:12px;min-height:35px}.export-menu{display:none!important}#global-new{font-size:11px;white-space:nowrap}.empty-reader{padding:24px}.creation{padding:24px}.creation-inner{max-width:710px}
+    @media(max-width:1000px){.appbar #meeting-title{font-size:17px}.passages{padding-inline:12px}.reader-header{padding-inline:18px}.player{padding-inline:15px}}
+    @media(max-width:760px){.proposal{padding:4px 10px}.proposal-top{gap:3px}.proposal-title{font-size:9px}.preview-tools{width:auto;gap:4px;flex-wrap:nowrap}.preview-tools select{max-width:none;width:100px;flex:1;min-height:25px;font-size:9px}#preview-close{display:none}.appbar{padding:8px 10px;min-height:52px;gap:7px}.appbar #meeting-title{font-size:15px}.appbar-actions{gap:4px}.appbar-actions button{font-size:10px;padding:4px 7px}.workspace,.workspace.study-library-hidden{display:block}.workspace.study-library-hidden>.library{display:none}.workspace[data-library-open=true]>.library{display:flex}.workspace[data-library-open=true]>.reader{visibility:hidden}.reader-header{padding-inline:14px}.study-library-filter select{max-width:100%}.version-control{flex-direction:column;align-items:stretch}.version-control label{font-size:10px}.passage-text{font-size:14px;line-height:1.8}.passage{grid-template-columns:37px minmax(0,1fr);padding:10px 5px;gap:7px}.passages{padding:10px 9px 20px}.player{padding:9px 12px}.player-main{flex-wrap:wrap;gap:6px}.player-main #seek{min-width:130px}.study-listening summary{font-size:10px;padding:5px 7px}.study-listening[open]>#player-tools{right:0;width:260px}.study-notes{max-height:60vh}.study-notes table{font-size:10px}.study-notes th,.study-notes td{padding:6px}.creation{padding:20px 15px}.player-status{font-size:10px}.study-future-title{font-size:13px}}
+
+  </style>
+</head>
+<body>
+  <section class="proposal" aria-label="Proposal controls outside the application">
+    <div class="proposal-top">
+      <div>
+        <p class="proposal-title">Minimal layout study · synthetic data · no recording or uploads</p>
+        <p id="preview-caption" class="proposal-caption">READER SLICE · proposed organization of the existing local library and reader</p>
+      </div>
+      <div class="preview-tools">
+        <label for="preview-mode">Preview</label>
+        <select id="preview-mode" aria-label="Preview scope"><option value="reader">Reader slice only</option><option value="future">FUTURE meeting creation</option></select>
+        <label for="scenario">State</label>
+        <select id="scenario" aria-label="Direct state preview"></select>
+        <button id="advance-demo" type="button" hidden>Advance simulated operation</button>
+        <button id="preview-close" type="button">Preview app close</button>
+      </div>
+    </div>
+
+    <details class="proposal-details" id="proposal-rationale">
+      <summary>Research, Opus advice &amp; layout choices</summary>
+      <div class="study-notes">
+        <h2>Less chrome, one clear place for each task</h2>
+        <p>This is a design exploration, not a production update or a replacement approved specification. It reuses the previous proposal's synthetic meeting/workflow engine, with a presentation variant for comparing disclosure. All operations are simulated; no files, credentials, microphone, audio or provider are used.</p>
+        <h3>What the other products teach us</h3>
+        <table><thead><tr><th>Primary source</th><th>Documented pattern</th><th>Application here · design inference</th></tr></thead><tbody>
+          <tr><td><a href="https://support.apple.com/en-asia/guide/voice-memos/vm5b49792b0d/mac">Apple Voice Memos</a></td><td>A command shows or hides the sidebar. Its <a href="https://support.apple.com/en-ca/guide/voice-memos/vm4a03609f0d/4.0/mac/27">transcript control</a> switches the recording presentation.</td><td>Keep the library available, with a reversible collapse control, while preserving the selected recording.</td></tr>
+          <tr><td><a href="https://help.descript.com/descript-tour/view-menu">Descript</a></td><td>View controls hide panels and collapse the timeline; the remaining workspace expands.</td><td>Use a compact core player and reveal listening options together. Editing timelines and video panels add little to this reader.</td></tr>
+          <tr><td><a href="https://help.otter.ai/hc/en-us/articles/5093228433687-Conversation-Page-Overview">Otter</a></td><td>The documented conversation view separates Summary and Transcript, with audio playback in the transcript context and secondary collaboration panels.</td><td>Make reading/listening the main workspace. Chat, summary and collaboration panels are outside this app's current purpose.</td></tr>
+          <tr><td><a href="https://rogueamoeba.com/support/manuals/audiohijack/?page=sidebarcontrols">Audio Hijack</a></td><td>A recordings list offers playback/actions; a separate inspector exposes full recording details.</td><td>Keep Added date and saved versions in Details; keep the library path in its folder menu. Preserve urgent status in the workspace.</td></tr>
+          <tr><td><a href="https://thewh1teagle.github.io/vibe/">Vibe</a></td><td>The official promotional UI depicts recents alongside transcript content and a compact player.</td><td>Borrow the simple list/content/transport hierarchy. This is a marketing example, not hands-on verification of its installed UI or transcription quality.</td></tr>
+        </tbody></table>
+        <p>The sources above are official documentation/promotional examples checked on 31 October 2026, not a hands-on trial of every app. Otter's cited article is dated May 2024. The general <a href="https://www.nngroup.com/articles/progressive-disclosure/">progressive disclosure principle</a> is to expose common actions first, label secondary groups clearly, and avoid deep layers of controls.</p>
+        <h3>Opus 5.5 / high consultation</h3>
+        <p>One fresh Claude Code context ran on Windows as <code>claude-opus-5-5</code>, effort <code>high</code>, through the authenticated subscription. It read the synthetic proposal and captures. It confirmed the heavy header/player and recommended a collapsible library, slim toolbar, compact transport, on-demand Find, and activity/warning visibility. Its web fetches were denied, so the product-source research here was independently checked by the lead. This is advisory input, not certification of this new study.</p>
+        <p><strong>Lead adjustments:</strong> the raw saved-version dropdown lives in Details, with the selected non-default version pinned above the text. Jump remains a distinct action in Listening. Critical playback feedback wraps instead of being truncated. Added strings keep their supplied meaning and format; no new duration, participant count or recording date is invented. Opus also inspected the new study and captures: its feedback restored visible passage numbers, aligned filter chips with canonical speaker IDs, made filters individually removable, and gave unresolved-attempt review the primary emphasis. These changes were checked in the prototype, not certified as production behavior.</p>
+        <h3>Recommended hierarchy</h3>
+        <table><thead><tr><th>Group</th><th>Default</th><th>What opens</th></tr></thead><tbody>
+          <tr><td>Library</td><td>Open on wide; one-pane navigation on narrow. Title search and one Show select.</td><td>Library button collapses/restores it. Folder menu holds full path, Choose and Refresh.</td></tr>
+          <tr><td>Reading</td><td>Title, transcript and audio transport.</td><td>Find opens one shelf for text, match navigation and speaker. Closing the shelf keeps visible filter chips with Clear.</td></tr>
+          <tr><td>Details</td><td>Closed.</td><td>Added, exact selected status and saved-version selector. A non-default version keeps a visible label when closed.</td></tr>
+          <tr><td>Listening</td><td>Play, back ten seconds, position and seek remain visible.</td><td>One disclosure groups speed, Follow and Jump. Its closed label shows non-default speed/Follow. Gap, hidden-playing and audio-error feedback stay visible.</td></tr>
+          <tr><td>Meeting actions</td><td>More menu.</td><td>Open the selected saved HTML and change theme. Historical HTML-only fallback keeps its primary Open saved HTML action.</td></tr>
+          <tr><td>Creation · future</td><td>New opens Record room or Import. Each screen has one main next action.</td><td>Microphone selection and input check belong before capture. Stop &amp; save, elapsed recording, validation/cancellation and unresolved warnings remain in the main workspace. The upload disclosure stays beside Upload &amp; transcribe.</td></tr>
+        </tbody></table>
+        <h3>Credible alternatives</h3>
+        <p><strong>A · Collapsible library + document reader (recommended).</strong> Quick meeting switching, maximum reading space when needed, three clear secondary groups. <strong>B · Library home → full reader.</strong> Simpler on small windows, but more back-and-forth between meetings; use this on narrow windows. <strong>C · Permanent inspector.</strong> Immediate metadata visibility, but it consumes width and invites more panels than this personal app needs.</p>
+        <p><strong>Collapse rules:</strong> hide presentation, preserve the meeting and playback. Never silently clear a filter, change a selected version, imply remote cleanup succeeded, or hide the only stop/cancel/recovery control. Disclosure state is session-only in this sketch. No resizable splitter, saved layout schema, new transcript grouping or automatic follow is proposed.</p>
+        <p>Try Library, Find, Details, Listening, an active search with Find closed, a non-default saved version, and missing-audio/uncertain-upload states. The external State control still provides the previous proposal's synthetic future flow. Presentation interaction checks do not prove native media, persisted recovery or provider behavior. <a href="meeting-transcriber-gui-proposal.html">Previous reviewed workflow proposal</a> · <a href="meeting-transcriber-desktop-plan.html#next-priorities">Project delivery page</a>.</p>
+      </div>
+    </details>
+  </section>
+  <div class="app" id="app-frame">
+    <header class="appbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">m</span><span>Meeting Transcriber</span><span class="local-badge">Local library</span></div>
+      <div class="appbar-actions"><button id="mobile-library" type="button" aria-expanded="false" aria-controls="library">Library · 10</button><button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button></div>
+    </header>
+    <main class="workspace" id="workspace" data-library-open="false">
+      <aside class="library" id="library" aria-label="Meeting library">
+        <div class="library-head">
+          <div class="library-heading"><h2>Library</h2><span class="count" id="meeting-count">10</span></div>
+          <button id="new-meeting" class="primary" type="button" hidden>+ New meeting</button>
+          <details class="folder" id="folder-details">
+            <summary><span>▱ &nbsp; Transcriptions</span><span aria-hidden="true">⌄</span></summary>
+            <div class="folder-panel">
+              <p class="muted">Library folder</p><p class="folder-path">C:\Demo\Meetings\Transcriptions</p>
+              <p class="muted">Recordings and transcripts stay in this folder.</p>
+              <div class="folder-actions"><button id="choose-library" type="button">Choose library</button><button id="refresh-library" type="button">Refresh</button></div>
+              <p class="muted" style="margin-top:9px">Proposal simulation · no folder picker or filesystem access.</p>
+            </div>
+          </details>
+          <label class="field-label" for="library-search">Search meeting titles</label>
+          <input id="library-search" type="search" placeholder="Find a title…" autocomplete="off">
+          <div class="filter-grid" role="group" aria-label="Library filters">
+            <button type="button" data-filter="all" aria-pressed="true">All</button><button type="button" data-filter="transcripts" aria-pressed="false">Transcripts</button><button type="button" data-filter="audio" aria-pressed="false">Audio only</button><button type="button" data-filter="attention" aria-pressed="false">Needs attention</button>
+          </div>
+          <p class="filter-description" id="filter-description">All meeting folders, in their existing order.</p>
+        </div>
+        <nav class="meeting-list" id="meeting-list" aria-label="Meetings"></nav>
+        <footer class="library-footer">Local folder · recordings &amp; saved transcripts</footer>
+      </aside>
+      <section class="reader" id="reader" aria-label="Meeting reader">
+        <header class="reader-header" id="reader-header">
+          <p class="eyebrow" id="reader-eyebrow">Meeting transcript</p>
+          <h1 id="meeting-title" tabindex="-1"></h1>
+          <div class="meeting-meta"><span id="meeting-added"></span><span id="meeting-status"></span></div>
+          <div class="version-row" id="version-row">
+            <div class="version-control"><label for="version-select" id="version-label">Saved versions · 3</label><select id="version-select"></select></div>
+            <details class="export-menu" id="export-menu"><summary>Export ▾</summary><div class="export-panel"><button id="open-html" type="button">Open saved HTML ↗</button><p class="small muted" style="padding:3px 10px 6px">Uses this saved version.</p></div></details>
+          </div>
+          <p class="notice" id="reader-notice" hidden></p>
+          <div id="future-recording-actions" hidden>
+            <p class="notice" id="future-attempt-notice" hidden></p>
+            <div class="card-actions" style="margin-top:12px"><button id="transcribe-recording" type="button">Transcribe recording</button><button id="review-attempt" type="button" hidden>Review transcription attempt</button></div>
+          </div>
+          <div class="transcript-tools" id="transcript-tools">
+            <div class="find-box"><label class="sr-only" for="transcript-search">Find in this transcript</label><input id="transcript-search" type="search" placeholder="Find in this transcript…" autocomplete="off"><button type="button" id="find-previous" aria-label="Previous matching passage" title="Previous match · Shift+Enter">↑</button><button type="button" id="find-next" aria-label="Next matching passage" title="Next match · Enter">↓</button></div>
+            <select id="speaker-filter" aria-label="Filter transcript by speaker"></select>
+          </div>
+          <div class="transcript-summary" id="transcript-summary"><span id="find-status" role="status"></span><span>Language · EN</span></div>
+        </header>
+        <div id="passages" class="passages" aria-label="Transcript passages" tabindex="0"></div>
+        <div id="empty-reader" class="empty-reader" hidden></div>
+        <footer class="player" id="player">
+          <div class="player-heading"><span id="audio-label">Meeting recording</span><span id="audio-state">Playback simulation · no audio</span></div>
+          <div class="player-main" id="player-main"><button id="play-toggle" type="button" aria-label="Play simulated recording">Play</button><span id="current-time" class="player-time">0:12</span><input id="seek" type="range" min="0" max="200" step="0.1" value="12" aria-label="Simulated recording position"><span class="player-time" id="duration">3:20</span></div>
+          <div class="unavailable-audio" id="unavailable-audio" hidden></div>
+          <div class="player-tools" id="player-tools"><div class="tool-group"><button id="back-ten" type="button" aria-label="Back ten seconds">↶ 10 sec</button><select id="speed" aria-label="Simulated playback speed"><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></div><div class="tool-group"><button id="follow-toggle" type="button" aria-pressed="false">Follow off</button><button id="jump-playing" type="button">Jump to playing passage</button></div></div>
+          <p class="player-status" id="playing-status" role="status"></p>
+        </footer>
+        <div class="creation" id="creation" hidden></div>
+      </section>
+    </main>
+  </div>
+  <dialog id="dialog" aria-labelledby="dialog-title"><h2 id="dialog-title"></h2><div id="dialog-body"></div><div class="card-actions" id="dialog-actions"></div></dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script>
+  (() => {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const make = (tag, className, text) => { const e = document.createElement(tag); if(className) e.className = className; if(text !== undefined) e.textContent = text; return e; };
+    const names = { SPEAKER_00:'Alex Morgan', SPEAKER_01:'Jordan Lee', SPEAKER_02:'Alex Morgan' };
+    const rawSegments = [
+      [7,35,49,'SPEAKER_00','The decision is to keep the library close to the reader. We should be able to move between meetings without losing the context of the conversation.'],
+      [7,0,18,'SPEAKER_01','Let’s start with what we need to decide today. We have the reading experience, the local recording flow, and the handoff into transcription.'],
+      [19,10,28,'SPEAKER_00','I want the recording to be useful on its own. A room conversation should be saved locally before anyone makes a decision about sending it to the cloud.'],
+      [2,54,75,'SPEAKER_02','For the library, show the title first. The date, saved version count, and any status that needs attention can do the supporting work.'],
+      [31,90,111,'SPEAKER_01','There is a gap before this passage. Playback should not select a nearby sentence and imply that it is being spoken.'],
+      [7,108,126,'SPEAKER_00','Agreed. When two people overlap, both passages should stay identifiable. Filtering a speaker changes what we see, and the recording keeps playing.'],
+      [44,129,145,'SPEAKER_02','The saved versions need a clear home. We should be able to choose a previous transcript without wondering whether that changes the recording.'],
+      [45,146,164,'SPEAKER_01','One more decision: keep export available, but give the conversation the most visual space. The transcript is the reason I opened the meeting.'],
+      [46,166,183,'SPEAKER_00','Literal transcript text: <draft> & [follow-up]. Long reference: discussion-of-the-library-and-reading-experience-with-a-deliberately-long-reference.'],
+      [47,185,200,'SPEAKER_02','Let’s review the narrow window next, then check the states where a recording or a saved transcript cannot be opened.']
+    ];
+    // Canonical producer shape: id/start/end/text/speaker/words. Source position is identity.
+    const segments = rawSegments.map(([id,start,end,speaker,text]) => ({id,start,end,speaker,text,words:[{word:text.split(' ')[0],start,end:Math.min(end,start+.5),speaker,probability:.99}]}));
+    const version = (label,status='Transcript ready',kind='canonical') => ({label,status,kind});
+    const meetings = [
+      {id:'review',base:'20261031-130000-Product-review',title:'Product review · from decisions to next week’s reading experience',added:'October 31, 2026 at 1:00 PM',status:'Transcript ready',audio:'ready',runs:[version('20261031-133000'),version('20261031-131500'),version('20261030-160000')]},
+      {id:'audio',base:'20261031-120000-Room-discussion',title:'Room discussion',added:'October 31, 2026 at 12:00 PM',status:'Recording saved',audio:'ready',runs:[]},
+      {id:'cleanup',base:'20261030-160000-Planning',title:'Planning the next release across a distributed research and product team',added:'October 30, 2026 at 4:00 PM',status:'Transcript ready; remote cleanup unconfirmed',audio:'ready',runs:[version('20261030-164500','Transcript ready; remote cleanup unconfirmed'),version('20261030-163000')]},
+      {id:'missing',base:'20261029-110000-Field-visit',title:'Field visit debrief',added:'October 29, 2026 at 11:00 AM',status:'Transcript ready',audio:'missing',runs:[version('20261029-115000')]},
+      {id:'ambiguous',base:'20261028-150000-Team-review',title:'Team review',added:'October 28, 2026 at 3:00 PM',status:'Transcript ready',audio:'ambiguous',runs:[version('20261028-154500')]},
+      {id:'historical',base:'20261027-100000-Research',title:'Research retrospective',added:'October 27, 2026 at 10:00 AM',status:'Historical transcript',audio:'ready',runs:[version('20261027-110000','Historical transcript')]},
+      {id:'html',base:'20261026-090000-Workshop',title:'Workshop archive',added:'October 26, 2026 at 9:00 AM',status:'Saved HTML available',audio:'missing',runs:[version('20261026-103000','Saved HTML available','html')]},
+      {id:'unfinished',base:'20261025-140000-Interview',title:'Interview with the facilities team',added:'October 25, 2026 at 2:00 PM',status:'Unfinished recording',audio:'partial',runs:[]},
+      {id:'incomplete',base:'20261024-100000-Working-session',title:'Working session',added:'October 24, 2026 at 10:00 AM',status:'Transcript incomplete or unavailable',audio:'ready',runs:[]},
+      {id:'weekly',base:'20261023-110000-Weekly-planning',title:'Weekly planning',added:'October 23, 2026 at 11:00 AM',status:'Transcript ready',audio:'ready',runs:[version('20261023-120000')]}
+    ];
+    const filters = {
+      all: {description:'All meeting folders, in their existing order.',test:() => true},
+      transcripts:{description:'Meetings with an eligible saved transcript run, including saved historical HTML.',test:m => m.runs.length > 0},
+      audio:{description:'Meetings whose status is “Recording saved,” with no eligible saved transcript run.',test:m => m.status === 'Recording saved'},
+      attention:{description:'Cleanup unconfirmed, unfinished recording, or incomplete/unavailable transcript.',test:m => /cleanup unconfirmed|Unfinished recording|Transcript incomplete or unavailable/.test(m.status)}
+    };
+    const readerScenarios = [['review','Transcript · multiple saved versions'],['audio','Recording only'],['cleanup','Transcript · cleanup unconfirmed'],['missing','Transcript · missing audio'],['ambiguous','Transcript · ambiguous audio'],['historical','Historical transcript'],['html','Historical · saved HTML only'],['unfinished','Unfinished recording'],['incomplete','Transcript incomplete'],['empty','No meeting selected'],['empty-library','Empty library']];
+    const futureScenarios = [['new','New meeting · choose source'],['record','Record room · preflight'],['capturing','Recording · Stop & Save'],['permission','Microphone permission denied'],['device','Device error · partial retained'],['validating','Validating saved recording'],['validation-error','Validation error · partial retained'],['saved','Local recording saved'],['import','Import audio · selected file'],['ready','Ready to transcribe · setup ready'],['key-missing','Ready to transcribe · key missing'],['uploading','Cloud job · uploading'],['queued','Cloud job · queued'],['processing','Cloud job · transcribing'],['cancelling','Cloud job · cancelling'],['cancelled','Transcription cancelled'],['job-error','Transcription error'],['uncertain','Upload outcome unknown'],['complete','Transcript ready'],['cleanup-ready','Transcript ready · cleanup unconfirmed']];
+    const state = {mode:'reader',screen:'reader',selected:meetings[0],emptyLibrary:false,version:0,filter:'all',speaker:'all',query:'',matches:[],match:-1,time:12,playing:false,follow:false,lastFollow:null,speed:1,mobile:false,future:'new',futureMeeting:null,demoMeeting:null,draftTitle:'Room discussion',mic:'Built-in microphone',importSelected:false,keyReady:true,elapsed:0,closeAfterSave:false,afterSave:null,afterCancel:null,closeAfterJob:false};
+    let toastTimer,programmaticScroll=0,fixtureMeetingCount=0;
+    const attemptCopy = {
+      uncertain:{label:'Upload outcome unknown',message:'We cannot confirm whether the provider received this recording. Review the existing attempt before submitting again.'},
+      cancelled:{label:'Transcription cancelled · cleanup unconfirmed',message:'The local recording is retained. No transcript is ready from this attempt, and remote cleanup is unconfirmed.'},
+      'job-error':{label:'Transcription stopped · review needed',message:'This attempt did not produce a usable transcript. The local recording is retained; the attempt and remote cleanup need review.'}
+    };
+    function toast(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(() => $('toast').hidden=true,4300); }
+    function timestamp(n) { n=Math.max(0,Math.floor(n)); return `${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`; }
+    function ordinal(n) { return String(n+1).padStart(2,'0'); }
+    function currentRun() { return state.selected?.runs[state.version] || null; }
+    function hasTranscript() { return !!currentRun() && currentRun().kind !== 'html'; }
+    function mediaReady() { return !!state.selected && state.selected.audio === 'ready'; }
+    function visibleSegments() { const query=state.query.toLocaleLowerCase();return hasTranscript() ? segments.map((s,i) => ({segment:s,index:i})).filter(({segment:s}) => (state.speaker==='all'||s.speaker===state.speaker)&&(!query||s.text.toLocaleLowerCase().includes(query))) : []; }
+    function activeIndices() { return hasTranscript()&&mediaReady() ? segments.flatMap((s,i) => state.time>=s.start&&state.time<s.end?[i]:[]) : []; }
+    function adjustHeight() { document.documentElement.style.setProperty('--proposal-height',`${document.querySelector('.proposal').getBoundingClientRect().height}px`); }
+    new ResizeObserver(adjustHeight).observe(document.querySelector('.proposal'));
+    function setMobile(open,{restoreFocus=false}={}) { state.mobile=open; $('workspace').dataset.libraryOpen=String(open); $('mobile-library').textContent=open?'Back to meeting':`Library · ${state.emptyLibrary?0:meetings.length}`; $('mobile-library').setAttribute('aria-expanded',String(open));if(!open&&restoreFocus)$('mobile-library').focus({preventScroll:true}); }
+    function renderLibrary() {
+      const query=$('library-search').value.toLocaleLowerCase();
+      const total=state.emptyLibrary?0:meetings.length;
+      const rows=state.emptyLibrary?[]:meetings.filter(m=>filters[state.filter].test(m)&&m.title.toLocaleLowerCase().includes(query));
+      $('meeting-count').textContent=(state.filter!=='all'||query)?`${rows.length} / ${total}`:String(total);$('meeting-count').setAttribute('aria-label',`${rows.length} shown of ${total} meetings`);$('filter-description').textContent=filters[state.filter].description;
+      $('meeting-list').replaceChildren();
+      for(const m of rows) {
+        const row=make('button','meeting-row'); row.type='button'; row.dataset.meeting=m.id; row.setAttribute('aria-pressed',String(state.selected===m&&state.screen==='reader'));
+        row.append(make('span','meeting-name',m.title));
+        const meta=make('span','row-meta'); meta.append(make('span','',`Added ${m.added}`),make('span','',`${m.runs.length} ${m.runs.length===1?'run':'runs'}`));
+        const status=make('span',`meeting-status${filters.attention.test(m)?' attention':''}`,m.status);
+        row.append(meta,status);if(state.mode==='future'&&m.futureAttempt)row.append(make('span','meeting-status attention',attemptCopy[m.futureAttempt].label));row.addEventListener('click',()=>navigateMeeting(m)); $('meeting-list').append(row);
+      }
+      if(!rows.length) $('meeting-list').append(make('p','library-empty',state.emptyLibrary?'No meetings in this library. Choose a library or refresh after adding a meeting folder.':'No meeting titles match these filters.'));
+      document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===state.filter)));
+      if(!state.mobile) $('mobile-library').textContent=`Library · ${total}`;
+    }
+    function fillScenarios() {
+      const options=[...(state.mode==='reader'?readerScenarios:futureScenarios)];
+      if(state.mode==='future')options.push(['browse','Library & recording reader']);
+      if(state.mode==='reader'&&state.selected&&!options.some(([id])=>id===state.selected.id))options.push([state.selected.id,'Newly created meeting']);
+      $('scenario').replaceChildren(...options.map(([value,label])=>{const o=make('option','',label);o.value=value;return o;}));
+      $('scenario').value=state.mode==='reader'?(state.emptyLibrary?'empty-library':state.selected?.id||'empty'):state.screen==='reader'?'browse':state.future;
+    }
+    function syncMode() {
+      $('preview-mode').value=state.mode; $('new-meeting').hidden=state.mode!=='future';
+      $('preview-caption').textContent=state.mode==='reader'?'READER SLICE · proposed organization of the existing local library and reader':'FUTURE · interaction design only · backend, native capture and job behavior pending';
+      fillScenarios(); renderLibrary();
+    }
+    function setReader(meeting) {
+      state.selected=meeting;state.emptyLibrary=false; state.version=0; state.speaker='all';state.query='';state.match=-1;state.time=12;state.playing=false;state.follow=false;state.lastFollow=null;
+      $('transcript-search').value=''; $('speed').value='1';state.speed=1;
+      state.screen='reader';syncMode();setMobile(false);renderReader();$('passages').scrollTop=0;
+    }
+    function setEmptyLibrary(){setReader(null);state.emptyLibrary=true;syncMode();renderReader();}
+    function navigateMeeting(m) {
+      const fromMobileLibrary=state.mobile&&matchMedia('(max-width:760px)').matches;
+      const openMeeting=()=>{setReader(m);if(fromMobileLibrary)$('meeting-title').focus({preventScroll:true});};
+      if(state.mode==='future'&&state.screen==='creation'&&state.future==='capturing') {captureNavigationDialog(openMeeting);return;}
+      if(state.mode==='future'&&state.screen==='creation'&&['uploading','queued','processing'].includes(state.future)) {jobNavigationDialog(openMeeting);return;}
+      if(state.mode==='future'&&state.screen==='creation'&&['cancelling','validating'].includes(state.future)) {previewClose();return;}
+      openMeeting();
+    }
+    function setEmpty(title,text,buttonLabel,action) {
+      const wrap=$('empty-reader');wrap.replaceChildren();wrap.append(make('div','empty-mark','≋'),make('h2','',title),make('p','',text));
+      if(buttonLabel) {const b=make('button','',buttonLabel);b.type='button';b.onclick=action;wrap.append(b);}
+    }
+    function renderReader() {
+      $('creation').hidden=true; $('reader-header').hidden=!state.selected;$('player').hidden=!state.selected;$('passages').hidden=!hasTranscript();$('empty-reader').hidden=hasTranscript();
+      $('advance-demo').hidden=true;$('future-recording-actions').hidden=true;
+      if(!state.selected) {if(state.emptyLibrary)setEmpty('Your library is empty.','Choose a folder with saved meetings, or refresh after adding a meeting folder.','Choose library',()=>openDialog('Choose library · simulation','A native folder picker would open here. No files are accessed in this proposal. Leave the Empty library state to restore the synthetic meeting list.',[{label:'Done',primary:true}]));else setEmpty('Open a meeting. Pick up the conversation.','Choose a saved meeting from your library to read a transcript or hear its recording.');return;}
+      const m=state.selected;const run=currentRun();
+      $('meeting-title').textContent=m.title; $('meeting-added').textContent=`Added ${m.added}`;
+      $('meeting-status').textContent=run?.status||m.status; $('meeting-status').classList.toggle('warning',/cleanup|Historical|HTML|Unfinished|incomplete/.test(run?.status||m.status));
+      $('reader-eyebrow').textContent=run?'Meeting transcript':'Meeting recording';
+      $('version-row').hidden=!run; $('version-label').textContent=`Saved versions · ${m.runs.length}`;
+      $('version-select').replaceChildren(...m.runs.map((r,i)=>{const o=make('option','',`${r.label} · ${r.status}`);o.value=String(i);return o;})); $('version-select').value=String(state.version);
+      let message='';
+      if((run?.status||m.status).includes('cleanup unconfirmed')) message='This transcript is saved and usable locally. Remote cleanup is unconfirmed. Use the existing cleanup or support route to check it; opening this view does not retry transcription.';
+      else if(m.id==='historical') message='Historical transcript · read the saved version as it is. Its original transcript and saved HTML remain unchanged.';
+      else if(m.id==='html') message='Historical saved HTML is available. This version cannot be shown in the structured reader; open its saved HTML to read it.';
+      else if(m.audio==='partial') message='Unfinished recording · partial audio is retained. It has not passed validation and is not marked as a finished recording.';
+      else if(m.status.includes('incomplete')) message='This meeting has no eligible saved transcript run. Its local recording remains available.';
+      $('reader-notice').textContent=message; $('reader-notice').hidden=!message;
+      if(state.mode==='future'&&(m.futureAttempt||(m.audio==='ready'&&!m.runs.length))){
+        $('future-recording-actions').hidden=false;$('future-attempt-notice').hidden=!m.futureAttempt;
+        $('future-attempt-notice').textContent=m.futureAttempt?`${attemptCopy[m.futureAttempt].label}. ${attemptCopy[m.futureAttempt].message} No new upload is offered until this attempt is reviewed.`:'';
+        $('transcribe-recording').hidden=!!m.futureAttempt;$('review-attempt').hidden=!m.futureAttempt;
+      }
+      $('transcript-tools').hidden=!hasTranscript();$('transcript-summary').hidden=!hasTranscript();
+      if(hasTranscript()) {
+        const labels=[...new Set(segments.map(s=>s.speaker))];
+        $('speaker-filter').replaceChildren(...[['all','All speakers'],...labels.map(s=>[s,`${names[s]} · ${s.replace('SPEAKER_','Speaker ')}`])].map(([value,label])=>{const o=make('option','',label);o.value=value;return o;}));$('speaker-filter').value=state.speaker;
+        renderPassages();
+      } else if(run?.kind==='html') setEmpty('Read the saved HTML.','The historical export is still available even though this version cannot be rendered here.','Open saved HTML ↗',openHtml);
+      else if(m.audio==='partial') setEmpty('The partial recording is still here.','It must be validated before playback or transcription. No finished recording or transcript is claimed.');
+      else setEmpty('Your recording is ready.','Listen here whenever you need it. This meeting has no saved transcript yet.');
+      renderPlayer();
+    }
+    function appendMarked(parent,text,query) {
+      if(!query) {parent.textContent=text;return;}
+      const lower=text.toLocaleLowerCase();let start=0;let index;
+      while((index=lower.indexOf(query,start))!==-1) {parent.append(document.createTextNode(text.slice(start,index)),make('mark','',text.slice(index,index+query.length)));start=index+query.length;}
+      parent.append(document.createTextNode(text.slice(start)));
+    }
+    function renderPassages() {
+      const visible=visibleSegments();const q=state.query.toLocaleLowerCase();
+      state.matches=q?visible.map(x=>x.index):[];
+      if(!state.matches.length||state.match>=state.matches.length)state.match=-1;
+      $('passages').replaceChildren();
+      for(const {segment:s,index:i} of visible) {
+        const article=make('article','passage');article.id=`passage-${i}`;article.dataset.ordinal=String(i);article.setAttribute('aria-label',`Passage ${i+1}, ${names[s.speaker]}, ${timestamp(s.start)}`);
+        const rail=make('div','passage-rail');rail.append(make('span','ordinal',`#${ordinal(i)}`));
+        const time=make('button','timestamp',timestamp(s.start));time.type='button';time.disabled=!mediaReady();time.setAttribute('aria-label',`Seek to ${timestamp(s.start)}, passage ${i+1}`);time.onclick=e=>{e.stopPropagation();seek(s.start,true);};rail.append(time);
+        const body=make('div');const speaker=make('p','speaker',names[s.speaker]);speaker.dataset.speaker=s.speaker;speaker.append(make('span','speaker-code',s.speaker));
+        const text=make('p','passage-text');appendMarked(text,s.text,q);body.append(speaker,text);article.append(rail,body);article.onclick=()=>{if(!window.getSelection()?.isCollapsed)return;seek(s.start,true);};$('passages').append(article);
+      }
+      if(!visible.length) $('passages').append(make('p','library-empty','No passages match. Try another search or choose All speakers.'));
+      const matchText=q?(state.matches.length?`${state.match<0?'':`${state.match+1} of `}${state.matches.length} matching passages · wraps · ${visible.length} of ${segments.length} shown`:`No matching passages · 0 of ${segments.length} shown`): `${visible.length} of ${segments.length} passages`;
+      $('find-status').textContent=matchText;$('find-previous').disabled=!state.matches.length;$('find-next').disabled=!state.matches.length;
+      updateActive();
+    }
+    function scrollPassage(index) {const row=$('passage-'+index);if(!row)return;const viewport=$('passages');const token=++programmaticScroll;const bounds=row.getBoundingClientRect();const outer=viewport.getBoundingClientRect();viewport.scrollTop+=bounds.top-outer.top-(viewport.clientHeight-bounds.height)/2;requestAnimationFrame(()=>requestAnimationFrame(()=>{if(programmaticScroll===token)programmaticScroll=0;}));}
+    function releaseFollow(){if(!state.follow)return;state.follow=false;state.lastFollow=null;renderPlayer();}
+    function moveMatch(direction) { if(!state.matches.length)return;state.match=state.match<0?(direction<0?state.matches.length-1:0):(state.match+direction+state.matches.length)%state.matches.length;renderPassages();scrollPassage(state.matches[state.match]); }
+    function updateActive() {
+      const active=activeIndices();const visible=new Set(visibleSegments().map(x=>x.index));const shown=active.filter(i=>visible.has(i));
+      document.querySelectorAll('.passage').forEach(n=>{const i=Number(n.dataset.ordinal);n.classList.toggle('active',active.includes(i));n.classList.toggle('current-match',i===state.matches[state.match]);});
+      $('jump-playing').disabled=!shown.length||!mediaReady();
+      if(!mediaReady()) $('playing-status').textContent=hasTranscript()?'Reading and search remain available. Playback and timestamp seeking are unavailable.':'No playable finalized recording is available.';
+      else if(!hasTranscript()) $('playing-status').textContent='The local recording can be played without a transcript.';
+      else if(!active.length) $('playing-status').textContent='No timed passage at this position · the recording is in a gap.';
+      else {
+        const hidden=active.length-shown.length;
+        $('playing-status').textContent=shown.length?`Timed ${shown.length===1?'passage':'passages'} ${shown.map(ordinal).join(', ')} visible${hidden?` · ${hidden} hidden by filters`:''}${state.follow?' · Follow on':''}`:`All ${active.length} timed ${active.length===1?'passage is':'passages are'} hidden by the transcript filters.`;
+      }
+      if(state.follow&&shown.length&&state.lastFollow!==shown[0]) {scrollPassage(shown[0]);state.lastFollow=shown[0];}
+    }
+    function renderPlayer() {
+      const ready=mediaReady(); $('player-main').hidden=!ready;$('player-tools').hidden=!ready;$('unavailable-audio').hidden=ready;
+      const m=state.selected;
+      $('audio-state').textContent=ready?'Playback simulation · no audio':m?.audio==='ambiguous'?'Audio ambiguous':m?.audio==='partial'?'Unfinished audio':'Audio missing';
+      $('unavailable-audio').textContent=m?.audio==='ambiguous'?'More than one recording is present. Playback is unavailable until the local recording is resolved; the transcript and saved HTML remain usable.':m?.audio==='partial'?'Partial audio is retained. Validation is required before it can be used as a saved recording.':currentRun()?.kind==='html'?'No local recording is available for this meeting. Its historical saved HTML remains available.':'No local recording is available for this meeting. You can still read and search its transcript or open the saved HTML.';
+      $('play-toggle').textContent=state.playing?'Pause':'Play';$('play-toggle').setAttribute('aria-label',state.playing?'Pause simulated recording':'Play simulated recording');
+      $('current-time').textContent=timestamp(state.time);$('seek').value=String(state.time);$('seek').setAttribute('aria-valuetext',`${timestamp(state.time)} of 3:20, simulated`);
+      $('follow-toggle').textContent=state.follow?'Follow on':'Follow off';$('follow-toggle').setAttribute('aria-pressed',String(state.follow));updateActive();
+    }
+    function seek(time,play=false) { if(!mediaReady())return;state.time=Math.min(200,Math.max(0,time));if(play)state.playing=true;state.lastFollow=null;renderPlayer(); }
+    function openDialog(title,content,actions) {
+      $('dialog-title').textContent=title;$('dialog-body').replaceChildren();
+      if(typeof content==='string')$('dialog-body').append(make('p','',content));else $('dialog-body').append(content);
+      $('dialog-actions').replaceChildren(...actions.map(({label,primary,danger,action})=>{const b=make('button',`${primary?'primary ':''}${danger?'danger':''}`,label);b.type='button';b.onclick=()=>{closeDialog();action?.();};return b;}));
+      if(!$('dialog').open)$('dialog').showModal();
+    }
+    function closeDialog() { $('dialog').close(); }
+    function openHtml() {
+      if(!currentRun())return;$('export-menu').open=false;
+      const body=make('div');body.append(make('p','', 'Saved HTML opening is simulated here. In the proposed app, this action opens the existing HTML for the selected saved version.'));
+      const preview=make('div','dialog-preview');preview.append(make('p','eyebrow','Saved HTML preview · synthetic'),make('h3','',state.selected.title),make('p','',currentRun().kind==='html'?'This historical export contains the workshop conversation. Its saved content remains available without a structured transcript view.':segments[1].text),make('p','small muted',`Selected version: ${currentRun().label}`));body.append(preview);
+      openDialog('Saved HTML',body,[{label:'Back to meeting',primary:true}]);
+    }
+    function setupPreview() {openDialog('Transcription setup preview','Recording and import work without a transcription key. Cloud transcription requires a configured account and key through the app’s setup route. This proposal has no credential entry or saved secrets; the actual setup interface and secure handoff are still to be designed.',[{label:'Done',primary:true}]);}
+    function reviewAttempt(meeting) {
+      if(!meeting?.futureAttempt)return;
+      const copy=attemptCopy[meeting.futureAttempt];
+      openDialog('Review transcription attempt',`${meeting.title} · ${copy.label}. ${copy.message} Keep the local recording. Use the existing attempt status and cleanup/support route to establish the provider outcome before deciding on another submission. This future review screen does not submit, retry, or perform remote cleanup.`,[{label:'Back to recording',primary:true}]);
+    }
+    function openTranscription(meeting) {
+      if(!meeting||meeting.audio!=='ready'||meeting.runs.length)return;
+      if(meeting.futureAttempt){reviewAttempt(meeting);return;}
+      state.futureMeeting=meeting;state.draftTitle=meeting.title;futureState(state.keyReady?'ready':'key-missing');
+    }
+    function addAction(parent,label,action,{primary=false,danger=false,disabled=false}={}) {const b=make('button',`${primary?'primary ':''}${danger?'danger':''}`,label);b.type='button';b.disabled=disabled;b.onclick=action;parent.append(b);return b;}
+    function field(parent,label,id,value,type='input') {const wrap=make('div','form-field');const lab=make('label','',label);lab.htmlFor=id;const input=make(type);input.id=id;if(type==='input'){input.type='text';input.value=value;input.maxLength=180;}wrap.append(lab,input);parent.append(wrap);return input;}
+    function card(parent,title,text) {const c=make('section','creation-card');c.append(make('h2','',title));if(text)c.append(make('p','',text));parent.append(c);return c;}
+    function actions(parent) {const a=make('div','card-actions');parent.append(a);return a;}
+    function meter(parent) {const m=make('div','meter');m.setAttribute('aria-label','Simulated microphone level');for(let i=0;i<35;i++){const b=make('span');b.style.height=`${6+(i*13%26)}px`;m.append(b);}parent.append(m);const label=make('div','level-caption');label.append(make('span','','Microphone level'),make('span','','Sample level'));parent.append(label);}
+    function upsertFutureRecording(partial=false) {
+      let m=state.futureMeeting;
+      if(!m){const number=++fixtureMeetingCount;m={id:number===1?'created':`created-${number}`,base:`20261031-150000-New-meeting-${String(number).padStart(2,'0')}`,added:'October 31, 2026 at 3:00 PM',title:state.draftTitle.trim()||'Untitled meeting',status:'Unfinished recording',audio:'partial',runs:[]};meetings.unshift(m);state.futureMeeting=m;}
+      if(partial){m.status='Unfinished recording';m.audio='partial';m.runs=[];}
+      else if(m.audio==='partial'){m.status='Recording saved';m.audio='ready';m.runs=[];}
+      renderLibrary();return m;
+    }
+    function futureState(next,{direct=false}={}) {
+      if(next==='uploading'&&!direct&&state.futureMeeting?.futureAttempt){reviewAttempt(state.futureMeeting);return;}
+      state.playing=false;state.emptyLibrary=false;state.mode='future';state.screen='creation';state.future=next;setMobile(false);
+      if(direct){state.closeAfterSave=false;state.afterSave=null;state.afterCancel=null;state.closeAfterJob=false;state.futureMeeting=state.demoMeeting;if(state.futureMeeting){state.futureMeeting.futureAttempt=null;state.futureMeeting.status='Recording saved';state.futureMeeting.audio='ready';state.futureMeeting.runs=[];state.draftTitle=state.futureMeeting.title;}}
+      if(next==='new'||(direct&&['record','capturing','permission','import'].includes(next)))state.futureMeeting=null;
+      if(next==='capturing'&&direct)state.elapsed=42;
+      if(next==='import'&&direct){state.importSelected=true;state.draftTitle='Imported room session';}
+      if(next==='key-missing')state.keyReady=false;
+      if(next==='ready'&&direct)state.keyReady=true;
+      if(['device','validating','validation-error'].includes(next))upsertFutureRecording(true);
+      if(['saved','ready','key-missing','uploading','queued','processing','cancelling','cancelled','job-error','uncertain','complete','cleanup-ready'].includes(next))upsertFutureRecording(false);
+      if(direct&&state.futureMeeting)state.demoMeeting=state.futureMeeting;
+      if(attemptCopy[next])state.futureMeeting.futureAttempt=next;
+      if(['complete','cleanup-ready'].includes(next)){const m=state.futureMeeting;m.futureAttempt=null;m.status=next==='cleanup-ready'?'Transcript ready; remote cleanup unconfirmed':'Transcript ready';m.runs=[version('20261031-151000',m.status)];}
+      syncMode();renderFuture();
+    }
+    function renderFuture() {
+      $('reader-header').hidden=true;$('passages').hidden=true;$('empty-reader').hidden=true;$('player').hidden=true;$('creation').hidden=false;
+      $('advance-demo').hidden=!['validating','uploading','queued','processing','cancelling'].includes(state.future);
+      const root=$('creation');root.replaceChildren();root.scrollTop=0;const inner=make('div','creation-inner');root.append(inner);
+      const stage=state.future;
+      const heading=['new','record','capturing','permission','device','validating','validation-error','import'].includes(stage)?'New meeting':state.draftTitle.trim()||'Untitled meeting';
+      inner.append(make('p','eyebrow','Local meeting'),make('h1','',heading));
+      const step=make('p','flow-step');step.innerHTML='<strong>1 · Save local audio</strong> &nbsp; → &nbsp; 2 · Review &nbsp; → &nbsp; 3 · Transcribe';inner.append(step);
+      if(stage==='new') {
+        const c=card(inner,'Bring the conversation into your library.','Record a room conversation or add an existing audio file. Transcription is a separate step.');const choices=make('div','choice-grid');c.append(choices);
+        const room=addAction(choices,'',()=>{state.draftTitle='Room discussion';state.elapsed=0;futureState('record');});room.className='choice-card';room.append(make('strong','','Record room'),make('span','','Use a microphone. Save the recording locally, including when you are offline.'));
+        const imp=addAction(choices,'',()=>{state.draftTitle='Imported room session';state.importSelected=false;futureState('import');});imp.className='choice-card';imp.append(make('strong','','Import audio'),make('span','','Copy an existing audio file into your library. The original file stays unchanged.'));
+        const a=actions(c);addAction(a,'Back to library',()=>setReader(state.selected));
+      } else if(stage==='record') {
+        const c=card(inner,'Record room','Your recording is saved in this library. No transcription account is needed to record.');
+        const title=field(c,'Meeting title','draft-title',state.draftTitle);title.oninput=()=>state.draftTitle=title.value;
+        const mic=field(c,'Microphone','draft-mic','','select');for(const value of ['Built-in microphone','External USB microphone']){const o=make('option','',value);o.value=value;mic.append(o);}mic.value=state.mic;mic.onchange=()=>state.mic=mic.value;
+        meter(c);const check=make('div','preflight');check.innerHTML='<p><span>Microphone</span><span>Available</span></p><p><span>Local recording</span><span>Ready · works offline</span></p><p><span>Transcription key</span><span>Not required to record</span></p>';c.append(check);
+        const a=actions(c);addAction(a,'Record',()=>{state.elapsed=0;futureState('capturing');},{primary:true});addAction(a,'Cancel',()=>{state.draftTitle='Room discussion';futureState('new');toast('Draft discarded before capture. No recording was created.');});
+      } else if(stage==='capturing') {
+        const c=card(inner,state.draftTitle.trim()||'Untitled meeting');c.append(make('div','recording-label','Recording'));const clock=make('div','recording-clock',timestamp(state.elapsed));clock.id='capture-clock';c.append(clock,make('p','',`${state.mic} · saving locally`));meter(c);
+        const a=actions(c);addAction(a,'Stop & Save',()=>futureState('validating'),{primary:true});c.append(make('p','small muted','Stopping keeps the captured audio and checks it before marking the recording as saved.'));
+      } else if(stage==='permission') {
+        const c=card(inner,'Microphone access is needed.','Access was not granted, so capture has not started. Allow microphone access in system settings, then check again.');
+        c.append(make('p','notice','Any partial audio from an earlier interrupted capture remains in the library. This attempt is not marked as a finished recording.'));
+        const a=actions(c);addAction(a,'Check microphone again',()=>futureState('record'),{primary:true});addAction(a,'Cancel draft',()=>futureState('new'));
+      } else if(stage==='device'||stage==='validation-error') {
+        const c=card(inner,stage==='device'?'The microphone disconnected.':'The recording could not be validated.',stage==='device'?'Capture stopped. The partial audio is retained in your library and has not been marked as a finished recording.':'The partial audio is retained in your library. It is not ready for playback or transcription.');
+        c.append(make('div','file-card','Partial recording retained · unfinished'));
+        const a=actions(c);if(stage==='device')addAction(a,'Stop & validate partial audio',()=>futureState('validating'),{primary:true});addAction(a,'Keep partial & return to library',()=>setReader(upsertFutureRecording(true)),{primary:stage==='validation-error'});addAction(a,'Review recovery guidance',()=>openDialog('Partial recording recovery','Keep the retained partial audio. Check microphone access or the device before a new capture. Validation and recovery actions must be implemented and verified before this future flow ships; this preview does not repair audio.',[{label:'Done',primary:true}]));
+      } else if(stage==='validating') {
+        const c=card(inner,'Checking the recording…','The captured audio is retained while it is checked. The meeting will be marked saved only after validation succeeds.');const job=make('div','job-status');job.append(make('span','state-icon','…'),make('strong','','Validating local audio'));c.append(job,make('p','small muted','Please keep this window open.'));
+      } else if(stage==='import') {
+        const c=card(inner,'Import audio','A copy will be added to the library. Your source audio stays in its original location and remains unchanged.');
+        const title=field(c,'Meeting title','draft-title',state.draftTitle);title.oninput=()=>state.draftTitle=title.value;
+        const file=make('div','file-card');file.append(make('strong','',state.importSelected?'Room-session-demo.wav':'No audio selected'),make('span','',state.importSelected?'WAV · selected audio file':'Choose an audio file to review before adding it.'));c.append(file);
+        addAction(c,state.importSelected?'Choose another audio file':'Choose audio file',()=>{state.importSelected=true;renderFuture();toast('Synthetic file selected. No file picker was opened.');});
+        const a=actions(c);addAction(a,'Add to library',()=>futureState('saved'),{primary:true,disabled:!state.importSelected});addAction(a,'Cancel',()=>{state.importSelected=false;futureState('new');toast('Import cancelled. The source audio is unchanged.');});
+      } else if(['saved','ready','key-missing'].includes(stage)) {
+        const c=card(inner,'Recording saved.','Your audio is available locally. You can listen now or come back to transcription later.');const file=make('div','file-card');file.append(make('strong','',state.draftTitle.trim()||'Untitled meeting'),make('span','','Saved in Transcriptions · local recording'));c.append(file);
+        const cloud=make('div','cloud-boundary');cloud.append(make('h3','','Transcribe with AssemblyAI'),make('p','','Uploading sends a copy of this recording to AssemblyAI for cloud transcription using your configured account. Provider charges may apply. Your local recording stays in the library.'));c.append(cloud);
+        if(!state.keyReady||stage==='key-missing') c.append(make('p','notice','Transcription setup is missing. You can keep recording, importing, and listening locally without a key.'));
+        const a=actions(c);
+        if(state.keyReady&&stage!=='key-missing')addAction(a,'Upload & transcribe',()=>futureState('uploading'),{primary:true});else addAction(a,'View transcription setup',setupPreview,{primary:true});
+        addAction(a,'Listen to recording',()=>setReader(state.futureMeeting));addAction(a,'Done for now',()=>setReader(state.futureMeeting));
+      } else if(['uploading','queued','processing'].includes(stage)) {
+        const titles={uploading:'Uploading recording…',queued:'Waiting for transcription…',processing:'Transcribing your meeting…'};
+        const c=card(inner,titles[stage],'Your local recording stays in the library. You can cancel this transcription without deleting it.');
+        const job=make('div','job-status');job.append(make('span','state-icon','…'));const body=make('div');body.style.flex='1';body.append(make('strong','',stage==='uploading'?'Sending audio to AssemblyAI':stage==='queued'?'Queued with AssemblyAI':'Processing with AssemblyAI'));const progress=make('div','progress-line');progress.append(make('span'));body.append(progress);job.append(body);c.append(job);
+        c.append(make('p','small muted','Cancellation and remote cleanup may need confirmation. No retry starts automatically.'));const a=actions(c);addAction(a,'Cancel transcription',()=>cancelJobDialog());
+      } else if(stage==='cancelling') {
+        const c=card(inner,'Cancelling transcription…','Your local recording is retained. Wait while cancellation and the remote cleanup outcome are checked. No new attempt will start automatically.');const job=make('div','job-status');job.append(make('span','state-icon','…'),make('strong','','Confirming cancellation'));c.append(job,make('p','small muted','Please keep this window open until this attempt settles.'));
+      } else if(['cancelled','job-error','uncertain'].includes(stage)) {
+        const content={cancelled:['Transcription cancelled.','Your local recording is safe. No transcript is ready from this attempt. Remote cleanup is unconfirmed.'], 'job-error':['Transcription stopped.','The job did not produce a usable saved transcript. Your local recording is kept; remote cleanup may need attention.'],uncertain:['Upload outcome unknown.','We cannot confirm whether the provider received this recording. Your local recording is safe. Check the existing attempt before submitting it again.']};
+        const [title,text]=content[stage];const c=card(inner,title,text);c.append(make('p','notice','No automatic retry. Review the existing attempt and remote cleanup through the current support or cleanup route.'));
+        const a=actions(c);addAction(a,'View local recording',()=>setReader(state.futureMeeting),{primary:true});addAction(a,'Review transcription attempt',()=>reviewAttempt(state.futureMeeting));
+      } else if(stage==='complete'||stage==='cleanup-ready') {
+        const cleanup=stage==='cleanup-ready';const c=card(inner,'Transcript ready.','The transcript is saved locally and ready to read. Your recording is still available.');
+        const list=make('ul','check-list');for(const text of ['Local recording kept','Transcript saved','Saved HTML available'])list.append(make('li','',text));c.append(list);
+        if(cleanup)c.append(make('p','notice','Remote cleanup is unconfirmed. The saved transcript is usable; review cleanup through the existing recovery or support route.'));
+        const a=actions(c);addAction(a,'Open transcript',()=>setReader(state.futureMeeting),{primary:true});
+      }
+    }
+    function cancelJobDialog(after) {openDialog('Cancel this transcription?','Your local recording stays in the library. The provider may already have received audio; remote cleanup will remain unconfirmed until it is checked. No new attempt starts automatically.',[{label:'Keep transcribing'},{label:'Cancel transcription',danger:true,action:()=>{state.afterCancel=after;futureState('cancelling');}}]);}
+    function captureNavigationDialog(after) {openDialog('Recording is in progress.','Stop and save the captured audio before leaving this recording. The retained audio is checked before it is marked as finished.',[{label:'Keep recording'},{label:'Stop & Save',primary:true,action:()=>{state.afterSave=after;futureState('validating');}}]);}
+    function jobNavigationDialog(after) {openDialog('Transcription is in progress.','Keep this view open, or cancel the transcription before leaving it. Cancelling preserves your local recording; remote cleanup may still need confirmation.',[{label:'Keep transcribing'},{label:'Cancel & leave',danger:true,action:()=>{state.afterCancel=after;futureState('cancelling');}}]);}
+    function previewClose() {
+      if(state.mode==='future'&&state.screen==='creation'&&state.future==='capturing') {openDialog('Close while recording?','Stop and save before closing. Captured audio will be retained and validated. The app must stay open while capture continues.',[{label:'Keep recording'},{label:'Stop, save & close',primary:true,action:()=>{state.closeAfterSave=true;futureState('validating');}}]);return;}
+      if(state.mode==='future'&&state.screen==='creation'&&['uploading','queued','processing'].includes(state.future)) {openDialog('Close during transcription?','The local recording stays in your library. Cancel this attempt before closing; remote cleanup may remain unconfirmed. No automatic retry will run.',[{label:'Keep transcribing'},{label:'Cancel transcription & close',danger:true,action:()=>{state.closeAfterJob=true;futureState('cancelling');}}]);return;}
+      if(state.mode==='future'&&state.screen==='creation'&&state.future==='cancelling'){openDialog('Cancellation is being checked.','Keep the app open until this attempt settles. Your local recording is retained. Remote cleanup may remain unconfirmed.',[{label:'Keep app open',primary:true}]);return;}
+      if(state.mode==='future'&&state.screen==='creation'&&state.future==='validating') {openDialog('The recording is being checked.','Keep the app open until validation finishes. Captured audio is retained, and it has not yet been marked saved.',[{label:'Keep app open',primary:true}]);return;}
+      openDialog('Close preview','This is an in-page close preview. Saved recordings, transcripts and any retained partial audio stay in the library.',[{label:'Keep app open'},{label:'Close preview',primary:true,action:()=>toast('Close simulated. The proposal remains open; no files changed.')}]);
+    }
+    $('preview-mode').onchange=()=>{if($('preview-mode').value==='future')futureState('new');else{state.mode='reader';setReader(state.selected);}};
+    $('scenario').onchange=()=>{const value=$('scenario').value;if(state.mode==='reader'){if(value==='empty-library')setEmptyLibrary();else setReader(meetings.find(m=>m.id===value)||null);}else if(value==='browse')setReader(state.selected);else futureState(value,{direct:true});};
+    $('advance-demo').onclick=()=>{
+      const next={validating:'saved',uploading:'queued',queued:'processing',processing:'complete',cancelling:'cancelled'}[state.future];if(!next)return;
+      futureState(next);if(state.closeAfterSave&&next==='saved'){state.closeAfterSave=false;toast('Audio validated and saved. Close simulated; the proposal remains open.');}
+      if(state.afterSave&&next==='saved'){const after=state.afterSave;state.afterSave=null;after();}
+      if(next==='cancelled'&&state.closeAfterJob){state.closeAfterJob=false;toast('Cancellation settled. Close simulated; local audio is retained and cleanup remains unconfirmed.');}
+      if(next==='cancelled'&&state.afterCancel){const after=state.afterCancel;state.afterCancel=null;after();}
+    };
+    $('preview-close').onclick=previewClose;
+    $('theme-toggle').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';$('theme-toggle').textContent=dark?'Light mode':'Dark mode';$('theme-toggle').setAttribute('aria-pressed',String(dark));};
+    $('mobile-library').onclick=()=>setMobile(!state.mobile,{restoreFocus:state.mobile});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.mobile&&matchMedia('(max-width:760px)').matches&&!$('dialog').open){e.preventDefault();setMobile(false,{restoreFocus:true});}});
+    $('library-search').oninput=renderLibrary;
+    document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;renderLibrary();});
+    $('choose-library').onclick=()=>{$('folder-details').open=false;openDialog('Choose library · simulation','A native folder picker would open here. This proposal keeps the synthetic Transcriptions library selected and does not read or change any files.',[{label:'Keep demo library',primary:true}]);};
+    $('refresh-library').onclick=()=>{$('folder-details').open=false;toast('Refresh simulated. The synthetic library is unchanged; no files were scanned.');};
+    $('version-select').onchange=()=>{state.version=Number($('version-select').value);state.query='';state.match=-1;state.speaker='all';state.playing=false;state.follow=false;state.time=12;state.speed=1;$('speed').value='1';$('transcript-search').value='';renderReader();$('passages').scrollTop=0;};
+    $('open-html').onclick=openHtml;
+    $('transcribe-recording').onclick=()=>openTranscription(state.selected);
+    $('review-attempt').onclick=()=>reviewAttempt(state.selected);
+    $('transcript-search').oninput=()=>{releaseFollow();state.query=$('transcript-search').value;state.match=-1;renderPassages();};
+    $('transcript-search').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();moveMatch(e.shiftKey?-1:1);}};
+    $('speaker-filter').onchange=()=>{releaseFollow();state.speaker=$('speaker-filter').value;state.match=-1;state.lastFollow=null;renderPassages();};
+    $('find-previous').onclick=()=>moveMatch(-1);$('find-next').onclick=()=>moveMatch(1);
+    $('play-toggle').onclick=()=>{if(!mediaReady())return;if(state.time>=200)state.time=0;state.playing=!state.playing;renderPlayer();};
+    $('seek').oninput=()=>seek(Number($('seek').value));$('back-ten').onclick=()=>seek(state.time-10);
+    $('speed').onchange=()=>state.speed=Number($('speed').value);
+    $('follow-toggle').onclick=()=>{if(!mediaReady())return;state.follow=!state.follow;state.lastFollow=null;renderPlayer();};
+    $('jump-playing').onclick=()=>{state.follow=true;state.lastFollow=null;renderPlayer();};
+    $('passages').addEventListener('wheel',releaseFollow,{passive:true});$('passages').addEventListener('touchstart',releaseFollow,{passive:true});
+    $('passages').addEventListener('pointerdown',e=>{if(e.target===$('passages'))releaseFollow();});
+    $('passages').addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key))releaseFollow();});
+    $('passages').addEventListener('scroll',()=>{if(!programmaticScroll)releaseFollow();},{passive:true});
+    $('new-meeting').onclick=()=>{if(state.screen==='creation'&&state.future==='capturing')captureNavigationDialog(()=>futureState('new'));else if(state.screen==='creation'&&['uploading','queued','processing'].includes(state.future))jobNavigationDialog(()=>futureState('new'));else if(state.screen==='creation'&&['cancelling','validating'].includes(state.future))previewClose();else futureState('new');};
+    $('dialog').addEventListener('click',e=>{if(e.target===$('dialog')) {const rect=$('dialog').getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)closeDialog();}});
+    setInterval(()=>{if(state.screen==='reader'&&state.playing&&mediaReady()){state.time=Math.min(200,state.time+.25*state.speed);if(state.time>=200)state.playing=false;renderPlayer();}},250);
+    setInterval(()=>{if(state.mode==='future'&&state.screen==='creation'&&state.future==='capturing'){state.elapsed++;if($('capture-clock'))$('capture-clock').textContent=timestamp(state.elapsed);document.querySelectorAll('.meter span').forEach((bar,i)=>bar.style.height=`${6+((i*13+state.elapsed*7)%26)}px`);}},1000);
+    syncMode();renderReader();adjustHeight();
+  })();
+  </script>
+
+<script>
+(() => {
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const el=(tag,attrs={},text='')=>{const node=document.createElement(tag);for(const [key,value]of Object.entries(attrs))node.setAttribute(key,value);node.textContent=text;return node;};
+  const toolbar=document.querySelector('.appbar');const brand=document.querySelector('.brand');const actions=document.querySelector('.appbar-actions');
+  const library=el('button',{id:'study-library',type:'button','aria-controls':'library','aria-expanded':'true'},'Library');toolbar.insertBefore(library,brand);
+  const title=$('meeting-title');brand.replaceChildren(title,el('span',{class:'study-future-title',hidden:''},'Meeting Transcriber'));
+  const find=el('button',{id:'study-find-toggle',type:'button','aria-controls':'study-find','aria-expanded':'false'},'Find');
+  const details=el('button',{id:'study-details-toggle',type:'button','aria-controls':'study-details','aria-expanded':'false'},'Details');
+  const newMeeting=el('button',{id:'global-new',type:'button',hidden:''},'+ New');
+  const more=el('details',{class:'study-menu',id:'study-more'});const moreSummary=el('summary',{'aria-label':'Meeting actions'},'•••');more.append(moreSummary);const menu=el('div',{class:'study-menu-body'});const html=el('button',{type:'button',id:'study-html'},'Open saved HTML');const theme=el('button',{type:'button'},'Toggle light / dark');menu.append(html,theme);more.append(menu);const originalMobile=$('mobile-library'),originalTheme=$('theme-toggle');actions.replaceChildren(newMeeting,find,details,more);
+  // Original engine keeps the hidden mobile toggle and theme action as safe owners.
+  const originals=el('div',{hidden:''});originals.append(originalMobile,originalTheme);document.body.append(originals);
+  const meta=el('section',{id:'study-details',class:'study-details',hidden:'','aria-label':'Meeting details'});const fullTitle=el('h2',{style:'font-size:16px;margin-bottom:9px'});meta.append(fullTitle,document.querySelector('.meeting-meta'),$('version-row'));$('reader-header').insertBefore(meta,$('reader-notice'));
+  const shelf=el('section',{id:'study-find',class:'study-find',hidden:'','aria-label':'Find and speaker controls'});shelf.append($('transcript-tools'),$('transcript-summary'));$('reader-header').append(shelf);
+  const active=el('div',{id:'study-active',class:'study-active',role:'group','aria-label':'Active transcript filters'});const version=el('p',{id:'study-selected-version',class:'study-version'});$('reader-header').append(active,version);
+  $('library-search').setAttribute('aria-label','Search meeting titles');const filter=el('select',{id:'study-library-filter','aria-label':'Show meetings'});for(const [value,label]of [['all','All meetings'],['transcripts','Transcripts'],['audio','Audio only'],['attention','Needs attention']]){const option=el('option',{value},label);filter.append(option);}const filterLabel=el('label',{class:'study-library-filter'},'Show');filterLabel.append(filter);document.querySelector('.library-head').append(filterLabel);
+  const listening=el('details',{class:'study-listening',id:'study-listening'});const listeningSummary=el('summary',{},'Listening');listening.append(listeningSummary,$('player-tools'));$('player-main').append(listening);$('player-main').insertBefore($('back-ten'),$('current-time'));
+  function syncLibrary(){const narrow=matchMedia('(max-width:760px)').matches;const open=narrow?$('workspace').dataset.libraryOpen==='true':!$('workspace').classList.contains('study-library-hidden');const busy=$('preview-mode').value==='future'&&!$('creation').hidden&&['capturing','validating','uploading','queued','processing','cancelling'].includes($('scenario').value);library.disabled=narrow&&busy;library.title=library.disabled?'Finish or cancel the active operation before browsing the library':'';library.setAttribute('aria-expanded',String(open));library.textContent=open?'Hide library':'Library';}
+  library.onclick=()=>{if(matchMedia('(max-width:760px)').matches){$('mobile-library').click();if($('workspace').dataset.libraryOpen!=='true')library.focus();}else $('workspace').classList.toggle('study-library-hidden');syncLibrary();};
+  filter.onchange=()=>document.querySelector('[data-filter="'+filter.value+'"]').click();
+  function setFind(open){shelf.hidden=!open;active.hidden=open;find.setAttribute('aria-expanded',String(open));if(open)$('transcript-search').focus();else find.focus();}
+  find.onclick=()=>setFind(shelf.hidden);
+  details.onclick=()=>{meta.hidden=!meta.hidden;details.setAttribute('aria-expanded',String(!meta.hidden));};
+  newMeeting.onclick=()=>$('new-meeting').click();html.onclick=()=>{more.open=false;$('open-html').click();};theme.onclick=()=>{$('theme-toggle').click();more.open=false;};
+  const clear=()=>{$('transcript-search').value='';$('transcript-search').dispatchEvent(new Event('input'));$('speaker-filter').value='all';$('speaker-filter').dispatchEvent(new Event('change'));};
+  let lastFilterSignature='';function syncFilters(){const query=$('transcript-search').value;const speaker=$('speaker-filter');const signature=JSON.stringify([query,speaker.value,$('find-status').textContent]);if(signature===lastFilterSignature)return;lastFilterSignature=signature;active.replaceChildren();if(query){const chip=el('button',{type:'button',class:'study-filter-chip','aria-label':'Clear text filter'},'Text: “'+query+'” ×');chip.onclick=()=>{$('transcript-search').value='';$('transcript-search').dispatchEvent(new Event('input'));find.focus();};active.append(chip);}if(speaker.value&&speaker.value!=='all'){const label=speaker.selectedOptions[0]?.textContent||speaker.value;const divider=label.lastIndexOf(' · ');const name=divider<0?label:label.slice(0,divider);const chip=el('button',{type:'button',class:'study-filter-chip','aria-label':'Clear speaker filter'},'Speaker: '+name+' · '+speaker.value+' ×');chip.onclick=()=>{speaker.value='all';speaker.dispatchEvent(new Event('change'));find.focus();};active.append(chip);}if(active.childNodes.length){active.append(el('span',{},document.querySelectorAll('#passages .passage').length+' passages shown'));const button=el('button',{type:'button'},'Clear all');button.onclick=()=>{clear();find.focus();};active.append(button);}}
+  function sync(){
+    const creation=$('reader-header').hidden;title.hidden=creation;title.title=title.textContent;fullTitle.textContent=title.textContent;document.querySelector('.study-future-title').hidden=!creation;find.hidden=creation||$('transcript-tools').hidden;details.hidden=creation;newMeeting.hidden=$('new-meeting').hidden;
+    html.disabled=$('version-row').hidden||creation;const unresolved=!creation&&!$('future-recording-actions').hidden&&!$('future-attempt-notice').hidden;$('reader').classList.toggle('study-has-attempt',unresolved);$('review-attempt').classList.toggle('primary',unresolved);
+    if(creation){meta.hidden=true;shelf.hidden=true;find.setAttribute('aria-expanded','false');details.setAttribute('aria-expanded','false');}
+    const versions=$('version-select');details.textContent=versions.options.length>1?'Details · '+versions.options.length+' versions':'Details';version.textContent=!creation&&versions.selectedIndex>0?'Viewing saved version '+versions.selectedOptions[0].textContent:'';
+    const speed=$('speed').value;const following=$('follow-toggle').getAttribute('aria-pressed')==='true';listeningSummary.textContent='Listening'+(speed!=='1'?' · '+speed+'×':'')+(following?' · Follow on':'');listening.hidden=$('player-main').hidden;
+    syncFilters();syncLibrary();
+  }
+  for(const id of ['transcript-search','speaker-filter','speed','version-select','preview-mode','scenario']){$(id).addEventListener('input',sync);$(id).addEventListener('change',sync);}
+  const observer=new MutationObserver(sync);for(const id of ['reader-header','transcript-tools','new-meeting','player-main','workspace'])observer.observe($(id),{attributes:true,attributeFilter:['hidden','data-library-open']});for(const id of ['find-status','version-select','follow-toggle'])observer.observe($(id),{childList:true,subtree:true,attributes:true,attributeFilter:['aria-pressed']});
+  document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'&&!find.hidden){event.preventDefault();setFind(true);}if(event.key!=='Escape'||$('dialog').open)return;if(more.open){more.open=false;moreSummary.focus();return;}if(listening.open){listening.open=false;listeningSummary.focus();return;}if(!shelf.hidden){event.stopImmediatePropagation();setFind(false);return;}if(!meta.hidden){meta.hidden=true;details.setAttribute('aria-expanded','false');details.focus();return;}if(matchMedia('(max-width:760px)').matches&&$('workspace').dataset.libraryOpen==='true'){event.stopImmediatePropagation();$('mobile-library').click();library.focus();syncLibrary();}},true);
+  addEventListener('resize',syncLibrary);sync();
+})();
+</script>
+
+</body>
+</html>

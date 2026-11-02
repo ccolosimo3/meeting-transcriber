@@ -1,0 +1,62 @@
+MT-GUI-READER-1 author check output retained from the author tool session
+Candidate: 3bdcd1bbfe4fd741e2787bcc4baa665ee2ff258e
+Checkout: <WINDOWS_WORKSPACE>\work\meeting-transcriber-minimal
+
+These are the exact command strings and command-output text already returned by exec_command in this session. No checks were rerun to create this file. Tool timing/chunk metadata is omitted. The focused Python checks ran before the final static-asset-only adjustments; their Python owners, tests and environment did not change afterward. The second batch performed the final syntax/diff checks, committed the final source and confirmed clean status (git status emitted no lines).
+
+COMMAND 1
+& '<WINDOWS_WORKSPACE>\work\meeting-transcriber-desktop\.venv\Scripts\python.exe' -m unittest tests.test_meeting_library tests.test_desktop_server tests.test_desktop_bridge tests.test_desktop_dispatch tests.test_desktop_native
+
+RAW OUTPUT 1 (tool-reported exit_code: 0)
+................s......s...
+----------------------------------------------------------------------
+Ran 27 tests in 5.774s
+
+OK (skipped=2)
+
+COMMAND 2
+node --check desktop/assets/app.js; git diff --check; git add README.md desktop/assets/index.html desktop/assets/app.css desktop/assets/app.js docs/DEVELOPMENT.md; git commit -m "Reorganize desktop reader around collapsible controls"; git status --short; git rev-parse HEAD
+
+RAW OUTPUT 2 (tool-reported exit_code: 0)
+warning: in the working copy of 'desktop/assets/app.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'desktop/assets/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'desktop/assets/app.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'desktop/assets/index.html', LF will be replaced by CRLF the next time Git touches it
+[codex/minimal-reader 3bdcd1b] Reorganize desktop reader around collapsible controls
+ 5 files changed, 432 insertions(+), 164 deletions(-)
+3bdcd1bbfe4fd741e2787bcc4baa665ee2ff258e
+
+The command output above contains no node syntax error or diff-check error; each of those successful commands was silent. Their individual exit codes were not separately printed; the tool-reported exit_code belongs to the entire command batch.
+
+2026-11-01 paused-footer correction
+Candidate after commit: d26f44515909dee04f93285fe04a37a74047a07e
+COMMAND
+node --check desktop/assets/app.js
+RAW OUTPUT
+(empty)
+Tool-reported exit_code: 0
+
+COMMAND
+git diff --check
+RAW OUTPUT
+(empty)
+Tool-reported exit_code: 0
+
+Each check was executed in its own exec_command invocation. Neither Python checks nor native UI proof was rerun by the author. The sole source delta replaces the active-passage footer's "playing" claim with "Current audio position: Passage…". Resize-focus remains untouched pending root reproduction.
+
+
+2026-11-01 breakpoint-focus correction
+COMMAND
+node --check desktop/assets/app.js
+RAW OUTPUT
+(empty)
+Tool-reported exit_code: 0
+
+COMMAND
+git diff --check
+RAW OUTPUT
+(empty)
+Tool-reported exit_code: 0
+
+Each check was executed in its own exec_command invocation. The only source delta derives the next Library visibility before changing the pane, then restores opener focus whenever the pane containing focus becomes hidden in either breakpoint direction. Root owns the actual native regression proof. No Python checks rerun.
+Candidate after breakpoint-focus commit: cea92c4d30abba215e021d49ae1d2108c1a9eb12

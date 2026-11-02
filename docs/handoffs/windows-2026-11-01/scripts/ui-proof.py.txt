@@ -1,0 +1,180 @@
+"""Disposable native proof for the assigned desktop UI assets; synthetic inputs only."""
+import os
+os.environ.pop('ASSEMBLYAI_API_KEY', None)
+import json
+from pathlib import Path
+import threading
+import time
+import wave
+import webview
+from bottle import Bottle, static_file
+
+ROOT = Path(__file__).resolve().parent
+ASSETS = ROOT / 'meeting-transcriber-desktop/desktop/assets'
+EVIDENCE = ROOT / 'ui-evidence'
+EVIDENCE.mkdir(exist_ok=True)
+AUDIO = EVIDENCE / 'synthetic.wav'
+with wave.open(str(AUDIO), 'wb') as stream:
+    stream.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+    stream.writeframes(bytes(20 * 16000))
+TITLE = 'Project review <img src=x onerror="window.hostile=true">'
+MEETINGS = [
+    {'id':'timed', 'title':TITLE, 'added':'31 October 2026', 'status':'Transcript ready', 'runs':[{'id':'latest','label':'20261031-150000','status':'Transcript ready'},{'id':'old','label':'20261030-150000','status':'Historical transcript'}], 'default_run_id':'latest'},
+    {'id':'recording','title':'Recording only','added':'30 October 2026','status':'Recording saved','runs':[],'default_run_id':None},
+    *[{'id':key,'title':key.capitalize()+' media','added':'29 October 2026','status':'Transcript ready','runs':[{'id':'latest','label':'20261029-150000','status':'Transcript ready'}],'default_run_id':'latest'} for key in ['missing','ambiguous','unsupported','slow']],
+    {'id':'html','title':'Saved HTML fallback','added':'28 October 2026','status':'Saved HTML available','runs':[{'id':'historical','label':'Older saved run','status':'Saved HTML available'}],'default_run_id':'historical'},
+]
+CANONICAL = {'language':'en','text':'Synthetic transcript','speaker_names':{'SPEAKER_00':'Alex <script>bad</script>','SPEAKER_01':'Alex <script>bad</script>'},'segments':[
+    {'id':7,'start':8,'end':10,'text':'Later passage appears first. [a.*] literal match.','speaker':'SPEAKER_00','words':[]},
+    {'id':7,'start':0,'end':2,'text':'Opening passage <img onerror="window.hostile=true"> [a.*] literal match.','speaker':'SPEAKER_01','words':[]},
+    {'id':7,'start':1,'end':3,'text':'An overlapping passage from the first speaker.','speaker':'SPEAKER_00','words':[]},
+    {'id':7,'start':5,'end':5,'text':'Zero duration remains readable.','speaker':'SPEAKER_00','words':[]},
+    {'id':7,'start':25,'end':30,'text':'Beyond the recording but still readable.','speaker':'SPEAKER_01','words':[]},
+    *[{'id':7,'start':10+i*.2,'end':10.2+i*.2,'text':f'Passage {i+6}: a longer synthetic review sentence to exercise scrolling and speaker filters.','speaker':'SPEAKER_0'+str(i%2),'words':[]} for i in range(25)]
+]}
+app = Bottle()
+@app.get('/')
+def index(): return static_file('index.html', root=str(ASSETS))
+@app.get('/app.css')
+def css(): return static_file('app.css', root=str(ASSETS))
+@app.get('/app.js')
+def js(): return static_file('app.js', root=str(ASSETS))
+@app.get('/synthetic.wav')
+def audio(): return static_file(AUDIO.name, root=str(EVIDENCE), mimetype='audio/wav')
+@app.get('/unsupported.wav')
+def unsupported(): return 'not an audio recording'
+
+class API:
+    def __init__(self): self.choices=0
+    def refresh_library(self): return {'library':'Synthetic UI test library','meetings':MEETINGS,'errors':[]}
+    def choose_library(self):
+        self.choices+=1
+        return {'cancelled':True} if self.choices==1 else {'error':'The library cannot be read: access denied.','code':'access_denied'}
+    def load_run(self, meeting_id, run_id):
+        if meeting_id == 'slow': time.sleep(1.2)
+        data = {'title':next(m['title'] for m in MEETINGS if m['id']==meeting_id),'added':'31 October 2026','status':'Historical transcript' if run_id=='old' else 'Transcript ready','canonical':None if meeting_id in ['recording','html'] else CANONICAL,'media_state':meeting_id if meeting_id in ['missing','ambiguous'] else 'ready','media_url':'/unsupported.wav' if meeting_id=='unsupported' else '/synthetic.wav','exports':{'html':meeting_id!='recording'}}
+        return data
+    def open_saved_html(self, meeting_id, run_id): return {'opened':True}
+
+results = {}
+def run(window):
+    def evaluate(expression): return window.evaluate_js(expression)
+    def wait(expression, timeout=8):
+        deadline = time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            if evaluate(expression): return
+            time.sleep(.05)
+        raise AssertionError(expression)
+    def click(selector): evaluate(f'document.querySelector({json.dumps(selector)}).click()')
+    def check(name, expression):
+        value = evaluate(expression)
+        results[name] = value
+        if value is not True: raise AssertionError(f'{name}: {value!r}')
+    def capture(name):
+        time.sleep(.25)
+        from System import Action
+        from System.IO import FileStream, FileMode
+        from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat
+        stream = FileStream(str(EVIDENCE/f'{name}.png'), FileMode.Create)
+        tasks = []
+        window.native.Invoke(Action(lambda: tasks.append(window.native.webview.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream))))
+        while not tasks[0].IsCompleted: time.sleep(.05)
+        tasks[0].GetAwaiter().GetResult()
+        stream.Dispose()
+    try:
+        wait('document.querySelectorAll(".meeting-row").length === 7')
+        click('[data-meeting-id="timed"]')
+        wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState >= 1')
+        check('no_autoplay', 'document.getElementById("meeting-audio").paused && document.querySelectorAll(".passage").length === 30')
+        check('hostile_strings', '!window.hostile && document.querySelectorAll(".passages img, .passages script, #meeting-title img").length === 0 && document.getElementById("meeting-title").textContent.includes("<img")')
+        check('ordinal_identity', 'new Set([...document.querySelectorAll(".passage")].map(n=>n.id)).size===30')
+        evaluate('window.oldAudio=document.getElementById("meeting-audio"); oldAudio.currentTime=1.5')
+        wait('document.querySelectorAll(".passage.active").length===2')
+        check('unsorted_duplicate_overlap', 'JSON.stringify([...document.querySelectorAll(".passage.active")].map(n=>n.dataset.ordinal))===JSON.stringify(["1","2"])')
+        evaluate('oldAudio.currentTime=4')
+        wait('document.querySelectorAll(".passage.active").length===0')
+        check('silence', 'document.getElementById("playing-status").textContent.includes("No transcript passage")')
+        evaluate('oldAudio.currentTime=1; oldAudio.muted=true; oldAudio.play()')
+        time.sleep(.6)
+        check('native_playback_advanced', 'oldAudio.currentTime>1.2 && !oldAudio.paused')
+        evaluate('oldAudio.pause()')
+        click('#follow-toggle')
+        check('follow_enabled', 'document.getElementById("follow-toggle").getAttribute("aria-pressed")==="true"')
+        evaluate('document.getElementById("passages").dispatchEvent(new WheelEvent("wheel",{deltaY:100}))')
+        check('manual_scroll_release', 'document.getElementById("follow-toggle").getAttribute("aria-pressed")==="false"')
+        click('#jump-playing')
+        check('jump_resumes_follow', 'document.getElementById("follow-toggle").getAttribute("aria-pressed")==="true"')
+        evaluate('document.getElementById("transcript-search").value="[a.*]"; document.getElementById("transcript-search").dispatchEvent(new Event("input"))')
+        check('literal_find', 'document.querySelectorAll(".passage:not([hidden])").length===2 && document.querySelectorAll("mark").length===2')
+        click('#find-previous')
+        check('previous_wrap', 'document.querySelector(".current-match").dataset.ordinal==="1"')
+        click('#find-next')
+        check('next_wrap', 'document.querySelector(".current-match").dataset.ordinal==="0"')
+        evaluate('document.getElementById("speaker-filter").value="SPEAKER_01"; document.getElementById("speaker-filter").dispatchEvent(new Event("change"))')
+        check('duplicate_names_filter_by_label', 'document.querySelectorAll(".passage:not([hidden])").length===1 && document.querySelector(".passage:not([hidden])").dataset.ordinal==="1"')
+        evaluate('document.getElementById("transcript-search").value="nonexistent"; document.getElementById("transcript-search").dispatchEvent(new Event("input"))')
+        check('zero_matches', '!document.getElementById("transcript-empty").hidden && document.getElementById("find-next").disabled')
+        evaluate('document.getElementById("transcript-search").value=""; document.getElementById("transcript-search").dispatchEvent(new Event("input")); document.getElementById("speaker-filter").value=""; document.getElementById("speaker-filter").dispatchEvent(new Event("change"))')
+        evaluate('document.querySelector("#passage-4 button").click()')
+        check('beyond_media_explained', 'document.getElementById("reader-notice").textContent.includes("beyond")')
+        click('#choose-library')
+        time.sleep(.2)
+        check('picker_cancel_preserves_binding', 'document.getElementById("meeting-audio")===oldAudio')
+        click('[data-meeting-id="missing"]')
+        wait('document.getElementById("audio-status").textContent.includes("Audio missing")')
+        check('missing_keeps_text_and_detaches', 'document.querySelectorAll(".passage").length===30 && oldAudio.paused && !oldAudio.hasAttribute("src")')
+        evaluate('oldAudio.dispatchEvent(new Event("error"))')
+        check('old_event_ignored', 'document.getElementById("audio-status").textContent.includes("Audio missing")')
+        click('[data-meeting-id="ambiguous"]')
+        wait('document.getElementById("audio-status").textContent.includes("Audio ambiguous")')
+        check('ambiguous_keeps_text', 'document.querySelectorAll(".passage").length===30')
+        click('[data-meeting-id="unsupported"]')
+        wait('document.getElementById("audio-status").textContent.includes("Audio unavailable")')
+        check('unsupported_keeps_text', 'document.querySelectorAll(".passage").length===30 && document.getElementById("back-ten").disabled')
+        click('[data-meeting-id="slow"]')
+        click('[data-meeting-id="recording"]')
+        time.sleep(1.5)
+        check('late_load_ignored', 'document.getElementById("meeting-title").textContent==="Recording only" && document.querySelectorAll(".passage").length===0')
+        click('[data-meeting-id="html"]')
+        wait('!document.getElementById("open-html").hidden')
+        check('html_fallback', '!document.getElementById("transcript-empty").hidden && document.getElementById("transcript-empty").textContent.includes("saved HTML")')
+        click('[data-meeting-id="timed"]')
+        wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState >= 1')
+        evaluate('document.getElementById("run-select").value="old"; document.getElementById("run-select").dispatchEvent(new Event("change"))')
+        wait('document.getElementById("meeting-status").textContent==="Historical transcript"')
+        check('older_run', 'document.getElementById("reader-notice").textContent==="Historical transcript"')
+        click('#refresh-library')
+        wait('document.getElementById("run-select").value==="old" && document.querySelectorAll(".passage").length===30')
+        check('refresh_retains_run', 'document.getElementById("meeting-status").textContent==="Historical transcript"')
+        evaluate('document.getElementById("run-select").value="latest"; document.getElementById("run-select").dispatchEvent(new Event("change"))')
+        wait('document.getElementById("meeting-status").textContent==="Transcript ready"')
+        evaluate('document.getElementById("meeting-audio").currentTime=1.5')
+        wait('document.querySelectorAll(".passage.active").length===2')
+        if evaluate('document.documentElement.dataset.theme') != 'light': click('#theme-toggle')
+        capture('wide-light')
+        results['wide_geometry'] = evaluate('Object.fromEntries([".workspace",".library",".reader",".reader-content",".passages",".player"].map(s=>[s,{height:document.querySelector(s).getBoundingClientRect().height,top:document.querySelector(s).getBoundingClientRect().top,bottom:document.querySelector(s).getBoundingClientRect().bottom}]))')
+        check('wide_player_visible', 'document.querySelector(".player").getBoundingClientRect().bottom<=window.innerHeight+1')
+        click('#theme-toggle')
+        capture('wide-dark')
+        window.resize(430, 920)
+        time.sleep(.3)
+        check('narrow_no_horizontal_overflow', 'document.documentElement.scrollWidth<=window.innerWidth')
+        evaluate('document.querySelector(".reader").scrollIntoView()')
+        time.sleep(.2)
+        capture('narrow-dark')
+        click('#theme-toggle')
+        capture('narrow-light')
+        click('#choose-library')
+        wait('!document.getElementById("library-errors").hidden')
+        check('access_denied_is_not_empty_library', 'document.getElementById("library-errors").textContent.includes("access denied") && document.getElementById("library-empty").textContent.includes("could not be fully read") && document.getElementById("reader-content").hidden')
+        results['pass'] = True
+    except Exception as error:
+        results['error'] = str(error)
+        results['pass'] = False
+    finally:
+        (EVIDENCE/'result.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+        window.destroy()
+
+if __name__=='__main__':
+    window=webview.create_window('Synthetic desktop reader UI proof', app, js_api=API(),width=1180,height=900)
+    webview.start(run, window, gui='edgechromium', private_mode=True)

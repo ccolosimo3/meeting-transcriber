@@ -1,0 +1,58 @@
+"""Inspect and remove only the recorded synthetic interrupted native session."""
+import ctypes
+from ctypes import wintypes as w
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import time
+WORK=Path(__file__).resolve().parent
+REPO=WORK/'meeting-transcriber-desktop'
+sys.path.insert(0,str(REPO))
+from desktop import native
+EVIDENCE=WORK.parent/'outputs'/'integrated-windows'
+record=json.loads((EVIDENCE/'interruption-record.json').read_text(encoding='utf-8'))
+recorded=Path(record['session_path'])
+assert re.fullmatch(r'MeetingTranscriber-session-[a-f0-9]{32}',recorded.name)
+path=recorded.resolve()
+assert path.name==recorded.name
+assert path.is_relative_to((Path.home()/'AppData'/'Local').resolve())
+profile=Path(record['profile_path']).resolve(); assert profile==path/'profile'
+session=native.Session.__new__(native.Session)
+session.path=path; session.profile_path=profile; session._owner=native._current_sid()
+session._engine_capabilities=set(record['engine_capabilities'])
+assert session._engine_capabilities=={native._network_capability_sid()}
+time.sleep(.3)
+session.verify_storage()
+result={'actual_browser_metadata_before_interruption':record['metadata_loaded'],
+        'actual_native_cache_verified_before_interruption':record['acl_verified_with_native_cache'],
+        'protected_leftover_after_process_interruption':True,
+        'actual_native_profile_entries':len(list(path.rglob('*'))),'stopped_recorded_processes':[]}
+kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+kernel.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD]; kernel.OpenProcess.restype=w.HANDLE
+kernel.GetProcessTimes.argtypes=[w.HANDLE,ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME)]
+kernel.TerminateProcess.argtypes=[w.HANDLE,w.UINT]; kernel.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD]; kernel.CloseHandle.argtypes=[w.HANDLE]
+for pid_text,birth in record['process_births'].items():
+    pid=int(pid_text)
+    handle=kernel.OpenProcess(0x101001,False,pid)
+    if not handle: continue
+    try:
+        creation,exit_,kernel_,user_=(w.FILETIME() for _ in range(4))
+        assert kernel.GetProcessTimes(handle,ctypes.byref(creation),ctypes.byref(exit_),ctypes.byref(kernel_),ctypes.byref(user_))
+        actual=(creation.dwHighDateTime<<32)|creation.dwLowDateTime
+        assert actual==birth,'Recorded PID has been reused; refusing cleanup'
+        if kernel.WaitForSingleObject(handle,0)!=0:
+            assert kernel.TerminateProcess(handle,0)
+            assert kernel.WaitForSingleObject(handle,5000)==0
+            result['stopped_recorded_processes'].append(pid)
+    finally: kernel.CloseHandle(handle)
+session.verify_storage()
+shutil.rmtree(path)
+fixtures=Path(record['fixture_path'])
+assert fixtures.resolve()==fixtures and fixtures.parent==WORK and re.fullmatch(r'integrated-fixtures-\d+',fixtures.name)
+shutil.rmtree(fixtures)
+result['recorded_synthetic_session_removed']=not path.exists()
+(EVIDENCE/'interruption-result.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
+print(json.dumps(result))

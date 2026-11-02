@@ -1,0 +1,54 @@
+"""Actual main/native owners; force native close immediately after issuing load_run return JS."""
+import sys,threading,faulthandler,os,json,time
+from pathlib import Path
+sys.path.insert(0,'<MAC_TEST_CHECKOUT>')
+from desktop import main
+import webview
+from PyObjCTools import AppHelper
+base=Path(__file__).resolve().parent
+mode=sys.argv[1] if len(sys.argv)>1 else 'after'
+out={'revision':'1b3a64b6c483babdab8f2c33b8daff57c18cd527','pid':os.getpid(),'controlled_timing':'only AppHelper scheduling is observed: issue actual native load_run result evaluate, then synchronously close NSWindow before asynchronous completion'}
+trace=(base/f'close-{mode}-python-stack.txt').open('w')
+original_start=webview.start; original_after=AppHelper.callAfter; result_threads=set()
+def call_after(function,*args,**kwargs):
+ if threading.get_ident() in result_threads and function.__name__ in {'eval','evaluate'}:
+  def evaluate_then_close():
+   target=webview.windows[0].native
+   if mode=='before':
+    target.close()
+    function(*args,**kwargs)
+   else:
+    function(*args,**kwargs)
+    target.close()
+   out['controlled_native_close_mode']=mode
+  return original_after(evaluate_then_close)
+ return original_after(function,*args,**kwargs)
+AppHelper.callAfter=call_after
+def exercise():
+ window=webview.windows[0];assert window.events.loaded.wait(10)
+ deadline=time.monotonic()+5
+ while time.monotonic()<deadline:
+  if window.evaluate_js('document.querySelectorAll(".meeting-row").length===6'):break
+  time.sleep(.02)
+ values=[window.evaluate_js('42'),window.evaluate_js('({answer:42,items:[1,"x"]})'),window.evaluate_js('"text"'),window.evaluate_js('null')]
+ assert values==[42,{'answer':42,'items':[1,'x']},'text',None],values
+ from webview.platforms import cocoa
+ view=cocoa.BrowserView.instances[window.uid]
+ parsed=view.evaluate_js('JSON.stringify({value:42})',True)
+ raw=view.evaluate_js('JSON.stringify({value:42})',False)
+ assert parsed=={'value':42} and raw=='{"value":42}',(parsed,raw)
+ out['real_native_eval_values']=values;out['parse_json_true']=parsed;out['parse_json_false']=raw
+ original_evaluate=window.evaluate_js
+ def observe(script,*args,**kwargs):
+  if '_returnValuesCallbacks["load_run"]' in script:result_threads.add(threading.get_ident())
+  return original_evaluate(script,*args,**kwargs)
+ window.evaluate_js=observe
+ window.evaluate_js('document.querySelector(".meeting-row").click();')
+def start(**kwargs):return original_start(exercise,**kwargs)
+webview.start=start
+main.main()
+out['main_returned']=True;out['remaining_threads']=[{'name':t.name,'daemon':t.daemon} for t in threading.enumerate()]
+(base/f'close-{mode}-source.json').write_text(json.dumps(out,indent=2))
+def dump_hang():
+ out['hung_after_main_return']=True;(base/f'close-{mode}-source.json').write_text(json.dumps(out,indent=2));faulthandler.dump_traceback(file=trace,all_threads=True);trace.flush();os._exit(2)
+timer=threading.Timer(3,dump_hang);timer.daemon=True;timer.start()

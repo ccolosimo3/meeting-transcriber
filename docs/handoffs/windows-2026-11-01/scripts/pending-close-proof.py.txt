@@ -1,0 +1,171 @@
+"""One bounded, hidden native close while the real bridge load reply is pending."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import socket
+import subprocess
+import sys
+import threading
+import time
+from urllib.parse import urlsplit
+
+WORK = Path(__file__).resolve().parent
+REPO = WORK / 'meeting-transcriber-desktop'
+USER = WORK / 'desktop-package-proof' / 'user'
+LIBRARY = USER / 'Transcriptions'
+EVIDENCE = WORK.parent / 'outputs' / 'pending-close-windows'
+if '--attempt-2' in sys.argv:
+    EVIDENCE = EVIDENCE / 'attempt-2-actual-worker'
+EVIDENCE.mkdir(parents=True, exist_ok=True)
+RESULT = EVIDENCE / 'result.json'
+
+
+def file_hashes(root):
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(root.rglob('*')) if p.is_file()}
+
+
+def worker():
+    os.environ['USERPROFILE'] = str(USER)
+    os.environ['ASSEMBLYAI_API_KEY'] = 'synthetic-pending-close-sentinel'
+    sys.path.insert(0, str(REPO))
+    from desktop import main as app
+    import webview
+    assert 'ASSEMBLYAI_API_KEY' not in os.environ
+    before = file_hashes(LIBRARY)
+    assert len(before) == 5, 'Expected the existing five-file synthetic bundle'
+    result = {
+        'tested_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
+        'python': sys.version.split()[0], 'hidden_window': True,
+        'hold_boundary': 'after original Bridge.load_run returns real media-ready result, before its native RPC reply',
+        'events': [], 'fixture_hashes_before': before,
+        'source_sha256': {str(p.relative_to(REPO)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in [REPO/'desktop/main.py', REPO/'desktop/native.py', REPO/'desktop/server.py',
+                      REPO/'lib/meeting_library.py', *sorted((REPO/'desktop/assets').glob('*'))] if p.is_file()}
+    }
+    held, release, exercised = threading.Event(), threading.Event(), threading.Event()
+    actual = {}
+    epoch = time.monotonic()
+
+    def observe(name):
+        result['events'].append({'name': name, 'seconds': round(time.monotonic()-epoch, 6)})
+
+    def save():
+        RESULT.write_text(json.dumps(result, indent=2), encoding='utf-8')
+
+    original_session, original_window = app.create_session, webview.create_window
+    original_start, original_load = webview.start, app.Bridge.load_run
+
+    def session():
+        value = original_session()
+        actual['session'] = value
+        result['session_path'] = str(value.path)
+        return value
+
+    def window(*args, **kwargs):
+        kwargs['hidden'] = True
+        value = original_window(*args, **kwargs)
+        actual['window'] = value
+        result['port'] = urlsplit(value.original_url).port
+        return value
+
+    def load(self, meeting_id, run_id):
+        value = original_load(self, meeting_id, run_id)
+        assert value.get('media_state') == 'ready' and value.get('media_url') and value.get('canonical')
+        thread = threading.current_thread()
+        actual['bridge_worker'] = thread
+        result['bridge_worker'] = {'name': thread.name, 'ident': thread.ident, 'native_id': thread.native_id, 'daemon': thread.daemon}
+        observe('real_media_result_held')
+        held.set()
+        assert release.wait(12), 'Native close never released held real load'
+        result['release_after_native_closed'] = actual['window'].events.closed.is_set()
+        observe('held_result_released')
+        return value
+
+    def exercise():
+        value = actual['window']
+        try:
+            assert value.events.loaded.wait(8), 'Native app document did not load'
+            assert value.events._pywebviewready.wait(3), 'Native bridge was not ready'
+            observe('real_app_document_and_bridge_ready')
+            scheduled = value.evaluate_js("""(() => {
+                window.pywebview.api.refresh_library().then(result => {
+                    const meeting = result.meetings[0];
+                    return window.pywebview.api.load_run(meeting.id, meeting.default_run_id);
+                });
+                return 'load scheduled';
+            })()""")
+            assert scheduled == 'load scheduled'
+            assert held.wait(5), 'Actual native load_run did not reach held real result'
+            thread = actual['bridge_worker']
+            result['operation_pending_before_close'] = thread.is_alive() and not release.is_set()
+            assert result['operation_pending_before_close']
+            observe('native_destroy_called_with_real_load_pending')
+            value.destroy()
+            assert value.events.closed.wait(4), 'Native window.closed was not observed'
+            observe('native_window_closed_observed')
+            release.set()
+            thread.join(5)
+            result['actual_bridge_worker_joined'] = not thread.is_alive()
+            assert not thread.is_alive(), 'Real native bridge worker remained alive after close/release'
+            observe('actual_bridge_worker_joined')
+        except BaseException as error:
+            result['exercise_error'] = type(error).__name__ + ': ' + str(error)
+        finally:
+            exercised.set()
+            save()
+
+    def start(*args, **kwargs):
+        assert not args and 'func' not in kwargs
+        return original_start(exercise, **kwargs)
+
+    app.create_session, webview.create_window = session, window
+    app.Bridge.load_run, webview.start = load, start
+    try:
+        app.main()
+        observe('actual_production_main_returned')
+        result['actual_main_returned'] = True
+        assert exercised.wait(6), 'Bounded native exercise did not finish'
+        assert 'exercise_error' not in result, result.get('exercise_error')
+        assert result['actual_bridge_worker_joined'] and result['release_after_native_closed']
+        with socket.socket() as probe:
+            probe.settimeout(1)
+            result['port_refused_after_main'] = probe.connect_ex(('127.0.0.1', result['port'])) != 0
+        result['session_removed_after_main'] = not actual['session'].path.exists()
+        result['fixture_hashes_after'] = file_hashes(LIBRARY)
+        result['five_fixture_files_unchanged'] = result['fixture_hashes_after'] == before
+        assert result['port_refused_after_main'] and result['session_removed_after_main'] and result['five_fixture_files_unchanged']
+        result['passed'] = True
+    except BaseException as error:
+        result['passed'] = False
+        result['error'] = type(error).__name__ + ': ' + str(error)
+    finally:
+        save()
+    print(json.dumps({'passed': result['passed'], 'worker_joined': result.get('actual_bridge_worker_joined'),
+                      'main_returned': result.get('actual_main_returned'), 'port_refused': result.get('port_refused_after_main'),
+                      'session_removed': result.get('session_removed_after_main'), 'error': result.get('error')}), flush=True)
+    return 0 if result['passed'] else 1
+
+
+if __name__ == '__main__':
+    if '--worker' in sys.argv:
+        raise SystemExit(worker())
+    # A hung non-daemon native reply cannot hang the supervising proof process.
+    with (EVIDENCE/'stdout.txt').open('wb') as output:
+        process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--worker', *(['--attempt-2'] if '--attempt-2' in sys.argv else [])], cwd=REPO,
+                                   stdout=output, stderr=subprocess.STDOUT)
+        try:
+            code = process.wait(timeout=28)
+        except subprocess.TimeoutExpired:
+            process.kill()  # Only this supervisor's directly owned worker.
+            process.wait(timeout=3)
+            code = 1
+            value = json.loads(RESULT.read_text()) if RESULT.exists() else {}
+            value.update(passed=False, supervisor_timeout=True, error='Owned worker did not exit within 28 seconds')
+            RESULT.write_text(json.dumps(value, indent=2), encoding='utf-8')
+    value = json.loads(RESULT.read_text()) if RESULT.exists() else {'passed': False, 'error': 'Worker wrote no result'}
+    value.update(supervised_worker_pid=process.pid, supervised_worker_exit=process.returncode)
+    RESULT.write_text(json.dumps(value, indent=2), encoding='utf-8')
+    print(json.dumps({'passed': value['passed'], 'exit': process.returncode, 'result': str(RESULT)}))
+    raise SystemExit(code)

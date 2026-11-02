@@ -1,0 +1,359 @@
+"""Disposable MT-DESKTOP-1 Windows integration proof; synthetic files only."""
+import os
+SENTINEL = 'synthetic-native-smoke-sentinel'
+assert os.environ.get('ASSEMBLYAI_API_KEY') == SENTINEL
+import sys
+from pathlib import Path
+WORK = Path(__file__).resolve().parent
+REPO = WORK / 'meeting-transcriber-desktop'
+sys.path.insert(0, str(REPO))
+from desktop.main import Bridge
+from desktop.server import ReaderServer
+from meeting_library import Library
+from desktop import native
+assert 'ASSEMBLYAI_API_KEY' not in os.environ
+import ctypes
+from ctypes import wintypes as w
+import hashlib
+import http.client
+import json
+import shutil
+import subprocess
+import threading
+import time
+import wave
+from urllib.parse import urlsplit
+from tests.test_assemblyai_adapter import write_published_run
+from transcript_bundle import parse_canonical
+import webview
+
+BACKGROUND = '--background' in sys.argv
+EVIDENCE = WORK.parent / 'outputs' / 'integrated-windows'
+if BACKGROUND:
+    EVIDENCE = EVIDENCE / '71668b9'
+EVIDENCE.mkdir(parents=True, exist_ok=True)
+FIXTURES = WORK / ('integrated-fixtures-' + str(os.getpid()))
+ROOT_A, ROOT_B = FIXTURES / 'library-a', FIXTURES / 'library-b'
+ROOT_A.mkdir(parents=True)
+RESULT = {'platform': sys.platform, 'python': sys.version.split()[0], 'checks': {}, 'limitations': []}
+if BACKGROUND:
+    RESULT['background_window'] = True
+    RESULT['reused_evidence'] = {
+        'native_picker_dialog_cancellation': '../result.json at 983f8f21623fe8c7efce4f689afe33a5197d4ad1; picker/library/UI source unchanged',
+        'actual_browser_forced_interruption': '../interruption-result.json; Windows session storage and cleanup source unchanged',
+        'raw_forged_native_dispatch': 'inspected tests/test_desktop_native.py actual WebView2 raw dotted-message proof; not duplicated by this harness'
+    }
+RESULT['source_sha256'] = {str(p.relative_to(REPO)): hashlib.sha256(p.read_bytes()).hexdigest()
+    for p in [REPO/'desktop/main.py', REPO/'desktop/native.py', REPO/'desktop/server.py',
+              REPO/'lib/meeting_library.py', *sorted((REPO/'desktop/assets').glob('*'))] if p.is_file()}
+
+def wav(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), 'wb') as stream:
+        stream.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+        stream.writeframes(bytes(12 * 96000))
+
+def run(bundle, label='20261031-150000', warning=False):
+    path = write_published_run(bundle/'transcripts'/label, deletion={'confirmed': not warning})
+    data = json.loads(path.read_text(encoding='utf-8'))
+    data['speaker_names'] = {'SPEAKER_00':'Alex <script>window.hostile=true</script>', 'SPEAKER_01':'Alex <script>window.hostile=true</script>'}
+    entries = [(8,10,'Later passage appears first. [a.*] literal.', 'SPEAKER_00'),
+               (0,2,'Opening <img src=x onerror="window.hostile=true"> [a.*] literal.', 'SPEAKER_01'),
+               (1,3,'Overlapping passage from the first speaker.', 'SPEAKER_00'),
+               (5,5,'Zero duration remains readable.', 'SPEAKER_00'),
+               (25,30,'Beyond available recording remains readable.', 'SPEAKER_01')]
+    entries += [(10+i*.04,10.04+i*.04,f'Synthetic passage {i+6}: long review text to exercise scrolling.', 'SPEAKER_0'+str(i%2)) for i in range(25)]
+    data['segments'] = [{'id':7,'start':start,'end':end,'text':text,'speaker':speaker,
+        'words':[{'word':text,'start':start,'end':end,'probability':1,'speaker':speaker}]} for start,end,text,speaker in entries]
+    data['text'] = ' '.join(s['text'] for s in data['segments'])
+    parse_canonical(data)
+    path.write_text(json.dumps(data), encoding='utf-8')
+    return path
+
+TIMED = ROOT_A/'20261031-120000-Synthetic-review-with-a-long-title-for-the-native-reader'
+run(TIMED, warning=True)
+run(TIMED, '20261030-150000')
+wav(TIMED/'recording.wav')
+RECORDING = ROOT_A/'20261030-120000-Recording-only'
+wav(RECORDING/'recording.wav')
+MISSING = ROOT_A/'20261029-120000-Missing-media'; run(MISSING)
+AMBIGUOUS = ROOT_A/'20261028-120000-Ambiguous-media'; run(AMBIGUOUS); wav(AMBIGUOUS/'recording.wav'); (AMBIGUOUS/'recording.mp3').write_bytes(b'synthetic duplicate')
+UNSUPPORTED = ROOT_A/'20261027-120000-Unsupported-media'; run(UNSUPPORTED); (UNSUPPORTED/'recording.wav').write_bytes(b'not an audio recording')
+HTML = ROOT_A/'20261026-120000-Saved-HTML-fallback'; html_run = HTML/'transcripts'/'20261031-150000'; html_run.mkdir(parents=True); (html_run/'transcript.json').write_text('{malformed', encoding='utf-8'); (html_run/'transcript.html').write_text('<!doctype html><title>Synthetic saved export</title>', encoding='utf-8')
+PARTIAL = ROOT_A/'20261025-120000-Unfinished-recording'; PARTIAL.mkdir(); (PARTIAL/'recording.partial.wav').write_bytes(b'synthetic partial')
+MALFORMED = ROOT_A/'20261024-120000-Malformed-sibling'; MALFORMED.mkdir(); (MALFORMED/'transcripts').write_bytes(b'not a directory')
+shutil.copytree(ROOT_A, ROOT_B)
+
+def hashes():
+    return {str(p.relative_to(FIXTURES)): hashlib.sha256(p.read_bytes()).hexdigest() for p in FIXTURES.rglob('*') if p.is_file()}
+
+ORIGINAL = hashes()
+server = ReaderServer(REPO/'desktop/assets')
+opened = []
+window = None
+picker_calls = 0
+
+def cancel_native_dialog():
+    user = ctypes.WinDLL('user32', use_last_error=True)
+    found = []
+    callback_type = ctypes.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
+    @callback_type
+    def visit(hwnd, _):
+        pid = w.DWORD(); user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        name = ctypes.create_unicode_buffer(256); user.GetClassNameW(hwnd, name, 256)
+        if pid.value == os.getpid() and name.value == '#32770':
+            found.append(True); user.PostMessageW(hwnd, 0x10, 0, 0)
+        return True
+    for _ in range(50):
+        user.EnumWindows(visit, 0)
+        if found:
+            RESULT['native_picker_dialog_observed'] = True
+            return
+        time.sleep(.1)
+
+def picker():
+    global picker_calls
+    picker_calls += 1
+    if picker_calls == 1:
+        if BACKGROUND:
+            return None
+        threading.Thread(target=cancel_native_dialog, daemon=True).start()
+        chosen = window.create_file_dialog(webview.FileDialog.FOLDER, directory=str(ROOT_A))
+        return chosen[0] if chosen else None
+    return str(ROOT_B)
+
+def opener(url):
+    # Exercise a real child using only the synthetic URL; no real browser session.
+    child = subprocess.run([sys.executable, '-c', 'import os,sys,urllib.request; assert "ASSEMBLYAI_API_KEY" not in os.environ; assert b"Synthetic saved export" in urllib.request.urlopen(sys.argv[1]).read(); print("synthetic opener child passed")', url], capture_output=True, text=True, timeout=10)
+    assert child.returncode == 0, 'synthetic opener child failed'
+    opened.append(url)
+    return True
+
+bridge = Bridge(server, picker, opener)
+bridge._library = Library(ROOT_A)
+
+def request(url, *, method='GET', headers=None):
+    address = urlsplit(url)
+    connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+    connection.request(method, address.path, headers=headers or {})
+    response = connection.getresponse(); value = (response.status, dict(response.getheaders()), response.read()); connection.close()
+    return value
+
+def process_sentinel_absent(pid):
+    """Inspect one actual x64 child PEB; return only presence booleans."""
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.argtypes = [w.DWORD,w.BOOL,w.DWORD]; kernel.OpenProcess.restype = w.HANDLE
+    kernel.ReadProcessMemory.argtypes = [w.HANDLE,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_size_t,ctypes.POINTER(ctypes.c_size_t)]
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    handle = kernel.OpenProcess(0x0410, False, pid)
+    if not handle: raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        class Basic(ctypes.Structure):
+            _fields_ = [('reserved',ctypes.c_void_p),('peb',ctypes.c_void_p),('reserved2',ctypes.c_void_p*2),('pid',ctypes.c_size_t),('reserved3',ctypes.c_void_p)]
+        query = ctypes.WinDLL('ntdll').NtQueryInformationProcess
+        query.argtypes = [w.HANDLE,ctypes.c_int,ctypes.c_void_p,w.ULONG,ctypes.POINTER(w.ULONG)]
+        basic = Basic(); size = w.ULONG()
+        if query(handle,0,ctypes.byref(basic),ctypes.sizeof(basic),ctypes.byref(size)) != 0: raise RuntimeError('Process PEB unavailable')
+        def read(address, count):
+            buffer = ctypes.create_string_buffer(count); actual = ctypes.c_size_t()
+            kernel.ReadProcessMemory(handle,address,buffer,count,ctypes.byref(actual))
+            if not actual.value: raise ctypes.WinError(ctypes.get_last_error())
+            return buffer.raw[:actual.value]
+        params = int.from_bytes(read(basic.peb+0x20,8),'little')
+        environment = int.from_bytes(read(params+0x80,8),'little')
+        payload = bytearray()
+        for offset in range(0,1024*1024,1024):
+            payload.extend(read(environment+offset,1024))
+            text = payload.decode('utf-16-le', errors='ignore')
+            if '\0\0' in text:
+                entries = text.split('\0\0',1)[0].split('\0')
+                return not any(entry.upper().startswith('ASSEMBLYAI_API_KEY=') for entry in entries), SENTINEL not in text
+        raise RuntimeError('Environment terminator not found within bound')
+    finally: kernel.CloseHandle(handle)
+
+def process_birth(pid):
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD]; kernel.OpenProcess.restype=w.HANDLE
+    kernel.GetProcessTimes.argtypes=[w.HANDLE,ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME),ctypes.POINTER(w.FILETIME)]
+    kernel.CloseHandle.argtypes=[w.HANDLE]
+    handle=kernel.OpenProcess(0x1000,False,pid)
+    if not handle: return None
+    try:
+        creation,exit_,kernel_,user_=(w.FILETIME() for _ in range(4))
+        if not kernel.GetProcessTimes(handle,ctypes.byref(creation),ctypes.byref(exit_),ctypes.byref(kernel_),ctypes.byref(user_)): raise ctypes.WinError(ctypes.get_last_error())
+        return (creation.dwHighDateTime<<32)|creation.dwLowDateTime
+    finally: kernel.CloseHandle(handle)
+
+def browser_children(browser_pid):
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    class Entry(ctypes.Structure):
+        _fields_=[('size',w.DWORD),('usage',w.DWORD),('pid',w.DWORD),('heap',ctypes.c_size_t),('module',w.DWORD),('threads',w.DWORD),('parent',w.DWORD),('priority',w.LONG),('flags',w.DWORD),('exe',w.WCHAR*260)]
+    kernel.CreateToolhelp32Snapshot.argtypes=[w.DWORD,w.DWORD]; kernel.CreateToolhelp32Snapshot.restype=w.HANDLE
+    kernel.Process32FirstW.argtypes=[w.HANDLE,ctypes.POINTER(Entry)]; kernel.Process32NextW.argtypes=[w.HANDLE,ctypes.POINTER(Entry)]; kernel.CloseHandle.argtypes=[w.HANDLE]
+    handle=kernel.CreateToolhelp32Snapshot(2,0)
+    if handle==w.HANDLE(-1).value: raise ctypes.WinError(ctypes.get_last_error())
+    edges=[]; entry=Entry(); entry.size=ctypes.sizeof(entry)
+    try:
+        ok=kernel.Process32FirstW(handle,ctypes.byref(entry))
+        while ok:
+            if entry.exe.lower()=='msedgewebview2.exe': edges.append((entry.pid,entry.parent))
+            ok=kernel.Process32NextW(handle,ctypes.byref(entry))
+    finally: kernel.CloseHandle(handle)
+    found={browser_pid}
+    while True:
+        expanded=found|{pid for pid,parent in edges if parent in found}
+        if expanded==found: return found
+        found=expanded
+
+def exercise():
+    def evaluate(expression): return window.evaluate_js(expression)
+    def wait(expression, timeout=12):
+        until = time.monotonic()+timeout
+        while time.monotonic()<until:
+            if evaluate(expression): return
+            time.sleep(.05)
+        raise AssertionError('Timed out: '+expression)
+    def check(name, value):
+        if isinstance(value,str): value = evaluate(value)
+        RESULT['checks'][name] = value
+        if value is not True: raise AssertionError(name+': '+repr(value))
+    def click(selector): evaluate('document.querySelector('+json.dumps(selector)+').click()')
+    def select(title):
+        evaluate('[...document.querySelectorAll(".meeting-row")].find(n=>n.textContent.includes('+json.dumps(title)+')).click()')
+        wait('document.querySelector(".reader").getAttribute("aria-busy")==="false"')
+    def input_(id,value,event='input'):
+        evaluate('document.getElementById('+json.dumps(id)+').value='+json.dumps(value)+';document.getElementById('+json.dumps(id)+').dispatchEvent(new Event('+json.dumps(event)+'))')
+    def capture(name):
+        time.sleep(.2)
+        from System import Action
+        from System.IO import FileStream, FileMode
+        from Microsoft.Web.WebView2.Core import CoreWebView2CapturePreviewImageFormat
+        stream = FileStream(str(EVIDENCE/(name+'.png')), FileMode.Create); tasks=[]
+        window.native.Invoke(Action(lambda: tasks.append(window.native.webview.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,stream))))
+        while not tasks[0].IsCompleted: time.sleep(.05)
+        tasks[0].GetAwaiter().GetResult(); stream.Dispose()
+    try:
+        wait('document.querySelectorAll(".meeting-row").length===8')
+        check('real_scan_and_malformed_sibling_isolation','!document.getElementById("library-errors").hidden && document.getElementById("library-path").textContent.includes("library-a")')
+        RESULT['statuses'] = evaluate('[...document.querySelectorAll(".meeting-state")].map(n=>n.textContent)')
+        select('Synthetic review')
+        wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState>=1')
+        check('native_metadata_real_bridge','document.querySelectorAll(".passage").length===30 && document.getElementById("audio-duration").textContent==="Duration 0:12"')
+        if '--interrupt' in sys.argv:
+            session.verify_storage()
+            pids=set()
+            for pid in session.renderer_pids: pids |= browser_children(pid)
+            record={'session_path':str(session.path),'profile_path':str(session.profile_path),'fixture_path':str(FIXTURES),
+                    'process_births':{str(pid):process_birth(pid) for pid in pids},'engine_capabilities':sorted(session._engine_capabilities),
+                    'metadata_loaded':True,'acl_verified_with_native_cache':True,'source_sha256':RESULT['source_sha256']}
+            (EVIDENCE/'interruption-record.json').write_text(json.dumps(record,indent=2),encoding='utf-8')
+            os._exit(0)
+        check('no_autoplay_and_warning','document.getElementById("meeting-audio").paused && document.getElementById("reader-notice").textContent.includes("cleanup unconfirmed")')
+        check('hostile_text_not_markup','!window.hostile && document.querySelectorAll(".passages img,.passages script").length===0 && document.getElementById("passage-1").textContent.includes("<img")')
+        evaluate('window.oldAudio=document.getElementById("meeting-audio");oldAudio.currentTime=1.5')
+        wait('document.querySelectorAll(".passage.active").length===2')
+        check('overlap_ordinal_identity','JSON.stringify([...document.querySelectorAll(".passage.active")].map(n=>n.dataset.ordinal))===JSON.stringify(["1","2"]) && new Set([...document.querySelectorAll(".passage")].map(n=>n.id)).size===30')
+        evaluate('oldAudio.currentTime=4'); wait('document.querySelectorAll(".passage.active").length===0')
+        check('same_speaker_gap','document.getElementById("playing-status").textContent.includes("No transcript passage")')
+        click('#passage-1 button'); evaluate('oldAudio.muted=true'); time.sleep(.65)
+        check('passage_seek_and_actual_advance','!oldAudio.paused && oldAudio.currentTime>0.2 && oldAudio.currentTime<2')
+        evaluate('oldAudio.pause(); oldAudio.currentTime=1.5')
+        wait('document.querySelectorAll(".passage.active").length===2')
+        click('#follow-toggle'); check('follow_on','document.getElementById("follow-toggle").getAttribute("aria-pressed")==="true"')
+        evaluate('document.getElementById("passages").dispatchEvent(new WheelEvent("wheel",{deltaY:100}))')
+        check('scroll_releases_follow','document.getElementById("follow-toggle").getAttribute("aria-pressed")==="false"')
+        click('#jump-playing'); check('jump_resumes_follow','document.getElementById("follow-toggle").getAttribute("aria-pressed")==="true"')
+        input_('transcript-search','[a.*]'); check('literal_find','document.querySelectorAll(".passage:not([hidden])").length===2 && document.querySelectorAll("mark").length===2')
+        click('#find-previous'); check('previous_wrap','document.querySelector(".current-match").dataset.ordinal==="1"')
+        click('#find-next'); check('next_wrap','document.querySelector(".current-match").dataset.ordinal==="0"')
+        input_('speaker-filter','SPEAKER_01','change'); check('speaker_label_duplicate_names','document.querySelectorAll(".passage:not([hidden])").length===1 && document.querySelector(".passage:not([hidden])").dataset.ordinal==="1"')
+        input_('transcript-search','nonexistent'); check('zero_matches','!document.getElementById("transcript-empty").hidden && document.getElementById("find-next").disabled'); capture('zero-matches')
+        input_('transcript-search',''); input_('speaker-filter','','change')
+        click('#passage-4 button'); check('beyond_media_explained','document.getElementById("reader-notice").textContent.includes("beyond")')
+        click('#choose-library'); wait('!document.getElementById("choose-library").disabled')
+        check('cancelled_choice_preserves_media' if BACKGROUND else 'real_native_picker_cancel_preserves_media','document.getElementById("meeting-audio")===oldAudio && document.getElementById("library-path").textContent.includes("library-a")')
+        if not BACKGROUND:
+            check('native_dialog_was_observed',RESULT.get('native_picker_dialog_observed') is True)
+        select('Missing media'); check('missing_text_and_old_media_detached','document.querySelectorAll(".passage").length===30 && document.getElementById("audio-status").textContent.includes("Audio missing") && oldAudio.paused && !oldAudio.hasAttribute("src")')
+        evaluate('oldAudio.dispatchEvent(new Event("error"))'); check('stale_media_callback_ignored','document.getElementById("audio-status").textContent.includes("Audio missing")')
+        select('Ambiguous media'); check('ambiguous_text_usable','document.querySelectorAll(".passage").length===30 && document.getElementById("audio-status").textContent.includes("Audio ambiguous")')
+        select('Unsupported media'); wait('document.getElementById("audio-status").textContent.includes("Audio unavailable")'); check('decode_failure_text_usable','document.querySelectorAll(".passage").length===30 && document.getElementById("back-ten").disabled'); capture('failed-media')
+        select('Saved HTML fallback'); check('historical_html_fallback','document.getElementById("meeting-status").textContent==="Saved HTML available" && !document.getElementById("open-html").hidden && document.getElementById("transcript-empty").textContent.includes("saved HTML")')
+        click('#open-html'); wait('!document.getElementById("open-html").disabled'); check('real_opener_child_export_and_scrub',len(opened)==1)
+        select('Recording only'); wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState>=1'); check('recording_without_transcript','document.querySelectorAll(".passage").length===0 && document.getElementById("meeting-status").textContent==="Recording saved"')
+        select('Synthetic review'); wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState>=1')
+        old = evaluate('document.getElementById("run-select").options[1].value'); input_('run-select',old,'change'); wait('document.getElementById("meeting-status").textContent==="Transcript ready"'); check('older_run_real_bridge','document.querySelectorAll(".passage").length===30')
+        if evaluate('document.documentElement.dataset.theme')!='light': click('#theme-toggle')
+        evaluate('document.getElementById("meeting-audio").currentTime=1.5'); wait('document.querySelectorAll(".passage.active").length===2'); capture('wide-light')
+        check('wide_player_visible','document.querySelector(".player").getBoundingClientRect().bottom<=innerHeight+1')
+        click('#theme-toggle'); capture('wide-dark'); window.resize(430,920); time.sleep(.3)
+        check('narrow_no_horizontal_overflow','document.documentElement.scrollWidth<=innerWidth'); evaluate('document.querySelector(".reader").scrollIntoView()'); capture('narrow-dark'); click('#theme-toggle'); capture('narrow-light')
+        window.resize(1200,900); time.sleep(.2)
+        media = evaluate('document.getElementById("meeting-audio").src'); payload=(TIMED/'recording.wav').read_bytes()
+        ranges=[]
+        for start,end in [(0,43),(len(payload)//2,len(payload)//2+31),(len(payload)-32,len(payload)-1)]:
+            code,headers,body=request(media,headers={'Range':f'bytes={start}-{end}'})
+            ranges.append(code==206 and body==payload[start:end+1] and headers.get('Cache-Control')=='no-store')
+        check('real_bound_media_ranges_start_middle_end',all(ranges))
+        check('range_416',request(media,headers={'Range':f'bytes={len(payload)}-'})[0]==416)
+        check('invalid_host_origin_token_traversal_and_method',all([request(media,headers={'Host':'evil.invalid'})[0]==403,request(media,headers={'Origin':'https://evil.invalid'})[0]==403,request(server.origin+'/media/unknown')[0]==404,request(server.origin+'/'+server.token+'/%2e%2e/secrets')[0]==404,request(media,method='POST')[0]==405]))
+        code,headers,_=request(server.document_url); check('app_csp_no_remote_sources',code==200 and "default-src 'none'" in headers.get('Content-Security-Policy','') and "script-src 'self'" in headers.get('Content-Security-Policy',''))
+        # Actual browser-child memory inspection reports only sentinel/key absence.
+        processes=set()
+        for pid in session.renderer_pids: processes |= browser_children(pid)
+        envs=[]
+        for pid in processes:
+            try:
+                absent,key_absent=process_sentinel_absent(pid); envs.append({'pid':pid,'key_absent':absent,'sentinel_absent':key_absent})
+            except Exception as error:
+                envs.append({'pid':pid,'unavailable':type(error).__name__+': '+str(getattr(error,'winerror',''))})
+        RESULT['native_child_environment']=envs
+        check('native_children_sentinel_absent',bool(envs) and all(item.get('key_absent') and item.get('sentinel_absent') for item in envs))
+        session.verify_storage(); check('actual_session_acl_after_native_launch',True)
+        RESULT['session_path']=str(session.path); RESULT['native_browser_processes']=len(processes)
+        before=evaluate('location.href'); evaluate('location.href='+json.dumps(server.origin+'/forbidden')); time.sleep(.2)
+        check('real_app_native_navigation_denied',evaluate('location.href')==before)
+        evaluate('location.href='+json.dumps((HTML/'recording.html').as_uri())); time.sleep(.2); check('file_navigation_denied',evaluate('location.href')==before)
+        evaluate('window.open("https://example.invalid/","_blank")'); time.sleep(.2); check('popup_denied',len(webview.windows)==1 and evaluate('location.href')==before)
+        click('#choose-library'); wait('document.getElementById("library-path").textContent.includes("library-b")'); select('Synthetic review'); wait('document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState>=1')
+        click('#passage-2 button'); time.sleep(.4); check('copied_library_real_seek','document.getElementById("meeting-audio").currentTime>1.1 && document.querySelectorAll(".passage").length===30')
+        click('#refresh-library'); wait('!document.getElementById("refresh-library").disabled && document.querySelector(".reader").getAttribute("aria-busy")==="false" && document.getElementById("meeting-audio") && document.getElementById("meeting-audio").readyState>=1 && document.querySelectorAll(".passage").length===30'); check('refresh_rebinds_media',request(media)[0]==404)
+        trustee='*'+native._current_sid()
+        denied=subprocess.run(['icacls',str(ROOT_B),'/deny',trustee+':(RD)'],capture_output=True,text=True)
+        assert denied.returncode==0,'Cannot establish synthetic list-directory denial'
+        try:
+            click('#refresh-library'); wait('document.getElementById("library-errors").textContent.includes("Access denied") && !document.getElementById("refresh-library").disabled'); check('actual_os_access_denial_explained_not_empty','!document.getElementById("library-errors").hidden && document.getElementById("library-empty").textContent.includes("could not be fully read") && document.getElementById("reader-content").hidden'); capture('unavailable-library')
+        finally:
+            restored=subprocess.run(['icacls',str(ROOT_B),'/remove:d',trustee],capture_output=True,text=True)
+            assert restored.returncode==0,'Cannot remove synthetic list-directory denial'
+        check('synthetic_bundle_files_unchanged',hashes()==ORIGINAL)
+        RESULT['passed']=True
+    except BaseException as error:
+        RESULT['passed']=False; RESULT['error']=str(error)
+        try: RESULT['last_ui_state']=evaluate('Object.fromEntries(["library-errors","library-empty","audio-status","reader-notice"].map(id=>[id,document.getElementById(id).textContent]))')
+        except Exception: pass
+    finally:
+        window.destroy()
+
+try:
+    with native.create_session() as session:
+        RESULT['session_acl_before_content']=True
+        gui=native.configure_webview(webview,server.document_url,session)
+        window=webview.create_window('Meeting Transcriber · Synthetic integration smoke',server.document_url,js_api=bridge,width=1200,height=900,min_size=(400,500),text_select=True,hidden=BACKGROUND)
+        server.start()
+        try:
+            webview.start(exercise,gui=gui,private_mode=True,storage_path=str(session.profile_path),debug=False)
+            if session.error: raise session.error
+        finally: server.close()
+    RESULT['session_cleaned_after_normal_exit']=not session.path.exists()
+    try: request(server.document_url); RESULT['server_closed_after_exit']=False
+    except OSError: RESULT['server_closed_after_exit']=True
+except BaseException as error:
+    RESULT['passed']=False; RESULT['error']=str(error)
+finally:
+    (EVIDENCE/'result.json').write_text(json.dumps(RESULT,indent=2),encoding='utf-8')
+    # Delete only the exact synthetic task-owned tree, after preservation proof.
+    if FIXTURES.parent==WORK and FIXTURES.name.startswith('integrated-fixtures-'):
+        shutil.rmtree(FIXTURES)
+print(json.dumps({'passed':RESULT.get('passed',False),'checks':len(RESULT['checks']),'error':RESULT.get('error'),'result':str(EVIDENCE/'result.json')}))
+raise SystemExit(0 if RESULT.get('passed') else 1)
