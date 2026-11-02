@@ -28,8 +28,9 @@ describe every symlink in a macOS app bundle.
 
 ## Observed behavior
 
-- At 1200 logical pixels in light mode, both saved fictional summaries rendered
-  with readable structure, a four-row action table and complete time references.
+- Both saved fictional summaries rendered with readable structure. At 1200
+  logical pixels in light mode, Claude's four-row action table and time references
+  remained readable.
   At 627 pixels in dark mode, headings, provenance, history, saved warnings,
   earlier-revision labels and reader/player controls remained readable.
 - Inline, fenced and indented code remained literal. Nested lists rendered;
