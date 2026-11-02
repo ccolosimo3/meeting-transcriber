@@ -37,6 +37,7 @@ class TranscriptionTests(RecordingFixture, unittest.TestCase):
             self.assertEqual(result.exit_code, 3)
             fresh = Library(self.library)
             row = fresh.scan()['meetings'][0]
+            self.assertEqual(row['title'], self.source.stem)
             loaded = fresh.load(row['id'], row['default_run_id'])
             self.assertIn('remote cleanup unconfirmed', loaded['status'])
             self.assertEqual(loaded['canonical']['text'], 'First. Second exactly as returned.')

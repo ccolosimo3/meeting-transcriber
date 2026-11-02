@@ -54,7 +54,7 @@ class Result:
         return 0 if self.deletion_confirmed else 3
 
 def _stamp(variable):
-    value = os.environ.get(variable) or datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+    value = os.environ.get(variable) or datetime.now().strftime('%Y%m%d-%H%M%S')
     if not re.fullmatch(r'[A-Za-z0-9._-]+', value) or value in ('.', '..'):
         raise OperationError(f'{variable} contains invalid characters')
     return value
