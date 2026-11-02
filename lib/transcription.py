@@ -14,12 +14,13 @@ import sys
 
 from private_files import Directory, identity, open_regular, publication_guard, verify_private
 from transcription_config import SetupError, read_key, resolve_ffprobe
-from transcribe_assemblyai import AssemblyAIAdapter, _build_adapter, failure_block, resolve_cleanup_target
+from transcribe_assemblyai import AssemblyAIAdapter, _build_adapter, failure_details, resolve_cleanup_target
 
 class OperationError(ValueError):
-    def __init__(self, message, *, code='stopped', exit_code=2):
+    def __init__(self, message, *, code='stopped', exit_code=2, details=None):
         super().__init__(message)
         self.code, self.exit_code = code, exit_code
+        self.details = details
 
 @dataclass(frozen=True)
 class Recording:
@@ -192,7 +193,8 @@ def transcribe(recording, speakers=None, *, on_progress=lambda phase: None, key_
     except (Exception, KeyboardInterrupt) as error:
         # Provider-selected failure distinctions remain owned by the adapter;
         # never expose the exception's raw response or suggest an automatic retry.
-        raise OperationError('\n'.join(failure_block(adapter, recording.path, error)), exit_code=130 if isinstance(error, KeyboardInterrupt) else 1) from None
+        details = failure_details(adapter, error)
+        raise OperationError(' '.join(filter(None, (details['problem'], 'The original recording is safe.', details['remote'], details['action']))), code=details['code'], exit_code=130 if isinstance(error, KeyboardInterrupt) else 1, details=details) from None
 
 def cleanup_published_run(canonical_path, destination=None, *, key_override=None, on_progress=lambda phase: None, stderr=None):
     path = Path(canonical_path).expanduser().absolute()

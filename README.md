@@ -19,8 +19,8 @@ The optional **desktop app** supports Apple Silicon macOS and targets Windows
 x64 with Microsoft Edge WebView2. Import audio, explicitly transcribe it with
 AssemblyAI, read/listen, and optionally generate a summary through your signed-in
 Codex or Claude Code CLI. Reading and local import need no API key or FFprobe.
-Windows package, native lifecycle and ACL qualification remain pending; Mac
-verification does not establish Windows support. Microphone recording remains a
+Windows packages require separate native lifecycle and ACL qualification; Mac
+verification does not establish Windows behavior. Microphone recording remains a
 Mac CLI feature.
 
 ## Desktop library and audio viewer

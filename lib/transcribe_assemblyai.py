@@ -734,10 +734,8 @@ def _receipt_created_at(receipt: dict[str, Any]) -> str:
     return "unavailable"
 
 
-def failure_block(
-    adapter: AssemblyAIAdapter, audio: Path, error: BaseException
-) -> list[str]:
-    """One failure block, one recommended action, chosen by remote state."""
+def failure_details(adapter: AssemblyAIAdapter, error: BaseException) -> dict[str, Any]:
+    """One safe failure outcome shared by terminal and desktop presentation."""
     receipt = adapter.receipt
     state = receipt.get("state")
     deletion = receipt.get("deletion")
@@ -766,46 +764,42 @@ def failure_block(
     else:
         problem = "AssemblyAI did not finish the transcript"
 
-    lines = ["", "Transcription stopped", f"  Problem     {problem}"]
-    lines.append(f"  Recording   safe at {audio}")
-
+    if deletion_confirmed:
+        remote = 'Remote transcript and audio deletion is confirmed'
+    elif transcript_id:
+        remote = f'Remote data deletion unconfirmed for transcript {transcript_id}'
+    else:
+        remote = 'Uploaded audio may remain remotely; no transcript ID is known'
+    retry_safe = deletion_confirmed and bool(transcript_id)
     if isinstance(error, ModelMismatchError):
-        if deletion_confirmed:
-            lines.append("  Remote transcript and audio deletion is confirmed")
-        elif transcript_id:
-            lines.append(
-                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
-            )
-        lines.append(
-            f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
-            f"and reported model {error.reported!r}"
-        )
-        return lines
+        action = f'{SUPPORT_ACTION} with receipt timestamp {created_at} and reported model {error.reported!r}'
+        retry_safe = False
+        if not deletion_confirmed and not transcript_id:
+            remote = ''
+    elif state == 'upload_rejected':
+        remote = 'No audio or transcript was stored remotely'
+        retry_safe = True
+        action = 'You can start a new transcription explicitly.'
+    elif retry_safe:
+        action = 'You can start a new transcription explicitly.'
+    elif transcript_id:
+        action = f'{SUPPORT_ACTION} with transcript {transcript_id} and receipt timestamp {created_at} before retrying'
+    else:
+        action = f'{SUPPORT_ACTION} with receipt timestamp {created_at} before retrying'
+    return {'code': 'retry_available' if retry_safe else 'support_before_retry',
+            'problem': problem, 'remote': remote, 'action': action, 'retry_safe': retry_safe}
 
-    if state == "upload_rejected":
-        lines.append("  No audio or transcript was stored remotely")
-        lines.append(f"  Retry       meeting transcribe {audio}")
-        return lines
 
-    if transcript_id:
-        if deletion_confirmed:
-            lines.append("  Remote transcript and audio deletion is confirmed")
-            lines.append(f"  Retry       meeting transcribe {audio}")
-        else:
-            lines.append(
-                f"  Remote data deletion unconfirmed for transcript {transcript_id}"
-            )
-            lines.append(
-                f"  Action      {SUPPORT_ACTION} with transcript {transcript_id} "
-                f"and receipt timestamp {created_at} before retrying"
-            )
-        return lines
+def failure_block(adapter: AssemblyAIAdapter, audio: Path, error: BaseException) -> list[str]:
+    """Keep the CLI's single failure block and one recovery action."""
+    return format_failure(failure_details(adapter, error), audio)
 
-    lines.append("  Uploaded audio may remain remotely; no transcript ID is known")
-    lines.append(
-        f"  Action      {SUPPORT_ACTION} with receipt timestamp {created_at} "
-        f"before retrying"
-    )
+
+def format_failure(failure, audio):
+    lines = ['', 'Transcription stopped', f"  Problem     {failure['problem']}", f'  Recording   safe at {audio}']
+    if failure['remote']:
+        lines.append('  ' + failure['remote'])
+    lines.append(f'  Retry       meeting transcribe {audio}' if failure['retry_safe'] else '  Action      ' + failure['action'])
     return lines
 
 

@@ -38,7 +38,7 @@ class TranscriptionJob:
                 except Exception as error:
                     with self._lock:
                         message = str(error) if isinstance(error, (OperationError, ValueError)) else 'The operation stopped. The original recording is safe. Check setup and refresh the library.'
-                        self._job.update(state='stopped', phase='stopped', error=message[:2400])
+                        self._job.update(state='stopped', phase='stopped', error=message[:2400], code=getattr(error, 'code', 'stopped'), action=error.details['action'] if isinstance(error, OperationError) and error.details else None)
             threading.Thread(target=run, name='meeting-' + kind, daemon=False).start()
             return dict(self._job)
 

@@ -89,5 +89,38 @@ class CallerTests(RecordingFixture, unittest.TestCase):
             self.assertEqual(json.loads(submitted['body'])['speakers_expected'], 2)
             self.assertEqual(self.source.read_bytes(), self.original)
 
+    def test_unknown_desktop_failure_stays_blocked_after_library_reload(self):
+        import time
+        from desktop.main import Bridge
+        from desktop.server import ReaderServer
+        from transcription_config import store_key
+        from transcription import select_or_import
+        recording = select_or_import(self.source, self.library)
+        server = ReaderServer(ROOT / 'desktop/assets')
+        server.start()
+        self.addCleanup(server.close)
+        with running_server({'upload_status': 500}) as (provider, base), patch.dict(os.environ, {'HOME': str(self.root / 'home'), 'MEETING_DATA_DIR': str(self.library), 'MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE': base, 'MEETING_TRANSCRIBER_ASSEMBLYAI_POLL_INTERVAL': '0'}):
+            store_key('synthetic-only')
+            bridge = Bridge(server, lambda: None)
+            self.addCleanup(bridge._close)
+            row = bridge.refresh_library()['meetings'][0]
+            job = bridge.start_transcription(row['id'])
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                status = bridge.operation_status(job['id'])
+                if status['state'] != 'running': break
+                time.sleep(.02)
+            self.assertEqual(status['state'], 'stopped')
+            self.assertEqual(status['code'], 'support_before_retry')
+            self.assertIn('Contact AssemblyAI support', status['action'])
+            reopened = Bridge(server, lambda: None)
+            self.addCleanup(reopened._close)
+            row = reopened.refresh_library()['meetings'][0]
+            self.assertIn('Contact AssemblyAI support', reopened.load_run(row['id'], None)['transcription_warning'])
+            self.assertIn('before transcribing again', reopened.start_transcription(row['id'])['error'])
+            self.assertEqual([request['method'] for request in provider.requests], ['POST'])
+            self.assertTrue(recording.path.is_file())
+
+
 if __name__ == '__main__':
     unittest.main()

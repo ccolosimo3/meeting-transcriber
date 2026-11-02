@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 from transcription import select_or_import, recording_at, transcribe, cleanup_published_run, OperationError
 from transcription_config import SetupError
-from transcribe_assemblyai import cleanup_required_block
+from transcribe_assemblyai import cleanup_required_block, format_failure
 
 
 def main():
@@ -41,7 +41,12 @@ def main():
         return result.exit_code
     except (OSError, ValueError, RuntimeError) as error:
         if isinstance(error, OperationError) and error.exit_code != 2:
-            print(str(error), file=sys.stderr)
+            details = error.details
+            if details:
+                for line in format_failure(details, args.source):
+                    print(line, file=sys.stderr)
+            else:
+                print(str(error), file=sys.stderr)
             return error.exit_code
         print(f'\nSetup problem\n  Problem     {error}\n  Recording   safe at {getattr(args, "source", "its original location")}\n  No audio left this computer\n  Fix         meeting setup or meeting doctor', file=sys.stderr)
         return 2
