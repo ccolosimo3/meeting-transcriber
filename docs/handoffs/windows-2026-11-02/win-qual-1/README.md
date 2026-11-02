@@ -13,11 +13,11 @@ Selected artifacts:
 - [Source/proof hashes](source-and-proof-hashes.json) and [sanitized setup recovery](setup-recovery.json).
 - Archived proof references: [private qualification](private_qualification.py.txt), [summary continuation](summary_qualification.py.txt), [OS ACL observer](acl_snapshot.ps1.txt). These are reference text, not installed runners; their original ignored-artifact path layout is retained in source.
 
-Source hashes identify original local proof bytes and product files; `.txt` archive copies preserve those bytes. The report below is sanitized, with original artifact names retained as historical references. The selected export files above are the remote evidence owner.
+Source hashes identify original local proof bytes and product files. Git normalizes line endings in the archived text; each `archived_git_blob_sha256` binds the tracked `.txt` reference bytes separately. The report below is sanitized, with original artifact names retained as historical references. The selected export files above are the remote evidence owner.
 
 ## Local qualification report (sanitized)
 
-WIN-QUAL-1 Windows private-file qualification — PASS (first boundary only)
+WIN-QUAL-1 Windows private-file qualification â€” PASS (first boundary only)
 
 Candidate: de3226afe30ad8f26257a470df9389d12f13a6ce
 Checkout: current task's clean clone; branch qual/windows-private-files-20261102-enb016.
@@ -67,4 +67,3 @@ Post-return bounded addendum (no product launch or further registry/shell change
 - Native Windows UI automation is available: @oai/sky initialized successfully; sky.list_windows returned 5 targetable windows and no LockApp entry. No window activated, screenshot captured, app launched or UI input sent. Capture/input/native transcriber behavior remains unexercised until packaged-stage assignment.
 - setup-recovery.json retains sanitized before/after task-owned launcher/registration identity and removal observations. Original PythonCore3.12 registration remains present; added launcher and exact3.13 registration absent; managed interpreter still task-local. User and machine PATH contain no task checkout reference. The existing PowerShell profile last-write time is 2026-05-13, predating this task, with its current SHA256 retained. No pre-setup PATH/profile byte snapshot exists, so exact before/after equality cannot be claimed; executed command history and current metadata support that no PATH/profile edit occurred. No additional registry/shell settings changes were made.
 - Final narrow reload observation asserted 'Transcript ready; remote cleanup unconfirmed'; aggregate supported-runtime temporary/partial count rechecked as 12, all zero bytes at observation.
-
