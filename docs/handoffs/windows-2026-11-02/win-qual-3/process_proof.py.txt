@@ -1,0 +1,85 @@
+"""Disposable real Windows process-owner proof; production owns all lifecycle."""
+import os,sys,json,time,threading,ctypes,subprocess
+from ctypes import wintypes as w
+from pathlib import Path
+E=Path(__file__).resolve().parent;ROOT=E.parents[2]
+BASE=E/'synthetic';BASE.mkdir(exist_ok=False)
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith(('MEETING_TRANSCRIBER_','CODEX','CLAUDE','OPENAI','ANTHROPIC')):os.environ.pop(key,None)
+for key,suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local','APPDATA':'home/AppData/Roaming','MEETING_DATA_DIR':'library','MEETING_CONFIG_DIR':'config','TMP':'tmp','TEMP':'tmp'}.items():
+    p=BASE/suffix;p.mkdir(parents=True,exist_ok=True);os.environ[key]=str(p)
+sys.path[:0]=[str(ROOT/'lib'),str(ROOT)]
+from desktop.digest_job import Process,run_process,child_environment
+from meeting_digests import DigestError
+k=ctypes.WinDLL('kernel32',use_last_error=True)
+k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.GetProcessTimes.argtypes=[w.HANDLE,*([ctypes.POINTER(w.FILETIME)]*4)]
+k.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD];k.WaitForSingleObject.restype=w.DWORD
+k.IsProcessInJob.argtypes=[w.HANDLE,w.HANDLE,ctypes.POINTER(w.BOOL)]
+k.CloseHandle.argtypes=[w.HANDLE]
+handles=[];results={'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'python':sys.version,'sys_executable_role':'supported project venv Python3.13.15','checks':[]}
+def hold(row):
+    handle=k.OpenProcess(0x1000|0x00100000,False,row['pid'])
+    if not handle:return None
+    created,exited,kernel,user=w.FILETIME(),w.FILETIME(),w.FILETIME(),w.FILETIME()
+    assert k.GetProcessTimes(handle,ctypes.byref(created),ctypes.byref(exited),ctypes.byref(kernel),ctypes.byref(user))
+    assert (created.dwHighDateTime<<32)|created.dwLowDateTime==row['birth_filetime']
+    handles.append(handle);return handle
+def read_markers(folder,timeout=6):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        try:
+            rows=[json.loads((folder/(role+'.json')).read_text()) for role in ['root','child','grandchild']]
+            return rows
+        except (FileNotFoundError,json.JSONDecodeError):time.sleep(.02)
+    raise AssertionError('Owned marker tree did not start')
+def stopped(bound):
+    assert all(h is None or k.WaitForSingleObject(h,3000)==0 for h in bound),'Owned marker process survived'
+try:
+    # Production bootstrap receives no header before actual Job Object assignment.
+    folder=BASE/'pre-header';folder.mkdir()
+    owner=Process([sys.executable,str(E/'marker_tree.py'),str(folder),'root','hold'],cwd=folder,env=child_environment())
+    member=w.BOOL();assert k.IsProcessInJob(int(owner.process._handle),owner.job[1],ctypes.byref(member)) and member.value
+    time.sleep(.25);assert not list(folder.glob('*.json'))
+    owner.close()
+    for stream in (owner.process.stdin,owner.process.stdout,owner.process.stderr):stream.close()
+    assert not list(folder.glob('*.json'))
+    results['checks'].append({'case':'assignment-before-header + close-before-header fail-closed','status':'PASS','bootstrap_actual_job_member':True,'provider_markers':0})
+    print('PASS assignment and withheld-header fail-closed',flush=True)
+
+    folder=BASE/'assigned-tree';folder.mkdir()
+    owner=Process([sys.executable,str(E/'marker_tree.py'),str(folder),'root','hold'],cwd=folder,env=child_environment())
+    owner.process.stdin.write(owner.header);owner.process.stdin.close()
+    rows=read_markers(folder);bound=[hold(r) for r in rows]
+    assert all(bound)
+    for h in bound:
+        inside=w.BOOL();assert k.IsProcessInJob(h,owner.job[1],ctypes.byref(inside)) and inside.value
+    owner.close();stopped(bound)
+    for stream in (owner.process.stdout,owner.process.stderr):stream.close()
+    results['checks'].append({'case':'provider root/child/grandchild exact Job membership + Process.close','status':'PASS','processes':rows})
+    print('PASS real tree membership and Process.close',flush=True)
+
+    for mode in ['cancel','timeout','root-exit']:
+        folder=BASE/mode;folder.mkdir();cancel=threading.Event();returned={}
+        def invoke():
+            try:returned['value']=run_process([sys.executable,str(E/'marker_tree.py'),str(folder),'root',mode],b'synthetic payload',folder,child_environment(),cancel,timeout=3)
+            except BaseException as error:returned['error']=str(error);returned['error_type']=type(error).__name__
+        worker=threading.Thread(target=invoke);worker.start()
+        rows=read_markers(folder);bound=[hold(r) for r in rows]
+        if mode=='cancel':cancel.set()
+        worker.join(16);assert not worker.is_alive(),'run_process/pipe drains stranded'
+        stopped(bound)
+        if mode=='root-exit':assert returned.get('value',[None])[0]==0,returned
+        else:assert mode in returned.get('error','').lower() or (mode=='timeout' and 'timed out' in returned.get('error','')),returned
+        results['checks'].append({'case':mode,'status':'PASS','processes':rows,'returncode':returned.get('value',[None])[0],'error':returned.get('error'),'worker_stopped':True})
+        print('PASS '+mode+' and pipe drains',flush=True)
+    results['status']='PASS'
+    results['not_forced']='AssignProcessToJobObject OS rejection itself was not injected; real membership and no-header shutdown establish observed fail-closed ownership.'
+except BaseException as error:
+    results['status']='FAIL';results['error']=type(error).__name__+': '+str(error)
+    import traceback;traceback.print_exc()
+finally:
+    for handle in handles:k.CloseHandle(handle)
+    (E/'process-results.json').write_text(json.dumps(results,indent=2)+'\n',encoding='utf-8')
+    print(json.dumps(results,indent=2),flush=True)
+sys.exit(0 if results['status']=='PASS' else 1)

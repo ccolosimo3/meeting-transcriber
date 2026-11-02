@@ -1,0 +1,18 @@
+{
+  "missing_cli_native_ui": "Install native Claude CLI message; no fixture invocation",
+  "shell_wrappers": [
+    {
+      "suffix": ".cmd",
+      "which_selected_requested_wrapper": true,
+      "production_rejected": true,
+      "executed": false
+    },
+    {
+      "suffix": ".bat",
+      "which_selected_requested_wrapper": true,
+      "production_rejected": true,
+      "executed": false
+    }
+  ],
+  "native_user_fallback_resolved": true
+}

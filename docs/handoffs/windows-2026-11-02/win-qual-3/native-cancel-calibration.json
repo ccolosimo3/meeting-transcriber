@@ -1,0 +1,30 @@
+{
+  "native_UI_cancel": "PASS",
+  "provider_termination": "PASS",
+  "previous_4_summaries_unchanged": true,
+  "native_child_grandchild_termination_caused_by_cancel": "UNPROVED",
+  "reason": "Marker children had a60-second lifetime. Diagnosis delayed Cancel; after observation was149seconds after births, so natural expiry cannot be excluded. Earlier all3-gone wording was corrected before export.",
+  "rows": [
+    {
+      "role": "provider",
+      "pid": 14192,
+      "birth_filetime": 134381087340221756,
+      "seconds_birth_to_before_observation": 39.07,
+      "seconds_birth_to_after_observation": 149.347
+    },
+    {
+      "role": "grandchild",
+      "pid": 26744,
+      "birth_filetime": 134381087344343408,
+      "seconds_birth_to_before_observation": 38.657,
+      "seconds_birth_to_after_observation": 148.935
+    },
+    {
+      "role": "child",
+      "pid": 38820,
+      "birth_filetime": 134381087343710955,
+      "seconds_birth_to_before_observation": 38.721,
+      "seconds_birth_to_after_observation": 148.998
+    }
+  ]
+}

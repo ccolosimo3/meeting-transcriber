@@ -1,0 +1,21 @@
+"""Owned marker tree. No provider, network, auth, or product lifecycle code."""
+import os,sys,json,time,subprocess,ctypes
+from ctypes import wintypes as w
+from pathlib import Path
+folder=Path(sys.argv[1]);role=sys.argv[2];mode=sys.argv[3]
+k=ctypes.WinDLL('kernel32',use_last_error=True)
+k.GetCurrentProcess.restype=w.HANDLE
+k.GetProcessTimes.argtypes=[w.HANDLE,*([ctypes.POINTER(w.FILETIME)]*4)]
+created,exited,kernel,user=w.FILETIME(),w.FILETIME(),w.FILETIME(),w.FILETIME()
+assert k.GetProcessTimes(k.GetCurrentProcess(),ctypes.byref(created),ctypes.byref(exited),ctypes.byref(kernel),ctypes.byref(user))
+birth=(created.dwHighDateTime<<32)|created.dwLowDateTime
+(folder/(role+'.json')).write_text(json.dumps({'pid':os.getpid(),'birth_filetime':birth,'role':role}))
+if role=='root':
+    subprocess.Popen([sys.executable,__file__,str(folder),'child',mode])
+elif role=='child':
+    subprocess.Popen([sys.executable,__file__,str(folder),'grandchild',mode])
+if role=='root' and mode=='root-exit':
+    deadline=time.monotonic()+8
+    while not (folder/'grandchild.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+    raise SystemExit(0)
+time.sleep(60)

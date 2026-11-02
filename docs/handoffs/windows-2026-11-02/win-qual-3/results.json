@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "reason": "Unresolved native console-window intrusion. No product source edit.",
+  "source": "93a1206fbc5783e9479270708fc53a03dd11a1d6",
+  "product_source": "c390b35a931bac8bfc4e5f0db73e66e1a0e3dccb",
+  "passed": [
+    "Process exact Job membership, withheld header fail-closed, close/cancel/timeout/root-exit descendants and drain cleanup",
+    "Headless DigestJob auth/control/MCP admission, Codex success, cancel and close with live descendants",
+    "Native missing CLI, shell-wrapper rejection at real Windows resolver, per-user native fixture discovery",
+    "Frozen native Claude and Codex Generate/save/history reload with source/skill provenance",
+    "Native auth/control/MCP refusal before payload, saved summary preserved",
+    "Native Cancel UI/provider stop, previous4records preserved",
+    "Idle app normal shutdown cleaned owned processes/listener/private session"
+  ],
+  "unproved": [
+    "Native descendant cancellation attribution (60-second child lifetime timing gap)",
+    "Native app close while summary is active (stopped at console failure)",
+    "Actual OS AssignProcessToJobObject rejection branch (not forced)",
+    "Origin of launch-PATH vs native CLI-PATH difference"
+  ],
+  "intentionally_unselected": [
+    "Real CLI subscription/auth/account/model calls",
+    "Live AssemblyAI",
+    "Broad release/fullWindows certification"
+  ],
+  "fixture_only": true,
+  "native_fixture_events": 54,
+  "saved_summary_records": 4,
+  "synthetic_config_sentinels_unchanged": true,
+  "owned_QA_resources_remaining": 0,
+  "review_state": "Independent evidence assessment/correction routing owned by Mac lead; no new author certification"
+}

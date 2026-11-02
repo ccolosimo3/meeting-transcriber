@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "successful_generations": 2,
+  "exact_argv_stdin_match_production": true,
+  "same_actual_env_and_cwd_within_each_metadata_generation_chain": true,
+  "six_auth_location_env_hashes_match_synthetic_launch": true,
+  "no_api_keys": true,
+  "app_data_config_variables_filtered": true,
+  "source_sha256": "ba3f309687a82ace7dac6e21b4ab3af49d47710e9230c8e4ad5beb6d3919248a",
+  "skill_sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5",
+  "history_reload_count": 2,
+  "proof_correction": "Initial oracle wrongly expected app-only variables and initial launch PATH unchanged. Product captures CLI env after native runtime initialization; observed PATH differs from launch hash but is identical across each actual CLI chain. No claim of launch-PATH equality. Two synthetic successes retained; no source change."
+}

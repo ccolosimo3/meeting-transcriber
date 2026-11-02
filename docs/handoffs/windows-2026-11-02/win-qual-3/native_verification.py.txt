@@ -1,0 +1,30 @@
+"""Narrow metadata/provenance assertions for the first two native fixture summaries."""
+import sys,json,hashlib
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[3];QA=Path('<SUMMARY_QA_ROOT>');E=Path(__file__).resolve().parent
+sys.path[:0]=[str(ROOT/'lib'),str(ROOT)]
+from meeting_library import Library
+from meeting_digests import prompt
+from desktop.digest_job import cli_command
+library=Library(QA/'library');row=library.scan()['meetings'][0];source=library.digest_source(row['id'],row['default_run_id'])
+skill=(ROOT/'skills/meeting/SKILL.md').read_bytes();expected=prompt(source,skill)
+events=[json.loads(x) for x in (QA/'cli/events.jsonl').read_text().splitlines()];initial=events[:8]
+assert len(initial)==8
+for begin in [0,4]:
+    chain=initial[begin:begin+4]
+    assert chain[-1]['args']==cli_command('claude','fixture')[1:]
+    assert chain[-1]['stdin_sha256']==hashlib.sha256(expected).hexdigest() and chain[-1]['stdin_bytes']==len(expected)
+    assert all(r['stdin_bytes']==0 for r in chain[:-1])
+    assert all(r['environment_hashes']==chain[0]['environment_hashes'] and r['cwd_sha256']==chain[0]['cwd_sha256'] for r in chain)
+    assert not any(k.endswith('API_KEY') for k in chain[0]['environment_hashes'])
+    assert 'MEETING_DATA_DIR' not in chain[0]['environment_hashes'] and 'MEETING_CONFIG_DIR' not in chain[0]['environment_hashes']
+launch=json.loads((E/'native-launch-1.json').read_text())
+for key in ['HOME','USERPROFILE','LOCALAPPDATA','APPDATA','CODEX_HOME','CLAUDE_CONFIG_DIR']:
+    assert all(r['environment_hashes'][key]==hashlib.sha256(launch['environment'][key].encode()).hexdigest() for r in initial)
+records=list((QA/'library').glob('*/summaries/*/summary.json'));assert len(records)==2
+for path in records:
+    saved=json.loads(path.read_text(encoding='utf-8'));assert saved['source_sha256']==source.sha256 and saved['skill_sha256']==hashlib.sha256(skill).hexdigest()
+assert len(library.summary_history(row['id'],row['default_run_id'])['summaries'])==2
+(E/'success-summary-hashes.json').write_text(json.dumps({p.relative_to(QA).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in records},indent=2)+'\n')
+result={'status':'PASS','successful_generations':2,'exact_argv_stdin_match_production':True,'same_actual_env_and_cwd_within_each_metadata_generation_chain':True,'six_auth_location_env_hashes_match_synthetic_launch':True,'no_api_keys':True,'app_data_config_variables_filtered':True,'source_sha256':source.sha256,'skill_sha256':hashlib.sha256(skill).hexdigest(),'history_reload_count':2,'proof_correction':'Initial oracle wrongly expected app-only variables and initial launch PATH unchanged. Product captures CLI env after native runtime initialization; observed PATH differs from launch hash but is identical across each actual CLI chain. No claim of launch-PATH equality. Two synthetic successes retained; no source change.'}
+(E/'claude-success-results.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))

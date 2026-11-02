@@ -1,0 +1,34 @@
+{
+  "status": "FAIL",
+  "symptom": "Blank console window covered native WebView app during held console-subsystem provider fixture",
+  "source_mechanism": "desktop/digest_child.py actual subprocess.run omits CREATE_NO_WINDOW; outer bootstrap Popen alone has it",
+  "observed_processes": [
+    {
+      "role": "frozen bootstrap",
+      "pid": 28432,
+      "parent": 30232
+    },
+    {
+      "role": "native codex fixture",
+      "pid": 14192,
+      "parent": 28432,
+      "created_client_local": "2026-11-02 10:58:54"
+    },
+    {
+      "role": "new OpenConsole",
+      "pid": 32276,
+      "parent": 1880,
+      "created_client_local": "2026-11-02 10:58:54"
+    },
+    {
+      "role": "new WindowsTerminal",
+      "pid": 29768,
+      "parent": 1880,
+      "created_client_local": "2026-11-02 10:58:54"
+    }
+  ],
+  "observation_owner": "Get-CimInstance Win32_Process command output and retained original target-window screenshot in ignored local evidence; console screenshot excluded from safe success export",
+  "post_cancel_console_hosts_gone": true,
+  "source_correction_not_made": true,
+  "proposed_smallest_correction": "Suppress console at actual Windows provider launch, keeping existing job/pipe/lifecycle owner"
+}

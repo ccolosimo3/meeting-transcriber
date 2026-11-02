@@ -1,0 +1,166 @@
+[
+  {
+    "source_reference": "marker_tree.py",
+    "original_sha256": "f28b5e8738f63d9d9bf8a83900fddd38f571452b0948d0f313b2d9c00e2b4d4c",
+    "original_bytes": 1161,
+    "archive": "marker_tree.py.txt",
+    "archived_git_blob_sha256": "0d7aebbd5fcd0b4458a3033ea297eecd94dfa14fb9669d2108b4e88a74a57058",
+    "archive_bytes": 1160,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": []
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "process_proof.py",
+    "original_sha256": "d10aba52cf2810cb7fe9c41fd363b5c177cb6c3bc1c394039c686cad5e4ceb31",
+    "original_bytes": 5818,
+    "archive": "process_proof.py.txt",
+    "archived_git_blob_sha256": "b58ab26ac527193a6067f07233c1928ccca4ce3521eed42b41436e43b0f97931",
+    "archive_bytes": 5817,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": []
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "native_fixture.cs",
+    "original_sha256": "95617416edec139245a7fc672d6f49ebcc1da1864888fc5743c5dd4f0dd097ff",
+    "original_bytes": 3934,
+    "archive": "native_fixture.cs.txt",
+    "archived_git_blob_sha256": "e6ff0bd3ea3da880b9f66983c3836e521c0707c53e160f081bb11e8d62ffab3b",
+    "archive_bytes": 3906,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": [
+        {
+          "original_literal_utf8_sha256": "220520a5c369abca1f07e680be546252b8d25913d5e4ecb85e2df18ee6d8255a",
+          "replacement_literal": "<SUMMARY_QA_ROOT>",
+          "occurrences": 1
+        }
+      ]
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "launch_summary.py",
+    "original_sha256": "afe1153a8347daa85c765dd92b1571ea89b1267bc0544faf6a2ad390f488e4bf",
+    "original_bytes": 1514,
+    "archive": "launch_summary.py.txt",
+    "archived_git_blob_sha256": "0e61e40363c1f87941bc8b0cfc4794c80dac23c8bc242393f1a8d3b2c47032b1",
+    "archive_bytes": 1467,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": [
+        {
+          "original_literal_utf8_sha256": "3ec04e05a1f7bddc4b7d6a74e1ebff4076d5e62a0e13d9ed770fcb72e1c411c0",
+          "replacement_literal": "<SUMMARY_QA_ROOT>",
+          "occurrences": 1
+        },
+        {
+          "original_literal_utf8_sha256": "e3eb6595bf8b73d6fef4baed418f6a0134ae14f60e12dc2ad3222615e0c50f4e",
+          "replacement_literal": "<PACKAGE_QA_ROOT>",
+          "occurrences": 1
+        }
+      ]
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "native_verification.py",
+    "original_sha256": "403d295941e69b653e3e613c8968c72caf5fd2fd66d31c861e3619499fb8b147",
+    "original_bytes": 3029,
+    "archive": "native_verification.py.txt",
+    "archived_git_blob_sha256": "39f6853146b6b2309d5cf181820c5a47a8de8906ae3ad7b8a68c95eabf2bc0b3",
+    "archive_bytes": 3001,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": [
+        {
+          "original_literal_utf8_sha256": "3ec04e05a1f7bddc4b7d6a74e1ebff4076d5e62a0e13d9ed770fcb72e1c411c0",
+          "replacement_literal": "<SUMMARY_QA_ROOT>",
+          "occurrences": 1
+        }
+      ]
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "headless_job_proof.py",
+    "original_sha256": "059a136115a634c7192de070e267e479df229b310d2008abaf003e2a64856b6a",
+    "original_bytes": 5585,
+    "archive": "headless_job_proof.py.txt",
+    "archived_git_blob_sha256": "f2b7405adb8512ee1c1e1d22b490cf536e18d7f59e231f6cfe06a48fa7fda1b8",
+    "archive_bytes": 5538,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": [
+        {
+          "original_literal_utf8_sha256": "3ec04e05a1f7bddc4b7d6a74e1ebff4076d5e62a0e13d9ed770fcb72e1c411c0",
+          "replacement_literal": "<SUMMARY_QA_ROOT>",
+          "occurrences": 1
+        },
+        {
+          "original_literal_utf8_sha256": "e3eb6595bf8b73d6fef4baed418f6a0134ae14f60e12dc2ad3222615e0c50f4e",
+          "replacement_literal": "<PACKAGE_QA_ROOT>",
+          "occurrences": 1
+        }
+      ]
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "source_reference": "observe_native_processes.py",
+    "original_sha256": "cd2b3c6e2e58efe3e1975fe613655bbaf479555405aba0af30e7dc73d5158766",
+    "original_bytes": 2044,
+    "archive": "observe_native_processes.py.txt",
+    "archived_git_blob_sha256": "5062648ef67732f66f1ccb676a0f194108076c1c54b3e97eef1c5e870600c290",
+    "archive_bytes": 2016,
+    "exact_transform": {
+      "newline": "Replace only the single final CRLF with LF; all internal lines already LF, no BOM/transcoding",
+      "literal_substitutions_in_order": [
+        {
+          "original_literal_utf8_sha256": "3ec04e05a1f7bddc4b7d6a74e1ebff4076d5e62a0e13d9ed770fcb72e1c411c0",
+          "replacement_literal": "<SUMMARY_QA_ROOT>",
+          "occurrences": 1
+        }
+      ]
+    },
+    "retained_original_unmodified_since_execution": true
+  },
+  {
+    "product_source": "desktop/digest_job.py",
+    "sha256": "31f4f46333882229dc184e7ea2f80a68d1971a5ac3bda06850e1967805865fa7"
+  },
+  {
+    "product_source": "desktop/digest_child.py",
+    "sha256": "7f560c407df71ab0241b7f8127c10142525605892027729ab2ef5d31f71b3ab9"
+  },
+  {
+    "product_source": "lib/meeting_digests.py",
+    "sha256": "63eebf677f83ef6377bd29b209748d5b30c532799fa81e87289e450ee8147f52"
+  },
+  {
+    "product_source": "lib/meeting_library.py",
+    "sha256": "5e6940dc69f405c30f3c41e30443233a001ed6d70953124ce8efaf4b4e34259d"
+  },
+  {
+    "product_source": "skills/meeting/SKILL.md",
+    "sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5"
+  },
+  {
+    "product_source": "pyproject.toml",
+    "sha256": "af4390e2894cd3027fabed384bfc73e325912b091f165b54931cf35c62bbafe5"
+  },
+  {
+    "product_source": "uv.lock",
+    "sha256": "bca533e2da95b3b15495a03823fc2dc3bcc352a47409d41f70d1afa8d9de1c09"
+  },
+  {
+    "native_fixture_executable_sha256": "6b6054fcb52f051e81ee8ec0cdebe6e9d1ebb0c3edb19157d5616075148708d0",
+    "compiler": "existing Windows .NET Framework64 csc4.8.9221.0",
+    "compiled_as": "x64 console executable, fixed synthetic CLI protocol; no real auth/model proof"
+  }
+]

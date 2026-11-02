@@ -1,0 +1,32 @@
+{
+  "case": "cancel",
+  "phase": "before",
+  "status": "PASS",
+  "processes": [
+    {
+      "pid": 14192,
+      "birth_filetime": 134381087340221756,
+      "role": "provider",
+      "observed_birth_matches": true,
+      "observed_live": true,
+      "actual_job_member": true
+    },
+    {
+      "pid": 26744,
+      "birth_filetime": 134381087344343408,
+      "role": "grandchild",
+      "observed_birth_matches": true,
+      "observed_live": true,
+      "actual_job_member": true
+    },
+    {
+      "pid": 38820,
+      "birth_filetime": 134381087343710955,
+      "role": "child",
+      "observed_birth_matches": true,
+      "observed_live": true,
+      "actual_job_member": true
+    }
+  ],
+  "scope": "OS liveness observation only; see calibration for native cancellation causality gap"
+}

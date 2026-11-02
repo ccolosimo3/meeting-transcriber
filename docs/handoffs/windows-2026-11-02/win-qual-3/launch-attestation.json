@@ -1,0 +1,9 @@
+{
+  "owned_pid": 30232,
+  "only_owned_relocated_package_launched": true,
+  "synthetic_locations_before_first_scan": true,
+  "provider_keys_inherited": false,
+  "no_real_cli_on_selected_path": true,
+  "first_native_discovery_missing_cli": true,
+  "raw_environment_not_exported": true
+}

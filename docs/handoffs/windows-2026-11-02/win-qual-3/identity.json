@@ -1,0 +1,10 @@
+{
+  "package_exe_sha256": "586a5ab5b917b7c029a853cfef7141e79a238d8e3ae309c2aafd5dacdb3f4a1c",
+  "bundled_skill_sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5",
+  "bundled_skill_equals_repo_owner": true,
+  "input_canonical_sha256": "ba3f309687a82ace7dac6e21b4ab3af49d47710e9230c8e4ad5beb6d3919248a",
+  "config_sentinels": {
+    "home/.codex/config.toml": "ce2ec07ab3f2950282771aeca982767218299e5f31d5879f16121fb3773dd0cd",
+    "home/.claude/settings.json": "5307ddfdacf37be9efb2f9dfd52a71798fd3673ffe86bde559ebbac6b4f7514d"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "positive_synthetic_auth_scope": {
+    "HOME": true,
+    "USERPROFILE": true,
+    "LOCALAPPDATA": true,
+    "APPDATA": true,
+    "CODEX_HOME": true,
+    "CLAUDE_CONFIG_DIR": true
+  },
+  "private_native_session_temp_hash_matches": {
+    "TMP": true,
+    "TEMP": true,
+    "TMPDIR": true
+  },
+  "frozen_runtime_observations": {
+    "_PYI_PARENT_PROCESS_LEVEL_hash_equals_literal_1": true,
+    "_PYI_ARCHIVE_FILE_hash_matches_owned_package_exe_path": true
+  },
+  "initial_launch_PATH_hash_equal_to_native_cli": false,
+  "PATH_origin": "Unresolved. No exact initial PATH equality or causal runtime-origin claim. All actual metadata/generation calls within each completed CLI job have identical observed full environment/cwd hashes. No unsafe credential/config location reached the fixture.",
+  "app_only_vars_filtered": true,
+  "api_key_names_present": false
+}

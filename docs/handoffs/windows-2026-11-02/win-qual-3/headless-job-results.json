@@ -1,0 +1,102 @@
+{
+  "status": "PASS",
+  "scope": "production DigestJob on supported Windows/Python with native fixture; these calls are not native GUI evidence",
+  "checks": [
+    {
+      "provider": "claude",
+      "mode": "auth-unavailable",
+      "state": "failed",
+      "error": "Sign in to the selected CLI with a subscription account outside this app. API-key generation is unavailable.",
+      "event_count": 2,
+      "transcript_payload_events": 0,
+      "same_captured_env_cwd": true,
+      "preserved_prior_and_config": true,
+      "admission": null
+    },
+    {
+      "provider": "claude",
+      "mode": "controls-unavailable",
+      "state": "failed",
+      "error": "This CLI lacks required summary controls. Update it outside this app.",
+      "event_count": 3,
+      "transcript_payload_events": 0,
+      "same_captured_env_cwd": true,
+      "preserved_prior_and_config": true,
+      "admission": null
+    },
+    {
+      "provider": "codex",
+      "mode": "mcp-ignored",
+      "state": "failed",
+      "error": "Codex MCP configuration changed or could not be disabled. No transcript was submitted.",
+      "event_count": 5,
+      "transcript_payload_events": 0,
+      "same_captured_env_cwd": true,
+      "preserved_prior_and_config": true,
+      "admission": null
+    },
+    {
+      "provider": "codex",
+      "mode": "success",
+      "state": "succeeded",
+      "error": null,
+      "event_count": 6,
+      "transcript_payload_events": 1,
+      "same_captured_env_cwd": true,
+      "preserved_prior_and_config": true,
+      "admission": {
+        "completed": true,
+        "action_events": 0,
+        "init_tools": null,
+        "provider_warning": false,
+        "mcp_servers_disabled": 2
+      }
+    },
+    {
+      "operation": "headless DigestJob.cancel",
+      "state": "cancelled",
+      "owned_processes": [
+        {
+          "pid": 25460,
+          "birth_filetime": 134381083523466823,
+          "role": "child"
+        },
+        {
+          "pid": 15852,
+          "birth_filetime": 134381083524083357,
+          "role": "grandchild"
+        },
+        {
+          "pid": 39728,
+          "birth_filetime": 134381083522732691,
+          "role": "provider"
+        }
+      ],
+      "all_process_handles_signaled": true,
+      "prior_success_and_config_preserved": true
+    },
+    {
+      "operation": "headless DigestJob.close",
+      "state": "cancelled",
+      "owned_processes": [
+        {
+          "pid": 20928,
+          "birth_filetime": 134381083531474545,
+          "role": "grandchild"
+        },
+        {
+          "pid": 35592,
+          "birth_filetime": 134381083530244242,
+          "role": "provider"
+        },
+        {
+          "pid": 18064,
+          "birth_filetime": 134381083530866502,
+          "role": "child"
+        }
+      ],
+      "all_process_handles_signaled": true,
+      "prior_success_and_config_preserved": true
+    }
+  ]
+}

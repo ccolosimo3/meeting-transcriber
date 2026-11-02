@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "frozen_package": true,
+  "exact_argv_with_two_mcp_disables": true,
+  "exact_stdin_hash": true,
+  "same_actual_env_and_cwd": true,
+  "saved_history_count": 4,
+  "native_auth_control_mcp_failures_no_payload": true
+}

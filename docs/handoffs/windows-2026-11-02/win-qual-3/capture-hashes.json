@@ -1,0 +1,12 @@
+[
+  {
+    "file": "claude-summary-saved.jpg",
+    "sha256": "ec673d4f67aff5cea816e8800b2ce993b676e8eb28cbeeed87a3653006e123cd",
+    "original_bytes_equal": true
+  },
+  {
+    "file": "codex-summary-saved.jpg",
+    "sha256": "e9ea605a076224f7c1933f4fb78fd588b42e4ef18f163038f2e6e28205e2f063",
+    "original_bytes_equal": true
+  }
+]

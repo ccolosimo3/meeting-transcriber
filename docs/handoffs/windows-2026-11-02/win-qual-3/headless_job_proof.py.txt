@@ -1,0 +1,78 @@
+"""Windows DigestJob seam proof while native activation is unavailable."""
+import os,sys,json,time,threading,hashlib,ctypes
+from ctypes import wintypes as w
+from pathlib import Path
+E=Path(__file__).resolve().parent;ROOT=E.parents[2];QA=Path('<SUMMARY_QA_ROOT>')
+launch=json.loads((E/'native-launch-1.json').read_text())
+for key in list(os.environ):
+    if key.endswith('API_KEY') or key.startswith(('MEETING_TRANSCRIBER_','CODEX','CLAUDE','OPENAI','ANTHROPIC')):os.environ.pop(key,None)
+os.environ.update(launch['environment'])
+for key in ['TEMP','TMP','TMPDIR']:
+    p=QA/'headless-tmp';p.mkdir(mode=0o700,exist_ok=True);os.environ[key]=str(p)
+import tempfile;tempfile.tempdir=None
+sys.path[:0]=[str(ROOT/'lib'),str(ROOT)]
+from desktop.digest_job import DigestJob,codex_controls,cli_command
+from meeting_library import Library
+from meeting_digests import prompt
+library=Library(QA/'library');row=library.scan()['meetings'][0];source=library.digest_source(row['id'],row['default_run_id'])
+skill=Path('<PACKAGE_QA_ROOT>/package/_internal/skills/meeting/SKILL.md')
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+prior=json.loads((E/'success-summary-hashes.json').read_text());identity=json.loads((E/'identity.json').read_text());results=[]
+def preserve():
+    assert all(sha(QA/p)==h for p,h in prior.items())
+    assert all(sha(QA/p)==h for p,h in identity['config_sentinels'].items())
+def events():return [json.loads(x) for x in (QA/'cli/events.jsonl').read_text().splitlines()]
+def set_mode(mode):(QA/'cli/mode.json').write_text(json.dumps({'mode':mode}))
+def finished(job,status):
+    end=time.monotonic()+12
+    while time.monotonic()<end:
+        value=job.status(status['id'])
+        if value['state']!='running':return value
+        time.sleep(.03)
+    raise AssertionError('DigestJob did not finish')
+for provider,mode,expected in [('claude','auth-unavailable','Sign in'),('claude','controls-unavailable','lacks required'),('codex','mcp-ignored','could not be disabled'),('codex','success',None)]:
+    before=len(events());set_mode(mode);job=DigestJob(skill)
+    status=job.start(source,library.publish_digest,provider,row['id'],row['default_run_id'])
+    value=finished(job,status);job.close();new=events()[before:];preserve()
+    if expected:
+        assert value['state']=='failed' and expected in value['error'],value
+        assert all(r['stdin_bytes']==0 for r in new)
+    else:
+        assert value['state']=='succeeded' and value['admission']['mcp_servers_disabled']==2,value
+        controls=codex_controls()+[a for name in ['local_docs','synthetic_api'] for a in ['-c','mcp_servers.'+name+'.enabled=false']]
+        assert new[-1]['args']==cli_command('codex','fixture',controls)[1:]
+        assert new[-1]['stdin_sha256']==hashlib.sha256(prompt(source,skill.read_bytes())).hexdigest()
+    assert all(r['environment_hashes']==new[0]['environment_hashes'] and r['cwd_sha256']==new[0]['cwd_sha256'] for r in new)
+    results.append({'provider':provider,'mode':mode,'state':value['state'],'error':value.get('error'),'event_count':len(new),'transcript_payload_events':sum(r['stdin_bytes']>0 for r in new),'same_captured_env_cwd':True,'preserved_prior_and_config':True,'admission':value.get('admission')})
+    print('PASS '+provider+' '+mode,flush=True)
+# Keep real handles bound to exact PID creation times during owned cancellation/close.
+k=ctypes.WinDLL('kernel32',use_last_error=True);k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.GetProcessTimes.argtypes=[w.HANDLE,*([ctypes.POINTER(w.FILETIME)]*4)];k.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD];k.WaitForSingleObject.restype=w.DWORD;k.CloseHandle.argtypes=[w.HANDLE]
+for operation in ['cancel','close']:
+    before=set((QA/'cli').glob('marker-*.json'));set_mode('hold');job=DigestJob(skill)
+    status=job.start(source,library.publish_digest,'claude',row['id'],row['default_run_id'])
+    end=time.monotonic()+8;markers=[]
+    while time.monotonic()<end:
+        try:
+            markers=[json.loads(p.read_text()) for p in set((QA/'cli').glob('marker-*.json'))-before]
+            if {r['role'] for r in markers}=={'provider','child','grandchild'}:break
+        except json.JSONDecodeError:pass
+        time.sleep(.03)
+    assert len(markers)==3,markers
+    handles=[]
+    try:
+        for record in markers:
+            h=k.OpenProcess(0x1000|0x00100000,False,record['pid']);assert h
+            a,b,c,d=w.FILETIME(),w.FILETIME(),w.FILETIME(),w.FILETIME()
+            assert k.GetProcessTimes(h,ctypes.byref(a),ctypes.byref(b),ctypes.byref(c),ctypes.byref(d))
+            assert (a.dwHighDateTime<<32)|a.dwLowDateTime==record['birth_filetime'];handles.append(h)
+        if operation=='cancel':job.cancel(status['id']);value=finished(job,status);job.close()
+        else:job.close();value=job.status(status['id'])
+        assert value['state']=='cancelled',value
+        assert all(k.WaitForSingleObject(h,3000)==0 for h in handles)
+    finally:
+        for h in handles:k.CloseHandle(h)
+    preserve();results.append({'operation':'headless DigestJob.'+operation,'state':value['state'],'owned_processes':markers,'all_process_handles_signaled':True,'prior_success_and_config_preserved':True})
+    print('PASS DigestJob '+operation+' tree and history preservation',flush=True)
+set_mode('success')
+(E/'headless-job-results.json').write_text(json.dumps({'status':'PASS','scope':'production DigestJob on supported Windows/Python with native fixture; these calls are not native GUI evidence','checks':results},indent=2)+'\n')

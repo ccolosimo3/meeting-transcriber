@@ -1,0 +1,28 @@
+import ctypes,json,sys
+from pathlib import Path
+from ctypes import wintypes as w
+E=Path(__file__).resolve().parent;QA=Path('<SUMMARY_QA_ROOT>');case=sys.argv[1];phase=sys.argv[2]
+k=ctypes.WinDLL('kernel32',use_last_error=True);k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.GetProcessTimes.argtypes=[w.HANDLE,*([ctypes.POINTER(w.FILETIME)]*4)];k.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD];k.WaitForSingleObject.restype=w.DWORD;k.CloseHandle.argtypes=[w.HANDLE];k.IsProcessInJob.argtypes=[w.HANDLE,w.HANDLE,ctypes.POINTER(w.BOOL)]
+if phase=='before':
+    baseline=set(json.loads((E/('before-native-'+case+'-markers.json')).read_text()))
+    rows=[json.loads(p.read_text()) for p in (QA/'cli').glob('marker-*.json') if p.name not in baseline]
+    assert len(rows)==3 and {r['role'] for r in rows}=={'provider','child','grandchild'},rows
+else:rows=json.loads((E/('native-'+case+'-before.json')).read_text())['processes']
+for r in rows:
+    h=k.OpenProcess(0x1000|0x00100000,False,r['pid'])
+    if not h:
+        assert phase=='after';r['original_process_live']=False;continue
+    try:
+        a,b,c,d=w.FILETIME(),w.FILETIME(),w.FILETIME(),w.FILETIME();assert k.GetProcessTimes(h,ctypes.byref(a),ctypes.byref(b),ctypes.byref(c),ctypes.byref(d))
+        birth=(a.dwHighDateTime<<32)|a.dwLowDateTime
+        if phase=='before':
+            assert birth==r['birth_filetime'] and k.WaitForSingleObject(h,0)==258
+            member=w.BOOL();assert k.IsProcessInJob(h,None,ctypes.byref(member)) and member.value
+            r.update(observed_birth_matches=True,observed_live=True,actual_job_member=True)
+        else:
+            r['original_process_live']=birth==r['birth_filetime'] and k.WaitForSingleObject(h,0)==258
+            assert not r['original_process_live']
+    finally:k.CloseHandle(h)
+result={'case':case,'phase':phase,'status':'PASS','processes':rows}
+(E/('native-'+case+'-'+phase+'.json')).write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))

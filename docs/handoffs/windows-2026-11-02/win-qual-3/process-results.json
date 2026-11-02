@@ -1,0 +1,108 @@
+{
+  "source": "93a1206fbc5783e9479270708fc53a03dd11a1d6",
+  "python": "3.13.15 (main, Aug 14 2026, 15:36:10) [MSC v.1944 64 bit (AMD64)]",
+  "sys_executable_role": "supported project venv Python3.13.15",
+  "checks": [
+    {
+      "case": "assignment-before-header + close-before-header fail-closed",
+      "status": "PASS",
+      "bootstrap_actual_job_member": true,
+      "provider_markers": 0
+    },
+    {
+      "case": "provider root/child/grandchild exact Job membership + Process.close",
+      "status": "PASS",
+      "processes": [
+        {
+          "pid": 35152,
+          "birth_filetime": 134381075976481794,
+          "role": "root"
+        },
+        {
+          "pid": 35928,
+          "birth_filetime": 134381075977237047,
+          "role": "child"
+        },
+        {
+          "pid": 38396,
+          "birth_filetime": 134381075977924760,
+          "role": "grandchild"
+        }
+      ]
+    },
+    {
+      "case": "cancel",
+      "status": "PASS",
+      "processes": [
+        {
+          "pid": 33172,
+          "birth_filetime": 134381075979445209,
+          "role": "root"
+        },
+        {
+          "pid": 4452,
+          "birth_filetime": 134381075980087161,
+          "role": "child"
+        },
+        {
+          "pid": 28432,
+          "birth_filetime": 134381075980802960,
+          "role": "grandchild"
+        }
+      ],
+      "returncode": null,
+      "error": "Summary generation cancelled.",
+      "worker_stopped": true
+    },
+    {
+      "case": "timeout",
+      "status": "PASS",
+      "processes": [
+        {
+          "pid": 34368,
+          "birth_filetime": 134381075982183167,
+          "role": "root"
+        },
+        {
+          "pid": 23332,
+          "birth_filetime": 134381075982878156,
+          "role": "child"
+        },
+        {
+          "pid": 24652,
+          "birth_filetime": 134381075983596576,
+          "role": "grandchild"
+        }
+      ],
+      "returncode": null,
+      "error": "Summary generation timed out. Try again when ready.",
+      "worker_stopped": true
+    },
+    {
+      "case": "root-exit",
+      "status": "PASS",
+      "processes": [
+        {
+          "pid": 18744,
+          "birth_filetime": 134381076012500354,
+          "role": "root"
+        },
+        {
+          "pid": 30284,
+          "birth_filetime": 134381076013250798,
+          "role": "child"
+        },
+        {
+          "pid": 6944,
+          "birth_filetime": 134381076013974354,
+          "role": "grandchild"
+        }
+      ],
+      "returncode": 0,
+      "error": null,
+      "worker_stopped": true
+    }
+  ],
+  "status": "PASS",
+  "not_forced": "AssignProcessToJobObject OS rejection itself was not injected; real membership and no-header shutdown establish observed fail-closed ownership."
+}
