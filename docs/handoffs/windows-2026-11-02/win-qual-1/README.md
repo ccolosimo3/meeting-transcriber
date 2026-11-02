@@ -13,7 +13,7 @@ Selected artifacts:
 - [Source/proof hashes](source-and-proof-hashes.json) and [sanitized setup recovery](setup-recovery.json).
 - Archived proof references: [private qualification](private_qualification.py.txt), [summary continuation](summary_qualification.py.txt), [OS ACL observer](acl_snapshot.ps1.txt). These are reference text, not installed runners; their original ignored-artifact path layout is retained in source.
 
-Source hashes identify original local proof bytes and product files. Git normalizes line endings in the archived text; each `archived_git_blob_sha256` binds the tracked `.txt` reference bytes separately. The report below is sanitized, with original artifact names retained as historical references. The selected export files above are the remote evidence owner.
+Source hashes identify original local proof bytes and product files. Each original has LF internal lines and exactly one final CRLF added by PowerShell Set-Content. Git replaced only that final CRLF with LF. For all three proof files, current raw bytes still match the originally recorded hash, and `archived_bytes == original_bytes[:-2] + b"\n"` is true. There is no BOM, transcoding, sanitization or code edit in these references. `archive_transformation` records byte lengths/counts and exact equality; `archived_git_blob_sha256` binds tracked bytes separately. The report below is sanitized, with original artifact names retained as historical references. The selected export files above are the remote evidence owner.
 
 ## Local qualification report (sanitized)
 
