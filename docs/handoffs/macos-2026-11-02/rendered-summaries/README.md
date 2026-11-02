@@ -4,8 +4,12 @@ The relocated arm64/WKWebView package passed the selected native compatibility
 checks on macOS 26.5.2 at source
 `2dda750389550e553cecd68bd59ec49fa9f37196`. Both source gates and the
 [Windows package/browser proof](../../windows-2026-11-02/rendered-summaries/README.md)
-were already approved. The Mac evidence-only continuation remains pending with
-the existing source outer reviewer; this report does not claim landing or release.
+were already approved. The same source outer reviewer approved the Mac
+evidence-only continuation at `f7d733c9d3e04118ed21caa9a7e72d57e66c598c`,
+test quality PASS and no findings. It inspected the actual report, results and
+captures, verified unchanged product source and artifact bindings, and accepted
+the observed scope and limits below. It did not execute Mac or independently
+rehash its remote app/library. This report does not claim landing or release.
 
 ## Package and isolation
 

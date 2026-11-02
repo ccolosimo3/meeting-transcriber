@@ -151,5 +151,7 @@
       "bytes": 350618
     }
   },
-  "review_state": "Mac evidence-only continuation pending with the existing source outer reviewer; source gates remain approved"
+  "review_state": "APPROVED: same original source outer, evidence-only completion, test quality PASS, no findings",
+  "reviewed_evidence_tip": "f7d733c9d3e04118ed21caa9a7e72d57e66c598c",
+  "review_limit": "Reviewer inspected evidence and unchanged source/bindings; did not execute Mac or independently rehash its remote package/library."
 }

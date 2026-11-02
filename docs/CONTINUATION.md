@@ -17,8 +17,8 @@ A later rendered-summary candidate is preserved separately on
 `codex/rendered-summaries-windows-enb016` at
 `2dda750389550e553cecd68bd59ec49fa9f37196`. Both fresh source reviews and the
 Windows package checks passed. The final relocated arm64/WKWebView observations
-also passed; their existing outer evidence continuation and landing remain
-pending. The [rendered-summary checkpoint](handoffs/windows-2026-11-02/rendered-summaries/README.md)
+also passed and the same source outer approved that evidence continuation.
+Landing remains pending. The [rendered-summary checkpoint](handoffs/windows-2026-11-02/rendered-summaries/README.md)
 preserves factual results, artifact hashes, sanitized review reports and five
 original fictional captures. No new provider call was made for that change.
 The [Mac compatibility report](handoffs/macos-2026-11-02/rendered-summaries/README.md)

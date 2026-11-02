@@ -29,3 +29,21 @@ The reviewer reused the three-family browser pass, affected CSS-family passes, f
 Narrow served-reader probes passed entity/reference inertness, ordered-list semantics, CR-line pre-parser rejection, exact fallback, recovery and refresh. The first disposable CR probe incorrectly expected rejection below the configured bound; the corrected above-bound case passed without source changes. README and DEVELOPMENT accurately describe presentation and bounded fallback.
 
 **Residual proof:** complete the final exact-source relocated Mac compatibility pass before landing or a feature-completion claim.
+
+## Mac evidence-only completion
+
+The same original outer reviewer approved the subsequent Mac compatibility
+evidence at `f7d733c9d3e04118ed21caa9a7e72d57e66c598c` against unchanged product
+source `2dda750389550e553cecd68bd59ec49fa9f37196`: test quality PASS, no findings.
+The [Mac report](../../macos-2026-11-02/rendered-summaries/README.md), results and
+all five captures were inspected; zero product/test/config/dependency delta,
+results Git-blob SHA-256, all capture hashes/sizes, six frozen-asset hashes and
+consistent package/library manifest statements were independently checked.
+
+This closes the previously deferred exact-source arm64/WKWebView compatibility
+question. The reviewer did not execute Mac or independently rehash its remote
+package/library; those remain author-observed runtime results. Its approval
+accepts the stated native selected-text fidelity, excluded symlink inventory and
+owned-process/port/session cleanup scope, without a visual near-tail, public
+release, installer or sustained-memory claim. No source correction or additional
+blind/full-source review occurred. Landing remains a separate action.
