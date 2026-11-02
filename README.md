@@ -1,5 +1,8 @@
 # Meeting Transcriber
 
+For the current cross-machine checkpoint and remaining Windows qualification,
+see [the continuation handoff](docs/CONTINUATION.md).
+
 A small macOS utility with one job: record a room meeting to a private local
 file, transcribe it with AssemblyAI speaker diarization, and save one canonical
 transcript with a clean browser view and an agent-friendly Markdown view.

@@ -1,0 +1,157 @@
+# Continue from another machine
+
+Checkpoint: November 1, 2026. This document is the portable handoff; local chat
+history, ignored `plans/`, Mac artifacts and the original Windows computer are
+not prerequisites for continuing from the source below.
+
+## Source to use
+
+Clone this repository and select **`codex/desktop-import-transcription`**.
+That branch contains the reader, summaries and desktop transcription together.
+Do not start from `main`, which was still the CLI-only PR #4 baseline when this
+checkpoint was prepared. The code checkpoint, before this documentation, is
+`c390b35a931bac8bfc4e5f0db73e66e1a0e3dccb`.
+
+```text
+git clone --branch codex/desktop-import-transcription https://github.com/ccolosimo3/meeting-transcriber.git
+cd meeting-transcriber
+```
+
+The preserved layers are:
+
+| Remote branch | Code checkpoint | Contents |
+| --- | --- | --- |
+| `main` | `76959539785b31da544eea6e6d08f217aedcf95c` | Merged macOS AssemblyAI CLI and credential/cleanup hardening |
+| `codex/desktop-library-viewer` | `cea92c4d30abba215e021d49ae1d2108c1a9eb12` | Desktop reader/player and reader refinements; PR #5 |
+| `codex/meeting-digests` | `8c718b2fd2cad08e8154587ad0cfdf7fc656bb0a` | Reader plus explicit Codex/Claude subscription summaries |
+| `codex/desktop-import-transcription` | `c390b35a931bac8bfc4e5f0db73e66e1a0e3dccb` | All preceding work plus shared import/transcription and reviewed fixes |
+
+These are a local-development stack now preserved remotely, not a claim that
+all layers have merged. Preserve these commits; no rebase or force-push is
+needed to continue testing. Check current PR/branch state before integrating.
+Source and locked build inputs are tracked; generated application packages are
+rebuilt on the target OS rather than committed to Git.
+
+## What is implemented
+
+- Library, audio playback/seeking, passage following, literal search/speaker
+  filters, saved transcript versions, collapsible controls and light/dark UI.
+- Explicit summary generation through an already authenticated Codex or Claude
+  CLI subscription, immutable history and source-version provenance. No automatic
+  follow-up actions. Codex MCP restrictions are per invocation; global config
+  and auth stores are not changed or copied.
+- Single-file local import, then explicit AssemblyAI upload/transcription with
+  progress, four-file publication and remote cleanup/recovery. CLI and desktop
+  share Python import/preflight/provider/cleanup owners.
+- One in-memory transcription operation. Native Close/Quit waits for it to
+  finish; no Cancel, queue, resume service or background daemon.
+- Shared per-user `.env`: macOS `~/Library/Application Support/MeetingTranscriber/.env`;
+  Windows `%LOCALAPPDATA%/MeetingTranscriber/.env`. Setup accepts a masked key.
+  Existing checkout-root keys are not searched or automatically moved.
+- Installed or explicitly Located FFprobe; no bundled FFmpeg/FFprobe. Transcript
+  data defaults to `~/Transcriptions`, separately from credentials.
+
+The bundle remains `recording.*` plus `transcripts/<run>/transcript.json`,
+`transcript.md`, `transcript.html`, and `.assemblyai.json`. Optional summaries
+live in their own existing `summaries/<generation>/summary.json` records.
+The provider owner persists uncertainty before disclosure, saves local views
+before remote deletion, and preserves a usable transcript when deletion fails.
+An unknown outcome or model mismatch retains support-before-retry after reload.
+Cleanup only targets a validated published run and never retranscribes.
+
+See [README](../README.md) for user behavior and
+[DEVELOPMENT](DEVELOPMENT.md) for architecture, build and verification commands.
+Recording remains the existing macOS CLI feature. Desktop recording, streaming,
+batch jobs, a full cross-platform CLI rewrite, CI and release signing are outside
+this slice; streaming and release/onboarding polish remain future work.
+
+## Review and proof checkpoint
+
+Reader source and bounded native reader QA passed on Windows and Mac at their
+recorded reader revisions. Mac summary generation was exercised with both
+subscription routes at `8c718b2`. Windows summary qualification is still pending.
+
+The import/transcription implementation was reviewed over `8c718b2..c390b35` by
+two fresh Sol/xhigh reviewers. Both initially returned actionable findings,
+then approved after the same author corrected all five. The inner closed first;
+the same outer certified the complete final range. The fixes preserve selected
+meeting/run identity through upload and cleanup, persist uncertainty before
+upload, retain model-mismatch restrictions after reload, and restore relative
+CLI output paths. Five real-boundary regression tests reproduced nine failing
+cases before correction; the corrected tests and 87 affected tests passed.
+Interface smoke, shell/static checks and additional unchanged focused evidence
+also passed; these counts overlap and must not be added as unique test totals.
+
+Relocated arm64 Mac/WKWebView QA used synthetic homes/libraries, fake credentials,
+installed FFprobe and a localhost provider fixture. It observed import/setup,
+explicit upload/progress, responsive navigation and pinned destination, saved
+reload, persistent warnings, DELETE-only cleanup retry, failure preservation,
+and native busy Close/Command-Q blocking followed by resource cleanup. Corrected
+package proof also observed model-mismatch blocking after restart and durable
+uncertainty during held upload. Final synthetic flow made two deliberate uploads
+and three DELETEs; no live AssemblyAI call was part of this slice.
+
+An initial misconfigured QA launch locally scanned the operator's real library;
+no upload or library write occurred. It was excluded from proof. Accepted QA
+used a positively verified persistent synthetic launch. Do not let automation
+reopen an app with default environment after its intended process exits.
+
+Full raw Mac evidence, builds and private planning remain on the Mac in ignored
+task artifacts; they are not needed to reconstruct the source/build. For forensic
+reference, the reviewed Mac executable SHA-256 was
+`ec6c206817329aa728baa0283ffe72f26d340445dd61a1fabbda8ce0ebfa1c63`, and its
+42-file manifest SHA-256 was
+`fec8da841b0def3493e9c0adee6cb777bb8272fb83ecd9838219da47b256e11e`.
+A new machine's rebuild need not have identical hashes. No whole-delivery
+`review-delivery` gate is claimed beyond the stated implementation reviews.
+
+## Next Windows qualification
+
+Use a Windows x64 machine with Python 3.13/uv, WebView2 Evergreen and installed
+FFprobe. Follow the pinned environment and native build route already documented:
+
+```text
+uv sync --frozen --extra desktop --group desktop-build
+uv run --frozen --extra desktop --group desktop-build python -m desktop.build
+```
+
+The build produces a native folder package under `.local-artifacts/desktop-build/dist`.
+Move/copy it out of the source checkout for packaged QA. Begin with the existing
+desktop/native tests in DEVELOPMENT and their documented native-runtime switch.
+Some CLI/process test fixtures use macOS/Bash/POSIX executables: inspect them
+before choosing a Windows command set. Do not treat a fixture platform failure
+as app failure, or a skipped case as native proof.
+
+The remaining target-platform proof is:
+
+1. Real Windows owner/DACL protection for credentials, copied audio, receipts,
+   summaries, temporary files and atomic replacements; permissive inherited ACLs
+   must not expose sensitive bytes. POSIX mode bits are not Windows proof.
+2. Relocated WebView2 package: native file/tool pickers, key Save/readiness,
+   import, explicit fixture transcription, responsive navigation, busy Close/Quit
+   guard, restart discovery/warnings and qualified DELETE-only cleanup recovery.
+3. Summary subprocess ownership: cancel/timeout/window close and surviving
+   descendants through the Windows Job Object, plus bundled skill and native CLI
+   discovery. Real model calls are separate from executable-fixture checks.
+4. Resource cleanup: owned processes, listener and private webview session gone
+   after normal shutdown. Preserve source audio, earlier successful runs and
+   unrelated fixture/library entries.
+
+Use fresh owned synthetic data/config before the first scan. For desktop
+transcription QA, scope `MEETING_DATA_DIR`, `MEETING_CONFIG_DIR`, `HOME` and
+Windows `LOCALAPPDATA` to that fixture **in the launched process environment**;
+leave the operator's shell/global configuration alone. Clear inherited provider
+keys, use a fake `.env`, and pin `MEETING_TRANSCRIBER_ASSEMBLYAI_API_BASE` to the
+local fixture before pressing Transcribe. Existing HTTP scenarios are in
+`tests/test_assemblyai_adapter.py`; shared Bridge/identity/recovery cases are in
+`tests/test_transcription.py` and `tests/test_transcription_boundaries.py`.
+Confirm the intended process and synthetic library before UI automation attaches.
+
+Summary fixture tests and real subscription tests have different auth needs;
+do not copy real CLI credentials into fixture homes. No live model or paid
+AssemblyAI smoke is authorized by this handoff. The operator must select any
+real call and, for metered/API usage, its input and spend bound. Keep credentials,
+recordings, personal transcripts, raw private plans and machine paths out of Git.
+Record the actual Windows revision, commands/results, native observations and
+remaining gaps in a sanitized follow-up report. Preserve passing evidence and
+return source corrections through their applicable reviews before publication.
