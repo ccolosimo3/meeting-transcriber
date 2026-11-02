@@ -8,8 +8,6 @@ import json
 from pathlib import Path
 import re
 import secrets
-import stat
-import sys
 
 from render_transcript_markdown import render_content
 from transcript_bundle import CanonicalTranscript

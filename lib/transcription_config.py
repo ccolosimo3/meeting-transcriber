@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
-from private_files import Directory, atomic_write_private, open_regular, private_mkdir, publication_guard, verify_private
+from private_files import Directory, atomic_write_private, open_regular, publication_guard, verify_private
 
 class SetupError(ValueError):
     pass
@@ -48,9 +48,12 @@ def _create_parent(path):
     while not current.exists():
         missing.append(current)
         current = current.parent
-    for folder in reversed(missing):
-        private_mkdir(folder)
-    return Directory(path)
+    target = Directory(current)
+    destination = target.path
+    for part in path.relative_to(current).parts:
+        destination /= part
+        target.mkdir(destination)
+    return Directory(destination)
 
 def store_key(key):
     if not isinstance(key, str) or not key or len(key.encode('utf-8')) > 16000 or any(c in key for c in '\n\r\0'):

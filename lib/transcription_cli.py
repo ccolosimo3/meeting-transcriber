@@ -6,7 +6,6 @@ import argparse
 from pathlib import Path
 import sys
 from transcription import select_or_import, recording_at, transcribe, cleanup_published_run, OperationError
-from transcription_config import SetupError
 from transcribe_assemblyai import cleanup_required_block, format_failure
 
 

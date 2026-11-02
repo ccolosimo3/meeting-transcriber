@@ -422,29 +422,31 @@ class Library:
         except (OSError, LibraryError) as error:
             raise _error(error) from None
 
+    def import_destination(self):
+        from private_files import Directory
+        self._check(self.root)
+        destination = Directory(self.root)
+        if destination.identities[destination.path] != self._root_identity:
+            raise LibraryError('unsafe_path', 'Library changed. Choose it again.')
+        return destination
+
     def recording_source(self, meeting_id):
         from transcription import recording_at
-        from private_files import Directory
         meeting, _, generation = self._selection(meeting_id)
         if _identity(self._check(meeting.path)) != meeting.identity:
             raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
         candidates = self._media(meeting)
         if len(candidates) != 1:
             raise LibraryError('unavailable_source', 'Select one safe complete recording.')
-        destination = Directory(self.root)
-        if destination.identities[destination.path] != self._root_identity:
-            raise LibraryError('unsafe_path', 'Library changed. Choose it again.')
+        destination = self.import_destination()
         self._current(generation)
         return recording_at(candidates[0], destination)
 
     def cleanup_source(self, meeting_id, run_id):
-        from private_files import Directory
         meeting, run, generation = self._selection(meeting_id, run_id)
         if run is None or _identity(self._check(meeting.path)) != meeting.identity:
             raise LibraryError('stale_id', 'The meeting changed. Refresh and select it again.')
-        destination = Directory(self.root)
-        if destination.identities[destination.path] != self._root_identity:
-            raise LibraryError('unsafe_path', 'Library changed. Choose it again.')
+        destination = self.import_destination()
         destination.capture(meeting.path)
         destination.capture(run.path.parent)
         destination.capture(run.path)

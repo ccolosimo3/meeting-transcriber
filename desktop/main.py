@@ -33,7 +33,7 @@ from meeting_digests import DigestError
 from desktop.transcription_job import TranscriptionJob
 from transcription import import_recording, transcribe, cleanup_published_run
 from transcription_config import readiness, store_key, store_ffprobe
-from private_files import Directory, private_mkdir
+from private_files import private_mkdir
 
 
 class Bridge:
@@ -170,8 +170,7 @@ class Bridge:
                 root = library.root if library else Path(os.environ.get('MEETING_DATA_DIR', str(Path.home() / 'Transcriptions')))
                 destination = None
                 if library:
-                    library._check(library.root)
-                    destination = Directory(library.root)
+                    destination = library.import_destination()
                 chosen = self._audio_picker()
                 if not chosen:
                     return {'cancelled': True}
@@ -179,7 +178,7 @@ class Bridge:
                     if not root.exists():
                         private_mkdir(root)
                     library = Library(root)
-                    destination = Directory(library.root)
+                    destination = library.import_destination()
                     self._library = library
                 return self._operation.start('import', Path(chosen).name, library,
                     lambda progress: import_recording(chosen, destination))

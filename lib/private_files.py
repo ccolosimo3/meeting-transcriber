@@ -12,8 +12,6 @@ import sys
 class PrivateFileError(ValueError):
     pass
 
-NativeBoundaryError = PrivateFileError
-
 def _windows_api():
     from ctypes import wintypes as w
 
@@ -59,8 +57,6 @@ def _current_sid():
         kernel.CloseHandle(token)
 
 
-
-
 def _private_windows_directory(path: Path):
     """Create with its final protected DACL atomically; never expose an empty gap."""
     adv, kernel, w = _windows_api()
@@ -91,7 +87,7 @@ def windows_acl(path: Path) -> tuple[str, set[str]]:
         raise ctypes.WinError(error)
     try:
         if not acl.value:
-            raise NativeBoundaryError("Session storage has an unrestricted Windows DACL.")
+            raise PrivateFileError("Session storage has an unrestricted Windows DACL.")
         # ACL header: revision, reserved, size, ACE count, reserved.
         ace_count = ctypes.c_ushort.from_address(acl.value + 4).value
         allowed = set()
@@ -103,7 +99,7 @@ def windows_acl(path: Path) -> tuple[str, set[str]]:
             if kind == 0:  # ACCESS_ALLOWED_ACE: header + mask + SID
                 allowed.add(_sid_string(ace.value + 8, adv, kernel, w))
             elif kind != 1:  # Deny ACEs cannot widen access; unknown allow forms fail closed.
-                raise NativeBoundaryError("Session storage has an unsupported Windows ACL entry.")
+                raise PrivateFileError("Session storage has an unsupported Windows ACL entry.")
         return _sid_string(owner, adv, kernel, w), allowed
     finally:
         kernel.LocalFree(descriptor)
@@ -176,6 +172,8 @@ class Directory:
     def check(self, path):
         path = Path(path)
         parts = path.relative_to(self.path).parts
+        if any(part in ('.', '..') for part in parts):
+            raise PrivateFileError('Destination is outside the selected directory.')
         current = self.path
         for part in (None, *parts):
             if part is not None:

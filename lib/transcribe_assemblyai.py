@@ -7,7 +7,6 @@ import math
 import os
 from pathlib import Path
 import sys
-import tempfile
 import time
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit

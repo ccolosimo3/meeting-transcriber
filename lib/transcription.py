@@ -8,13 +8,11 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
-import sys
 
 from private_files import Directory, identity, open_regular, publication_guard, verify_private
-from transcription_config import SetupError, read_key, resolve_ffprobe
-from transcribe_assemblyai import AssemblyAIAdapter, _build_adapter, failure_details, resolve_cleanup_target
+from transcription_config import read_key, resolve_ffprobe
+from transcribe_assemblyai import _build_adapter, failure_details, resolve_cleanup_target
 
 class OperationError(ValueError):
     def __init__(self, message, *, code='stopped', exit_code=2, details=None):
