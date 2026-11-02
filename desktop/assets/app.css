@@ -122,7 +122,7 @@ h1, h2, p { margin: 0; }
 .summary-text pre code { white-space: pre; overflow-wrap: normal; }
 .summary-table-scroll { max-width: 100%; overflow: auto; }
 .summary-text table { border-collapse: collapse; width: 100%; min-width: 420px; }
-.summary-text th, .summary-text td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+.summary-text th, .summary-text td { border: 1px solid var(--line); min-width: 8ch; padding: 7px 10px; text-align: left; vertical-align: top; }
 .summary-text th { background: var(--surface-subtle); }
 .summary-text hr { border: 0; border-top: 1px solid var(--line); margin: 1.3em 0; }
 @media (max-width: 760px) { .summary-tools, .summary-panel { padding-inline: 15px; } .summary-tools label { margin-left: 0; } }
