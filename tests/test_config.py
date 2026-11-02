@@ -92,9 +92,10 @@ class CredentialFileTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(self.env_file.read_bytes(), before)
         self.env_file.write_text("ASSEMBLYAI_API_KEY=value\n", encoding="utf-8")
-        self.env_file.chmod(0o644)
-        result = self.run_shell('meeting_load_assemblyai_key')
-        self.assertEqual(result.returncode, 2)
+        for mode in (0o644, 0o400, 0o700):
+            self.env_file.chmod(mode)
+            result = self.run_shell('meeting_load_assemblyai_key')
+            self.assertEqual(result.returncode, 2)
 
     def test_symlink_is_refused_without_touching_target(self) -> None:
         target = self.root / "target"

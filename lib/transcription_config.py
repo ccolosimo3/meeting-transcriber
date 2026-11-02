@@ -26,6 +26,8 @@ def read_key(override=None):
     path = credential_file()
     try:
         verify_private(path)
+        if sys.platform != 'win32' and path.lstat().st_mode & 0o777 != 0o600:
+            raise SetupError('Credential mode must be 0600.')
         with open_regular(path) as stream:
             data = stream.read(16385)
     except FileNotFoundError:
