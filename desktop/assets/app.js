@@ -17,7 +17,7 @@
     "clear-text", "clear-speaker", "clear-filters", "actions-menu", "actions-toggle",
     "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message",
     "summary-view", "transcript-view", "summary-provider", "generate-summary", "summary-disclosure",
-    "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-text",
+    "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-format-warning", "summary-text",
     "digest-progress", "digest-status", "cancel-summary",
     "import-audio", "transcribe-audio", "retry-cleanup", "operation-progress", "operation-status", "operation-result",
     "setup-toggle", "transcription-setup", "setup-close", "setup-status", "credential-location", "key-form", "assemblyai-key", "save-key", "ffprobe-status", "locate-ffprobe", "setup-error"
@@ -191,6 +191,7 @@
     ui["passages"].replaceChildren();
     ui["summary-panel"].hidden = true;
     ui["summary-text"].textContent = "";
+    ui["summary-format-warning"].hidden = true;
     ui["meeting-title"].textContent = "Meeting Transcriber";
     ui["meeting-title"].removeAttribute("title");
     ui["details-toggle"].textContent = "Details";
@@ -251,7 +252,11 @@
       ui["summary-history"].append(option);
     }
     const saved = data.summary;
-    ui["summary-text"].textContent = saved ? saved.markdown : "";
+    const formatted = saved && window.SummaryMarkdown?.render(ui["summary-text"], saved.markdown);
+    if (!formatted) ui["summary-text"].textContent = saved ? saved.markdown : "";
+    ui["summary-text"].classList.toggle("summary-plaintext", Boolean(saved) && !formatted);
+    ui["summary-format-warning"].textContent = saved && !formatted ? "Formatting unavailable. Showing original Markdown." : "";
+    ui["summary-format-warning"].hidden = !saved || Boolean(formatted);
     ui["summary-provenance"].textContent = saved ? `Source version ${saved.source_run} · ${saved.earlier_revision ? "Earlier transcript revision" : "Current transcript revision"} · ${saved.source_sha256.slice(0, 12)} · ${saved.provider} · ${saved.generated_at}${saved.reported_model ? ` · ${saved.reported_model}` : ""}` : "";
     ui["summary-history"].value = saved ? saved.id : "";
     const warnings = [data.summary_warning, saved?.provider_warning ? "The CLI reported a nonfatal provider warning during this generation." : ""].filter(Boolean);

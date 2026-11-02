@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Meeting Transcriber</title>
   <link rel="stylesheet" href="app.css">
+  <script src="vendor/markdown-it.umd.min.js" defer></script>
+  <script src="summary-markdown.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -92,7 +94,7 @@
           <p id="meeting-warning" class="meeting-warning" role="status" hidden></p>
           <p id="reader-notice" class="notice" role="status" hidden></p>
         </div>
-        <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summaries</label><select id="summary-history"></select><p id="summary-provenance" class="summary-provenance"></p><p id="summary-warning" class="summary-provenance" role="status" hidden></p><div id="summary-text" class="summary-text" tabindex="0"></div></section>
+        <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summaries</label><select id="summary-history"></select><p id="summary-provenance" class="summary-provenance"></p><p id="summary-warning" class="summary-provenance" role="status" hidden></p><p id="summary-format-warning" class="summary-provenance" role="status" hidden></p><div id="summary-text" class="summary-text" tabindex="0"></div></section>
         <div id="passages" class="passages" tabindex="0" aria-label="Transcript passages"></div>
         <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" type="button" hidden>Open saved HTML ↗</button></div>
         <footer class="player" aria-label="Audio player">

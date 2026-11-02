@@ -73,6 +73,29 @@ class ReaderServerTests(unittest.TestCase):
         self.assertNotIn('Access-Control-Allow-Origin', headers)
         self.assertEqual(self.request(self.server.document_url.replace('index.html','private.txt'))[0],404)
 
+    def test_summary_scripts_are_exact_local_assets_with_existing_security(self):
+        vendor = self.assets / 'vendor'
+        vendor.mkdir()
+        payloads = {'summary-markdown.js': b'/* summary owner */',
+                    'vendor/markdown-it.umd.min.js': b'/* pinned parser */'}
+        for name, payload in payloads.items():
+            (self.assets / name).write_bytes(payload)
+        for name in ('markdown-it.LICENSES.txt', 'markdown-it.umd.min.js.map', 'private.js'):
+            (vendor / name).write_text('not public', encoding='utf-8')
+        _, app_headers, _ = self.request(self.server.document_url)
+        for name, payload in payloads.items():
+            url = self.server.document_url.replace('index.html', name)
+            status, headers, body = self.request(url)
+            self.assertEqual((status, body), (200, payload))
+            self.assertIn('javascript', headers['Content-Type'])
+            for key in ('Content-Security-Policy', 'Cache-Control', 'X-Content-Type-Options', 'Referrer-Policy', 'X-Frame-Options'):
+                self.assertEqual(headers[key], app_headers[key])
+            self.assertNotIn('Access-Control-Allow-Origin', headers)
+        for path in ('vendor/markdown-it.LICENSES.txt', 'vendor/markdown-it.umd.min.js.map',
+                     'vendor/private.js', 'vendor/../app.js', 'vendor/%2e%2e/app.js'):
+            self.assertEqual(self.request(self.server.document_url.replace('index.html', path))[0], 404)
+        self.assertEqual(self.request(self.server.origin + '/wrong/vendor/markdown-it.umd.min.js')[0], 404)
+
     def test_refresh_revokes_open_handle_media_and_export_capabilities(self):
         export = io.BytesIO(b'<h1>Saved &amp; unchanged</h1>')
         url = self.server.bind(export, 'transcript.html', export=True)

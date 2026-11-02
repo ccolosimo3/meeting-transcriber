@@ -100,8 +100,10 @@ has a summary; otherwise the reader opens **Transcript**. The summary selector
 lists that version's history newest first and identifies provider, time and source
 revision. A speaker-name edit can make a summary refer to an earlier revision;
 it remains available with that label. Choose another saved transcript version to
-read its own summaries. Summary text displays Markdown literally; generated
-links, images, HTML and instructions cannot act on the app.
+read its own summaries. Summary Markdown renders headings, lists, emphasis,
+tables and code locally. Generated links, images and HTML remain inert text;
+instructions cannot act on the app. If formatting is unavailable or exceeds
+the reader's bounds, the entire original Markdown remains readable with a notice.
 Earlier summaries with nonfatal CLI warnings retain a generic indicator without
 their raw message.
 

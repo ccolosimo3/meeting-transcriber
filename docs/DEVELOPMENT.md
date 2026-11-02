@@ -56,13 +56,61 @@ source; POSIX tests are not an ACL proof.
   text view, not the audio. Library/Find/Details/Listening disclosure is local
   presentation state and never replaces the media element. Show categories
   derive from the library snapshot's eligible runs and exact statuses; selected
-  version labels and warnings derive from the current run. Summary text uses the
-  same escaped-text boundary; it cannot render raw HTML, remote resources or
-  generated actions.
+  version labels and warnings derive from the current run. Summary Markdown uses
+  a local token parser and a closed text-node/DOM renderer; it cannot render raw
+  HTML, remote resources or generated actions.
 
 The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
 needed for pinned pywebview's `new Function` bridge registration; document,
 frame/origin, action allowlist and escaped-text controls remain enforced.
+
+#### Summary formatting
+
+`desktop/assets/summary-markdown.js` owns presentation only. Initial load,
+successful-result projection and history selection converge at `renderSummaries`
+in `app.js`; stored Markdown, source hashes and provenance are unchanged. The
+renderer consumes parser tokens and builds a detached fragment from a closed
+element set. It never uses an HTML sink or copies arbitrary token attributes.
+Only fixed app table semantics/classes and a validated ordered-list start are
+set. HTML, link, image, autolink and reference rules are disabled, with `html`,
+`linkify` and `typographer` off. URLs and reference definitions remain visible
+source text. Fence information adds no execution, highlighting or attributes.
+
+Before parsing, UTF-8 input is limited to the existing 128 KiB saved-record
+contract. Normalized physical-line count times (largest literal pipe count per
+line + 1) must be at most 4,096 when any pipes occur. This conservative admission
+bounds table padding before token allocation; it intentionally overcounts code
+and escaped pipes. After parsing, a finite traversal admits at most 10,000 flat
+and inline-child tokens and rejects any level at or above 63 with `maxNesting:64`.
+The latter also catches the parser's deep-block tail omission. No partial tree
+is attached. Any limit, missing parser, error or unsupported structure leaves the
+entire original string in `textContent`/`pre-wrap`, with a separate formatting
+notice alongside existing warnings. A later successful render clears that notice.
+These bounds are not a universal parser-complexity or timing guarantee.
+
+The exact local scripts are allowlisted by `ReaderServer`; the vendor directory
+is not a public directory root. CSP/native restrictions and the packaging route
+are unchanged. Scoped typography uses existing theme tokens, with local table
+and code overflow. No worker, cache, service or asynchronous rendering state is
+introduced.
+
+Vendored dependency: official [markdown-it 15.0.3 registry metadata](https://registry.npmjs.org/markdown-it/15.0.3)
+and [tarball](https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.3.tgz),
+member `package/dist/browser/markdown-it.umd.min.js`, 100,786 bytes, SHA-256
+`391f2aa638e75e6c7859d0a5c5650ef0956722a45998f17e05b83bc655778e1e`.
+The archive integrity is
+`sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ==`.
+The upstream browser source map and [versioned lockfile](https://raw.githubusercontent.com/markdown-it/markdown-it/15.0.3/package-lock.json)
+identify the five embedded packages. `desktop/assets/vendor/markdown-it.LICENSES.txt`
+preserves the original markdown-it MIT notice plus entities 8.1.0 (BSD-2-Clause),
+linkify-it 6.1.0, mdurl 2.1.0, punycode.js 2.3.1 and uc.micro 3.0.0 (MIT) notices
+from their exact official registry archives. The combined notice SHA-256 is
+`0b2ece9c2df0b3ae40b46d17811bc57caca9c1803200b1dc8cd2cde214dc06c9`.
+Scoped Git attributes prevent checkout line-ending translation of both vendor
+files, preserving these exact bytes on Windows and Mac.
+No package manager, dependency resolution, source map or upstream build is part
+of app setup/build; both scripts and all notices ship through the existing assets
+copy. Node is used only for development syntax checks, not by the app/build.
 
 Summary generation is a separate deliberate disclosure, never a transcription
 callback. `desktop/digest_job.py` owns one in-memory job and invokes a native,
@@ -368,10 +416,37 @@ shellcheck install.sh bin/* lib/*.sh tests/interface-smoke.sh tests/fixtures/*
   stub: four-file inventory, source immutability, paths with spaces, import
   copy, exit-3 selection, name regeneration, and the permission regression.
 - The recorder PTY test requires macOS and Homebrew `ffmpeg@7`. The rendered
-  HTML browser test requires the dev-group `aiohttp` and a local Google Chrome
-  or Chromium at one of the two supported paths; with
+  HTML and desktop summary browser tests require the dev-group `aiohttp` and
+  an installed supported Chrome/Chromium on Mac, or Chrome/Edge on Windows; with
   `MEETING_REQUIRE_BROWSER=1` it fails (rather than skips) when a prerequisite
   is missing, so the dedicated browser gate cannot silently pass.
+
+For summary presentation changes, the focused gate is:
+
+```bash
+MEETING_REQUIRE_BROWSER=1 .venv/bin/python -m unittest tests.test_desktop_summary_browser -v
+.venv/bin/python -m unittest tests.test_desktop_server tests.test_meeting_digests tests.test_desktop_bridge -q
+node --check desktop/assets/app.js
+node --check desktop/assets/summary-markdown.js
+node --check desktop/assets/vendor/markdown-it.umd.min.js
+git diff --check
+```
+
+On Windows PowerShell, set `$env:MEETING_REQUIRE_BROWSER='1'` for the browser
+command and use `.venv\Scripts\python.exe`; restore the setting afterward.
+The existing transcription Bridge case also needs installed FFprobe; when it is
+outside PATH, select that existing executable with the documented test override.
+The browser fixture creates the ordinary `AppData/Local` and `AppData/Roaming`
+structure inside its synthetic USERPROFILE so Windows known-folder resolution
+can establish that its explicit Chromium profile is non-default. No browser
+profile safety check is disabled. The three reader behavior families cover real
+Bridge/Library projections, generated-content request/action inertness, and
+full-source fallback/recovery with selected response bounds. New HTTP coverage
+checks exact script routes and unchanged security headers. Existing saved-history
+and provider/lifecycle tests remain at their original owners. Native package QA
+uses synthetic homes/libraries and already saved fictional summaries; it needs
+no provider call. Qualify packaged loading, wide/light and narrow/dark layout,
+affected navigation/fallback and normal cleanup on each target OS separately.
 
 Set `MEETING_NOTIFICATIONS=0` during automated verification.
 `MEETING_DATA_DIR`, `MEETING_CONFIG_DIR`, the executable overrides

@@ -92,7 +92,9 @@ class ReaderServer:
             return
         # Assets are an explicit allowlist, never a directory root exposed to HTTP.
         asset = path.path.removeprefix('/' + self.token + '/')
-        if path.path == '/' + self.token + '/' + asset and asset in ('index.html', 'app.js', 'app.css'):
+        if path.path == '/' + self.token + '/' + asset and asset in (
+            'index.html', 'app.js', 'app.css', 'summary-markdown.js', 'vendor/markdown-it.umd.min.js'
+        ):
             try:
                 payload = (self.assets / asset).read_bytes()
             except OSError:
