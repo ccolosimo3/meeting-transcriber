@@ -67,7 +67,7 @@ def _dispatch(window, name, params, call_id):
     js_bridge_call(window, name, params, call_id)
 
 
-from private_files import windows_acl, _current_sid, _private_windows_directory, _windows_api, _sid_string
+from lib.private_files import windows_acl, _current_sid, _private_windows_directory, _windows_api, _sid_string
 
 
 def _network_capability_sid() -> str:
