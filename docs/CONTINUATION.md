@@ -71,6 +71,17 @@ Reader source and bounded native reader QA passed on Windows and Mac at their
 recorded reader revisions. Mac summary generation was exercised with both
 subscription routes at `8c718b2`. Windows summary qualification is still pending.
 
+The original Windows machine's unique reader records, synthetic proof scripts,
+design snapshots and safe captures are preserved separately on
+`codex/windows-handoff-20261101` at
+`4c3bba1e81958df8b1bf87a48e2a7f1b817819b2`:
+[Windows preservation report](https://github.com/ccolosimo3/meeting-transcriber/blob/4c3bba1e81958df8b1bf87a48e2a7f1b817819b2/docs/handoffs/windows-2026-11-01/README.md).
+That machine's audit found all four worktrees clean and no unique unpushed
+production commit. The archived proofs apply to older reader revisions; use the
+current source branch above for later digest/import qualification. The archive
+excludes credentials, personal captures, reproducible binaries and raw private
+data; its historical scripts are reference material, not current test runners.
+
 The import/transcription implementation was reviewed over `8c718b2..c390b35` by
 two fresh Sol/xhigh reviewers. Both initially returned actionable findings,
 then approved after the same author corrected all five. The inner closed first;
