@@ -1,0 +1,26 @@
+{
+  "case": "cancel",
+  "status": "ARMED",
+  "pre_action_time": "2026-11-02T16:16:54.129577+00:00",
+  "pre_action_all3_live": true,
+  "held_birth_bound_processes": [
+    {
+      "pid": 31496,
+      "birth_filetime": 134381097491886286,
+      "role": "provider",
+      "console_window_present": false
+    },
+    {
+      "pid": 39052,
+      "birth_filetime": 134381097493346933,
+      "role": "grandchild",
+      "console_window_present": false
+    },
+    {
+      "pid": 8720,
+      "birth_filetime": 134381097492716013,
+      "role": "child",
+      "console_window_present": false
+    }
+  ]
+}

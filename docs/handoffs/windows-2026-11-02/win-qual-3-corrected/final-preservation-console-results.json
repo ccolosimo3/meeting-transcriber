@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "all_prior_history_source_config_hashes_unchanged": true,
+  "four_summary_records_unchanged": true,
+  "all12_native_cli_console_handles_null": true,
+  "no_new_WindowsTerminal_OpenConsole_hosts_in_both_held_cases": true
+}

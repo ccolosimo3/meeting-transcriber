@@ -1,0 +1,42 @@
+using System;
+using System.IO;
+using System.Text;
+using System.Linq;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.Security.Cryptography;
+using System.Web.Script.Serialization;
+class Fixture {
+ static string Root=@"<CORRECTED_QA_ROOT>\cli";
+ static JavaScriptSerializer Json=new JavaScriptSerializer();
+ [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+ static string Hash(byte[] b){using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(b)).Replace("-","").ToLowerInvariant();}
+ static string Mode(){return Convert.ToString(Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(Root,"mode.json")))["mode"]);}
+ static void Print(object value){Console.WriteLine(Json.Serialize(value));}
+ static void Marker(string role){var p=Process.GetCurrentProcess();File.WriteAllText(Path.Combine(Root,"marker-"+p.Id+".json"),Json.Serialize(new {pid=p.Id,birth_filetime=p.StartTime.ToUniversalTime().ToFileTimeUtc(),role=role,console_window_present=GetConsoleWindow()!=IntPtr.Zero}),new UTF8Encoding(false));}
+ static void StartMarker(string role){Process.Start(new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName,"--marker "+role){UseShellExecute=false,CreateNoWindow=true});}
+ static int Main(string[] args){
+  Console.InputEncoding=new UTF8Encoding(false);Console.OutputEncoding=new UTF8Encoding(false);
+  if(args.Length==2 && args[0]=="--marker"){Marker(args[1]);if(args[1]=="child")StartMarker("grandchild");while(Mode()=="hold")Thread.Sleep(100);return 0;}
+  string mode=Mode(),text=Console.In.ReadToEnd(),provider=Path.GetFileNameWithoutExtension(Process.GetCurrentProcess().MainModule.FileName).ToLowerInvariant();
+  var envNames=Environment.GetEnvironmentVariables().Keys.Cast<string>().OrderBy(x=>x,StringComparer.Ordinal).ToArray();
+  var envHash=new Dictionary<string,string>();foreach(string key in envNames)envHash[key]=Hash(Encoding.UTF8.GetBytes(Environment.GetEnvironmentVariable(key)??""));
+  var p=Process.GetCurrentProcess();
+  File.AppendAllText(Path.Combine(Root,"events.jsonl"),Json.Serialize(new {pid=p.Id,birth_filetime=p.StartTime.ToUniversalTime().ToFileTimeUtc(),provider=provider,console_window_present=GetConsoleWindow()!=IntPtr.Zero,args=args,stdin_bytes=Encoding.UTF8.GetByteCount(text),stdin_sha256=Hash(Encoding.UTF8.GetBytes(text)),cwd_sha256=Hash(Encoding.UTF8.GetBytes(Environment.CurrentDirectory)),environment_hashes=envHash,mode=mode})+"\n",new UTF8Encoding(false));
+  if(args.SequenceEqual(new[]{"--version"})){Console.WriteLine("Native synthetic CLI 1.0");return 0;}
+  if(args.Length>=2 && args[0]=="login" && args[1]=="status"){Console.WriteLine(mode=="auth-unavailable"?"Not signed in (synthetic)":"Logged in using ChatGPT (synthetic fixture)");return mode=="auth-unavailable"?1:0;}
+  if(args.SequenceEqual(new[]{"auth","status"})){Print(new {loggedIn=mode!="auth-unavailable",authMethod="claude.ai",apiProvider="firstParty",subscriptionType="max"});return 0;}
+  if(args.Contains("--help")){Console.WriteLine(mode=="controls-unavailable"?"Synthetic help without required controls":"--ignore-rules --ephemeral --json --safe-mode --restricted --tools --strict-mcp-config --no-session-persistence --permission-prompts");return 0;}
+  if(args.Length>=2 && args[0]=="mcp" && args[1]=="list"){
+   var list=new List<object>();foreach(string name in new[]{"local_docs","synthetic_api"})list.Add(new {name=name,enabled=mode=="mcp-ignored" || !args.Contains("mcp_servers."+name+".enabled=false")});Print(list);return 0;
+  }
+  if(mode=="hold"){Marker("provider");StartMarker("child");while(Mode()=="hold")Thread.Sleep(100);}
+  if(provider=="codex"){
+   Print(new {type="item.completed",item=new {type="agent_message",text="# Synthetic native summary\nFixture evidence only."}});Print(new {type="turn.completed"});
+  } else {
+   Print(new {type="system",subtype="init",tools=new string[]{},model="synthetic-native-model"});Print(new {type="result",subtype="success",is_error=false,result="# Synthetic native summary\nFixture evidence only."});
+  }
+  return 0;
+ }
+}

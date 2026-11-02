@@ -1,0 +1,14 @@
+import os,sys,json,subprocess
+from pathlib import Path
+E=Path(__file__).resolve().parent;QA=Path('<CORRECTED_QA_ROOT>');APP=Path('<CORRECTED_QA_ROOT>/package/MeetingTranscriber.exe')
+env=os.environ.copy()
+for key in list(env):
+    if key.endswith('API_KEY') or key.startswith(('MEETING_TRANSCRIBER_','PYTHON','CODEX','CLAUDE','ANTHROPIC','OPENAI')) or key=='VIRTUAL_ENV':env.pop(key,None)
+for key,suffix in {'HOME':'home','USERPROFILE':'home','LOCALAPPDATA':'home/AppData/Local','APPDATA':'home/AppData/Roaming','MEETING_DATA_DIR':'library','MEETING_CONFIG_DIR':'config','TEMP':'home/Temp','TMP':'home/Temp','CODEX_HOME':'home/.codex','CLAUDE_CONFIG_DIR':'home/.claude'}.items():
+    path=QA/suffix;path.mkdir(parents=True,exist_ok=True);env[key]=str(path)
+env['PATH']=os.pathsep.join([os.environ['SystemRoot']+'/System32',os.environ['SystemRoot'],os.environ['SystemRoot']+'/System32/Wbem'])
+env['MEETING_NOTIFICATIONS']='0'
+child=subprocess.Popen([str(APP)],cwd=QA,env=env)
+index=len(list(E.glob('native-launch-*.json')))+1
+row={'pid':child.pid,'exe':str(APP),'environment':{k:env[k] for k in ['HOME','USERPROFILE','LOCALAPPDATA','APPDATA','MEETING_DATA_DIR','MEETING_CONFIG_DIR','PATH','CODEX_HOME','CLAUDE_CONFIG_DIR']},'provider_keys_inherited':any(k.endswith('API_KEY') for k in env),'real_cli_path_absent':not any((QA/'home/.local/bin').iterdir())}
+(E/('native-launch-'+str(index)+'.json')).write_text(json.dumps(row,indent=2)+'\n');print(json.dumps(row,indent=2))

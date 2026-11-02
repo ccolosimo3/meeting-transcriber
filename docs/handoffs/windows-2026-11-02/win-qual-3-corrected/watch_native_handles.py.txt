@@ -1,0 +1,45 @@
+"""One-shot OS handle observer; production app owns the process lifecycle."""
+import ctypes,json,sys,time,datetime
+from ctypes import wintypes as w
+from pathlib import Path
+E=Path(__file__).resolve().parent;QA=Path('<CORRECTED_QA_ROOT>');case=sys.argv[1]
+k=ctypes.WinDLL('kernel32',use_last_error=True)
+k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+k.GetProcessTimes.argtypes=[w.HANDLE,*([ctypes.POINTER(w.FILETIME)]*4)]
+k.WaitForSingleObject.argtypes=[w.HANDLE,w.DWORD];k.WaitForSingleObject.restype=w.DWORD
+k.WaitForMultipleObjects.argtypes=[w.DWORD,ctypes.POINTER(w.HANDLE),w.BOOL,w.DWORD];k.WaitForMultipleObjects.restype=w.DWORD
+k.IsProcessInJob.argtypes=[w.HANDLE,w.HANDLE,ctypes.POINTER(w.BOOL)];k.CloseHandle.argtypes=[w.HANDLE]
+now=lambda:datetime.datetime.now(datetime.timezone.utc).isoformat()
+baseline=set(json.loads((E/(case+'-marker-baseline.json')).read_text()));handles=[]
+result={'case':case,'status':'FAIL'}
+try:
+    records=[json.loads(p.read_text()) for p in (QA/'cli').glob('marker-*.json') if p.name not in baseline]
+    assert len(records)==3 and {r['role'] for r in records}=={'provider','child','grandchild'}
+    for r in records:
+        h=k.OpenProcess(0x1000|0x00100000,False,r['pid']);assert h;handles.append(h)
+        a,b,c,d=w.FILETIME(),w.FILETIME(),w.FILETIME(),w.FILETIME();assert k.GetProcessTimes(h,ctypes.byref(a),ctypes.byref(b),ctypes.byref(c),ctypes.byref(d))
+        assert (a.dwHighDateTime<<32)|a.dwLowDateTime==r['birth_filetime']
+        member=w.BOOL();assert k.IsProcessInJob(h,None,ctypes.byref(member)) and member.value
+        assert not r['console_window_present']
+    assert all(k.WaitForSingleObject(h,0)==258 for h in handles)
+    (E/(case+'-observer-ready.json')).write_text(json.dumps({'time':now(),'all3_alive_birth_bound_handles_held':True,'processes':records},indent=2)+'\n')
+    print('READY:3 exact handles held; waiting for action arm',flush=True)
+    deadline=time.monotonic()+180
+    while not (QA/'signals'/('arm-'+case)).exists():
+        assert time.monotonic()<deadline,'Action arm not received'
+        assert all(k.WaitForSingleObject(h,0)==258 for h in handles),'Owned process exited before action'
+        time.sleep(.02)
+    assert json.loads((QA/'cli/mode.json').read_text())['mode']=='hold'
+    assert all(k.WaitForSingleObject(h,0)==258 for h in handles)
+    result.update(status='ARMED',pre_action_time=now(),pre_action_all3_live=True,held_birth_bound_processes=records)
+    (E/(case+'-armed.json')).write_text(json.dumps(result,indent=2)+'\n')
+    array=(w.HANDLE*len(handles))(*handles)
+    assert k.WaitForMultipleObjects(len(handles),array,True,20000)==0,'Owned process survived native action'
+    assert json.loads((QA/'cli/mode.json').read_text())['mode']=='hold','Fixture hold mode changed'
+    result.update(status='PASS',all3_original_handles_signaled=True,post_action_time=now(),hold_mode_unchanged=True)
+except BaseException as error:result['error']=type(error).__name__+': '+str(error)
+finally:
+    for h in handles:k.CloseHandle(h)
+    (E/(case+'-observer-results.json')).write_text(json.dumps(result,indent=2)+'\n')
+    print(json.dumps(result,indent=2),flush=True)
+sys.exit(0 if result['status']=='PASS' else 1)

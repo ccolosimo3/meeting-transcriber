@@ -1,0 +1,110 @@
+[
+  {
+    "original_file": "native_fixture.cs",
+    "original_sha256": "fbaa791ff0ec519c0c63563cccb1a6a8b11e6d38302611c447c752246c0313ad",
+    "original_bytes": 4170,
+    "archive": "native_fixture.cs.txt",
+    "archived_git_blob_sha256": "94f0987a9891b95008a00f8fb4b78b3f32b28f06023d09587ec4b66a13c41977",
+    "archive_bytes": 4138,
+    "exact_transform": {
+      "CRLF_pairs_replaced_with_LF": 1,
+      "all_CRLF_are_single_final_pair": true,
+      "literal_replacements_in_order": [
+        {
+          "source_literal_utf8_sha256": "4426df2b23014e783e80a2199a6620ec93caa42fa6eb30860491bb9866203447",
+          "replacement": "<CORRECTED_QA_ROOT>",
+          "occurrences": 1
+        }
+      ],
+      "encoding": "UTF8, no transcoding/BOM change"
+    },
+    "original_raw_unchanged": true
+  },
+  {
+    "original_file": "launch_summary.py",
+    "original_sha256": "da1c54066b59716503b60428e9f20d93b05191ec8c5e7ec01d1a81f1adff686e",
+    "original_bytes": 1534,
+    "archive": "launch_summary.py.txt",
+    "archived_git_blob_sha256": "24dc20e0133966ed385d5d02fa9da72181a67321e5a586b205260be5f6165c70",
+    "archive_bytes": 1471,
+    "exact_transform": {
+      "CRLF_pairs_replaced_with_LF": 1,
+      "all_CRLF_are_single_final_pair": true,
+      "literal_replacements_in_order": [
+        {
+          "source_literal_utf8_sha256": "75e96a52528aae8d07ec41e9c7600c87e5144dbd2d05f7304f6997875b2320cf",
+          "replacement": "<CORRECTED_QA_ROOT>",
+          "occurrences": 2
+        }
+      ],
+      "encoding": "UTF8, no transcoding/BOM change"
+    },
+    "original_raw_unchanged": true
+  },
+  {
+    "original_file": "watch_native_handles.py",
+    "original_sha256": "b28db34c31394e143549be85bbf02f6976b3062cbc517160e21837253fa44161",
+    "original_bytes": 3270,
+    "archive": "watch_native_handles.py.txt",
+    "archived_git_blob_sha256": "0621760fd3737ffbf9481283efcdb8260226372bb424ec817eec88fd150f8f2b",
+    "archive_bytes": 3238,
+    "exact_transform": {
+      "CRLF_pairs_replaced_with_LF": 1,
+      "all_CRLF_are_single_final_pair": true,
+      "literal_replacements_in_order": [
+        {
+          "source_literal_utf8_sha256": "75e96a52528aae8d07ec41e9c7600c87e5144dbd2d05f7304f6997875b2320cf",
+          "replacement": "<CORRECTED_QA_ROOT>",
+          "occurrences": 1
+        }
+      ],
+      "encoding": "UTF8, no transcoding/BOM change"
+    },
+    "original_raw_unchanged": true
+  },
+  {
+    "original_file": "verify_retained_artifacts.py",
+    "original_sha256": "2bea2b83b15eb3d60737f75f009c02e680af43824daa737c8c058695f799d16f",
+    "original_bytes": 2584,
+    "archive": "verify_retained_artifacts.py.txt",
+    "archived_git_blob_sha256": "a78e4e732f95532881319f041e2bf97fe3fb4d6d99b8e8292e01582b0f8e3efc",
+    "archive_bytes": 2552,
+    "exact_transform": {
+      "CRLF_pairs_replaced_with_LF": 1,
+      "all_CRLF_are_single_final_pair": true,
+      "literal_replacements_in_order": [
+        {
+          "source_literal_utf8_sha256": "75e96a52528aae8d07ec41e9c7600c87e5144dbd2d05f7304f6997875b2320cf",
+          "replacement": "<CORRECTED_QA_ROOT>",
+          "occurrences": 1
+        }
+      ],
+      "encoding": "UTF8, no transcoding/BOM change"
+    },
+    "original_raw_unchanged": true
+  },
+  {
+    "product_file": "desktop/digest_child.py",
+    "sha256": "7cff207db7ee2045316bcc676b49d43d6eecf8d33838af0d33a67772ba574b65"
+  },
+  {
+    "product_file": "desktop/digest_job.py",
+    "sha256": "31f4f46333882229dc184e7ea2f80a68d1971a5ac3bda06850e1967805865fa7"
+  },
+  {
+    "product_file": "lib/meeting_library.py",
+    "sha256": "5e6940dc69f405c30f3c41e30443233a001ed6d70953124ce8efaf4b4e34259d"
+  },
+  {
+    "product_file": "skills/meeting/SKILL.md",
+    "sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5"
+  },
+  {
+    "product_file": "pyproject.toml",
+    "sha256": "af4390e2894cd3027fabed384bfc73e325912b091f165b54931cf35c62bbafe5"
+  },
+  {
+    "product_file": "uv.lock",
+    "sha256": "bca533e2da95b3b15495a03823fc2dc3bcc352a47409d41f70d1afa8d9de1c09"
+  }
+]

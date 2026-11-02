@@ -1,0 +1,99 @@
+{
+  "status": "PASS",
+  "scope": "corrected Windows console suppression and causal native Cancel/active-close lifecycle only",
+  "source": "2640f2903f4b9e4ebda97697410798bdfaf514a7",
+  "identity": {
+    "source": "2640f2903f4b9e4ebda97697410798bdfaf514a7",
+    "exe_sha256": "d5100f870006597c9698a4f92b50fb7b8054a8e7eb71d20cde13a2eba18191db",
+    "manifest_sha256": "686b95151906c2b8165efbb99444b84907f77aef64590cabb321bb8998271918",
+    "package_file_count": 102,
+    "skill_sha256": "96e5c127b0941d3c3c1c417eb1d06ff4e42a4480f1a5eaadcb8bf4f146c9acb5",
+    "native_fixture_sha256": "2206498e937f3709da7a8a26f82cf56e6d21d0fb128e9d4efd43078ace7fae7c",
+    "fixture_source_sha256": "fbaa791ff0ec519c0c63563cccb1a6a8b11e6d38302611c447c752246c0313ad"
+  },
+  "cancel": {
+    "case": "cancel",
+    "status": "PASS",
+    "pre_action_time": "2026-11-02T16:16:54.129577+00:00",
+    "pre_action_all3_live": true,
+    "held_birth_bound_processes": [
+      {
+        "pid": 31496,
+        "birth_filetime": 134381097491886286,
+        "role": "provider",
+        "console_window_present": false
+      },
+      {
+        "pid": 39052,
+        "birth_filetime": 134381097493346933,
+        "role": "grandchild",
+        "console_window_present": false
+      },
+      {
+        "pid": 8720,
+        "birth_filetime": 134381097492716013,
+        "role": "child",
+        "console_window_present": false
+      }
+    ],
+    "all3_original_handles_signaled": true,
+    "post_action_time": "2026-11-02T16:16:54.358332+00:00",
+    "hold_mode_unchanged": true
+  },
+  "active_close": {
+    "case": "close",
+    "status": "PASS",
+    "pre_action_time": "2026-11-02T16:20:59.973722+00:00",
+    "pre_action_all3_live": true,
+    "held_birth_bound_processes": [
+      {
+        "pid": 23504,
+        "birth_filetime": 134381100110151997,
+        "role": "child",
+        "console_window_present": false
+      },
+      {
+        "pid": 33312,
+        "birth_filetime": 134381100110951091,
+        "role": "grandchild",
+        "console_window_present": false
+      },
+      {
+        "pid": 38788,
+        "birth_filetime": 134381100109282632,
+        "role": "provider",
+        "console_window_present": false
+      }
+    ],
+    "all3_original_handles_signaled": true,
+    "post_action_time": "2026-11-02T16:21:00.167073+00:00",
+    "hold_mode_unchanged": true
+  },
+  "cleanup": {
+    "owned_processes_remaining": 0,
+    "private_sessions_remaining": 0,
+    "app_listeners_remaining": 0
+  },
+  "previous4_summaries_source_config_unchanged": true,
+  "package_all102_hashes_unchanged": true,
+  "all12_cli_console_handles_null": true,
+  "exact_control_argv_and_stdin_hash_delivered": true,
+  "same_captured_env_and_cwd_per_job": true,
+  "six_auth_config_locations_remain_synthetic": true,
+  "no_API_keys": true,
+  "fake_cli_only": true,
+  "reused_evidence": "Win1 ACL/private publication, Win2 import/transcription/reader, and unaffected Win3 headless/admission/success/provenance cases; source delta limited to actual-provider creationflags",
+  "not_claimed": [
+    "Real provider/CLI account/auth/model proof",
+    "Full release/installer/signing qualification",
+    "Actual OS Job-assignment rejection injection",
+    "Origin of prior PATH transformation (unchanged, not required by this causal flag delta)"
+  ],
+  "review_state": "Lead reports inner and original outer source approvals closed; final corrected runtime evidence awaits same outer assessment",
+  "proof_only_corrections": [
+    "Marker children use existing hold mode instead of60s expiry",
+    "Added GetConsoleWindow metadata for invisible console check",
+    "Blanket no-new-conhost assertion was overbroad; native API+visible host/window checks are the causal oracle",
+    "Window-bounds/occlusion event refreshed before input; no new job on failed action, unrelated screenshot excluded"
+  ]
+}
