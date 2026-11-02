@@ -13,6 +13,14 @@ checkpoint was prepared. The current product checkpoint is
 `2640f2903f4b9e4ebda97697410798bdfaf514a7`, including the Windows summary
 console-window correction.
 
+A later rendered-summary candidate is preserved separately on
+`codex/rendered-summaries-windows-enb016` at
+`2dda750389550e553cecd68bd59ec49fa9f37196`. Both fresh source reviews and the
+Windows package checks passed; final Mac compatibility and landing remain
+pending. The [rendered-summary checkpoint](handoffs/windows-2026-11-02/rendered-summaries/README.md)
+preserves factual results, artifact hashes, sanitized review reports and five
+original fictional captures. No new provider call was made for that change.
+
 ```text
 git clone --branch codex/desktop-import-transcription https://github.com/ccolosimo3/meeting-transcriber.git
 cd meeting-transcriber
