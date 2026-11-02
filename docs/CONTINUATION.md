@@ -173,9 +173,33 @@ artifacts and captures on Mac; it did not execute Windows or make provider calls
 Actual OS Job-assignment rejection was not forced. The prior launch-PATH
 transformation origin remains unresolved; per-job environment consistency and
 synthetic auth/config isolation were verified without claiming launch-PATH
-equality. Real provider/CLI authentication or model calls, live AssemblyAI,
-release signing and installer qualification remain unselected. These reports
-make no full-release or whole-delivery certification claim.
+equality. Those synthetic reports excluded real provider/CLI authentication,
+model calls and live AssemblyAI; the separately selected live checkpoint below
+records those later observations. Release signing and installer qualification
+remain unselected. These reports make no full-release or whole-delivery
+certification claim.
+
+## Windows live smoke checkpoint
+
+The [November 2 live report](handoffs/windows-2026-11-02/live-smoke/README.md)
+records one operator-approved 91.297415-second fictional recording through the
+same tested package, with product bytes unchanged at `2640f29`. One native
+AssemblyAI transcription published all four files with two-speaker diarization,
+readable punctuation and confirmed remote deletion. Native playback/seeking
+worked. One subscription summary each through actual Codex 0.163.0 and Claude
+Code 2.1.280 saved with matching transcript/skill provenance; both distinguish
+committed actions from the unapproved gallery. Codex retained a nonfatal provider
+warning; Claude reported `claude-opus-5-5[1m]`, while Codex reported no model ID.
+No live retry, retranscription or extra generation was made.
+
+Normal restart restored the transcript, both summary history entries and the
+Codex warning without changing saved bytes. Final normal Close removed owned
+app/WebView/CLI processes, listener and private session. The report includes only
+the approved fictional transcript/summaries, redacted results and two original
+safe app captures. The AssemblyAI approval cap was $0.10, with an approximate
+input-duration estimate of $0.00584; actual billing was not queried. This dated
+live sample is separate from the synthetic failure/lifecycle proof and makes no
+broader quality or release claim. Its approval was limited to that input and run.
 
 ## Windows qualification route
 
