@@ -215,7 +215,7 @@
     ui["run-select"].disabled = state.busy || !state.meeting || state.meeting.runs.length === 0;
     ui["open-html"].disabled = state.busy || state.loading;
     ui["fallback-open-html"].disabled = state.busy || state.loading;
-    ui["find-toggle"].disabled = !state.data?.canonical || state.loading || state.view !== "transcript";
+    ui["find-toggle"].disabled = !state.data?.reader_transcript || state.loading || state.view !== "transcript";
     ui["details-toggle"].disabled = !state.meeting;
     const operating = state.operationStarting || state.operation?.state === "running";
     ui["import-audio"].disabled = !available || operating;
@@ -224,7 +224,7 @@
     ui["retry-cleanup"].hidden = !state.data?.cleanup_required;
     ui["retry-cleanup"].disabled = operating || state.loading || state.busy;
     const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
-    ui["generate-summary"].disabled = !state.data?.canonical || !state.runId || state.loading || state.busy || running;
+    ui["generate-summary"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy || running;
     ui["summary-provider"].disabled = running;
     ui["summary-view"].disabled = !state.data?.summary;
   }
@@ -233,8 +233,8 @@
     state.view = view === "summary" && state.data?.summary ? "summary" : "transcript";
     const summary = state.view === "summary";
     ui["summary-panel"].hidden = !summary;
-    ui["passages"].hidden = summary || !state.data?.canonical;
-    ui["transcript-empty"].hidden = summary || Boolean(state.data?.canonical);
+    ui["passages"].hidden = summary || !state.data?.reader_transcript;
+    ui["transcript-empty"].hidden = summary || Boolean(state.data?.reader_transcript);
     ui["summary-view"].setAttribute("aria-pressed", String(summary));
     ui["transcript-view"].setAttribute("aria-pressed", String(!summary));
     if (summary) setPanelOpen("find", false, false);
@@ -584,7 +584,7 @@
       state.data = data;
       setMeetingHeader({ ...meeting, title: data.title || meeting.title, added: data.added || meeting.added, status: data.status || meeting.status });
       ui["open-html"].hidden = !(data.exports && data.exports.html && state.runId);
-      if (data.canonical) renderTranscript(data.canonical);
+      if (data.reader_transcript) renderTranscript(data.reader_transcript);
       else {
         ui["transcript-empty-message"].textContent = data.exports && data.exports.html
           ? "A structured transcript is unavailable for this run. You can open its saved HTML, or choose another run."
@@ -608,9 +608,9 @@
     }
   }
 
-  function renderTranscript(canonical) {
-    const speakers = [...new Set(canonical.segments.map(segment => segment.speaker))];
-    const names = new Map(Object.entries(canonical.speaker_names || {}));
+  function renderTranscript(transcript) {
+    const speakers = [...new Set(transcript.passages.map(segment => segment.speaker))];
+    const names = new Map(Object.entries(transcript.speaker_names || {}));
     for (const speaker of speakers) {
       const option = element("option", "", names.has(speaker) ? `${names.get(speaker)} · ${speaker}` : speaker);
       option.value = speaker;
@@ -618,10 +618,10 @@
     }
     ui["transcript-tools"].hidden = false;
     ui["transcript-summary"].hidden = false;
-    ui["language-label"].textContent = canonical.language ? `Language: ${canonical.language.toUpperCase()}` : "";
+    ui["language-label"].textContent = transcript.language ? `Language: ${transcript.language.toUpperCase()}` : "";
     const generation = state.generation;
     const fragment = document.createDocumentFragment();
-    state.rows = canonical.segments.map((segment, ordinal) => {
+    state.rows = transcript.passages.map((segment, ordinal) => {
       const node = element("article", "passage");
       node.id = `passage-${ordinal}`;
       node.dataset.ordinal = String(ordinal);

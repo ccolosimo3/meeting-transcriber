@@ -27,6 +27,7 @@ from meeting_library import Library
 from meeting_digests import record
 from tests.test_assemblyai_adapter import write_published_run
 from tests.test_html_browser import CHROME_CANDIDATES, CdpPage, aiohttp, browser_prerequisites_available
+from transcript_bundle import CanonicalTranscript, Segment, TimedWord, save_canonical
 
 
 def sparse_table():
@@ -85,7 +86,8 @@ class SummaryBrowserTests(unittest.TestCase):
         malformed.mkdir(mode=0o700)
         (malformed / "summary.json").write_text("{}", encoding="utf-8")
         self.server = ReaderServer(ROOT / "desktop/assets")
-        self.bridge = Bridge(self.server, lambda: None)
+        self.opened = []
+        self.bridge = Bridge(self.server, lambda: None, lambda url: self.opened.append(url) or True)
         self.addCleanup(self.bridge._close)
         self.addCleanup(self.server.close)
         self.job = None
@@ -116,7 +118,7 @@ class SummaryBrowserTests(unittest.TestCase):
                 owner.actions.append(name)
                 # Transport only: all record/history/selection projections are
                 # produced by the existing Bridge. Never run a provider job.
-                if name in ("refresh_library", "load_run", "summary_history", "choose_library"):
+                if name in ("refresh_library", "load_run", "summary_history", "choose_library", "open_saved_html"):
                     if name == "summary_history" and owner.expire_history_once:
                         owner.expire_history_once = False
                         args[2] = "expired-fixture-id"
@@ -217,6 +219,84 @@ class SummaryBrowserTests(unittest.TestCase):
 
     def test_structured_history_and_completed_projection(self):
         asyncio.run(self.structured())
+
+    def test_reader_passages_preserve_identity_find_and_playback(self):
+        texts = ["Garden <img src=x> café 🍃", "Garden notes from Theo.", "Maya returns to garden."]
+        segments = [Segment(identifier, start, end, text, speaker,
+                    [TimedWord(text, start, end, .98, speaker)])
+                    for (identifier, start, end, speaker), text in zip(
+                        [(7, 1.1, 1.8, 'SPEAKER_00'), (7, .1, .6, 'SPEAKER_01'),
+                         (1, .4, .9, 'SPEAKER_00')], texts)]
+        canonical = next(self.library_root.iterdir()) / 'transcripts/T2/transcript.json'
+        save_canonical(canonical, CanonicalTranscript('en', ' '.join(texts), segments,
+            {'SPEAKER_00': 'Maya', 'SPEAKER_01': 'Theo'}))
+        self.hashes = self.saved_hashes()
+        asyncio.run(self.reader_passages(texts))
+
+    async def reader_passages(self, texts):
+        async with aiohttp.ClientSession() as session, session.ws_connect(self.websocket) as websocket:
+            page = await self.page(websocket, [])
+            await page.evaluate("document.querySelector('#transcript-view').click()")
+            await self.wait(page, "document.querySelectorAll('#passages .passage').length===3 && !document.querySelector('#passages .timestamp').disabled")
+            self.assertEqual(await page.evaluate("[...document.querySelectorAll('#passages .passage-text')].map(n=>n.textContent)"), texts)
+            self.assertEqual(await page.evaluate("[...document.querySelectorAll('#passages .passage')].map(n=>n.id)"), ['passage-0', 'passage-1', 'passage-2'])
+            self.assertEqual(await page.evaluate("document.querySelector('#language-label').textContent"), 'Language: EN')
+            self.assertEqual(await page.evaluate("[...document.querySelectorAll('#speaker-filter option')].map(n=>n.textContent)"), ['All speakers', 'Maya · SPEAKER_00', 'Theo · SPEAKER_01'])
+            self.assertTrue(await page.evaluate("!document.querySelector('#find-toggle').disabled && !document.querySelector('#generate-summary').disabled && !document.querySelector('#passages img')"))
+            await page.evaluate("(()=>{document.querySelector('#find-toggle').click();const q=document.querySelector('#transcript-search');q.value='garden';q.dispatchEvent(new Event('input'))})()")
+            self.assertEqual(await page.evaluate("document.querySelectorAll('#passages mark').length"), 3)
+            for control, ordinal in [('find-next', '0'), ('find-next', '1'), ('find-previous', '0')]:
+                await page.evaluate("document.querySelector('#" + control + "').click()")
+                self.assertEqual(await page.evaluate("document.querySelector('.current-match').dataset.ordinal"), ordinal)
+            await page.evaluate("(()=>{const s=document.querySelector('#speaker-filter');s.value='SPEAKER_01';s.dispatchEvent(new Event('change'))})()")
+            self.assertEqual(await page.evaluate("[...document.querySelectorAll('#passages .passage')].filter(n=>!n.hidden).map(n=>n.dataset.ordinal)"), ['1'])
+            await page.evaluate("(()=>{const s=document.querySelector('#speaker-filter');s.value='';s.dispatchEvent(new Event('change'));const q=document.querySelector('#transcript-search');q.value='no matching passage';q.dispatchEvent(new Event('input'))})()")
+            self.assertTrue(await page.evaluate("document.querySelector('#passages').hidden && !document.querySelector('#transcript-empty').hidden && document.querySelector('#find-next').disabled && document.querySelector('#find-previous').disabled"))
+            await page.evaluate("(()=>{const q=document.querySelector('#transcript-search');q.value='';q.dispatchEvent(new Event('input'));document.querySelector('#passage-0 .timestamp').click()})()")
+            await self.wait(page, "document.querySelector('#meeting-audio').currentTime>=1.1")
+            await page.evaluate("(()=>{const a=document.querySelector('#meeting-audio');a.pause();a.currentTime=.5;a.dispatchEvent(new Event('timeupdate'))})()")
+            self.assertEqual(await page.evaluate("[...document.querySelectorAll('.passage.active')].map(n=>n.dataset.ordinal)"), ['1', '2'])
+            self.assertIn('Passages 02, 03', await page.evaluate("document.querySelector('#playing-status').textContent"))
+            await page.evaluate("(()=>{const a=document.querySelector('#meeting-audio');a.currentTime=1;a.dispatchEvent(new Event('timeupdate'))})()")
+            self.assertEqual(await page.evaluate("document.querySelectorAll('.passage.active').length"), 0)
+            self.assertEqual(await page.evaluate("document.querySelectorAll('#passages .passage:not([hidden])').length"), 3)
+            await page.websocket.close()
+
+    def test_reader_null_transcript_preserves_summary_html_audio_and_recovery(self):
+        bundle = next(self.library_root.iterdir())
+        canonical = bundle / 'transcripts/T2/transcript.json'
+        original = canonical.read_bytes()
+        (canonical.parent / '.assemblyai.json').unlink()
+        canonical.write_text('{}', encoding='utf-8')
+        audio_only = self.library_root / '20261102-090000-Audio-only'
+        audio_only.mkdir(mode=0o700)
+        (audio_only / 'recording.wav').write_bytes((bundle / 'recording.wav').read_bytes())
+        self.hashes = self.saved_hashes()
+        asyncio.run(self.reader_fallback(canonical, original))
+
+    async def reader_fallback(self, canonical, original):
+        async with aiohttp.ClientSession() as session, session.ws_connect(self.websocket) as websocket:
+            page = await self.page(websocket, [])
+            self.assertTrue(await page.evaluate("!document.querySelector('#summary-panel').hidden && document.querySelector('#find-toggle').disabled && document.querySelector('#generate-summary').disabled"))
+            await page.evaluate("document.querySelector('#transcript-view').click()")
+            await self.wait(page, "document.querySelector('#reader').getAttribute('aria-busy')==='false' && !document.querySelector('#fallback-open-html').disabled")
+            await page.evaluate("document.querySelector('#fallback-open-html').click()")
+            await self.wait(page, "!document.querySelector('#fallback-open-html').disabled")
+            self.assertTrue(await page.evaluate("!document.querySelector('#transcript-empty').hidden && document.querySelector('#passages').hidden && !document.querySelector('#fallback-open-html').hidden"))
+            self.assertEqual(len(self.opened), 1, (self.actions, await page.evaluate("document.querySelector('#reader-notice').textContent")))
+            with urlopen(self.opened[0]) as response:
+                self.assertEqual(response.read(), canonical.with_suffix('.html').read_bytes())
+            await page.evaluate("[...document.querySelectorAll('#meeting-list button')].find(n=>n.textContent.includes('Audio only')).click()")
+            await self.wait(page, "document.querySelector('#meeting-title').textContent==='Audio only' && document.querySelector('#audio-status').textContent==='Meeting recording'")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-view').disabled && document.querySelector('#generate-summary').disabled && document.querySelector('#find-toggle').disabled && document.querySelector('#fallback-open-html').hidden && !document.querySelector('#transcribe-audio').disabled"))
+            self.assertEqual(self.saved_hashes(), self.hashes)
+            canonical.write_bytes(original)
+            self.hashes = self.saved_hashes()
+            await self.open_reader(page)
+            await page.evaluate("document.querySelector('#transcript-view').click()")
+            self.assertTrue(await page.evaluate("!document.querySelector('#find-toggle').disabled && !document.querySelector('#generate-summary').disabled && document.querySelector('#passages').textContent.includes('First.')"))
+            self.assertEqual(self.actions.count('start_summary'), 0)
+            await page.websocket.close()
 
     async def structured(self):
         async with aiohttp.ClientSession() as session, session.ws_connect(self.websocket) as websocket:

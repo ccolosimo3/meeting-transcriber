@@ -91,6 +91,15 @@ class Bridge:
                     except (LibraryError, OSError):
                         result['media_state'] = 'missing'
                         result['media_error'] = {'code': 'unavailable_source', 'message': 'Audio changed or is unavailable. Refresh to try again.'}
+                canonical = result.pop('canonical')
+                result['reader_transcript'] = None if canonical is None else {
+                    'language': canonical['language'],
+                    'speaker_names': canonical['speaker_names'],
+                    'passages': [
+                        {key: segment[key] for key in ('start', 'end', 'text', 'speaker')}
+                        for segment in canonical['segments']
+                    ],
+                }
                 return result
             except LibraryError as error:
                 return {'error': error.message, 'code': error.code}

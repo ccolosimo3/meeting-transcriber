@@ -25,6 +25,13 @@ class BridgeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        environment = patch.dict(os.environ, {'MEETING_DATA_DIR': str(self.root),
+            'HOME': str(self.root / 'home'), 'USERPROFILE': str(self.root / 'home'),
+            'LOCALAPPDATA': str(self.root / 'home/local'), 'APPDATA': str(self.root / 'home/roaming'),
+            'MEETING_CONFIG_DIR': str(self.root / 'config'), 'CODEX_HOME': str(self.root / 'codex'),
+            'CLAUDE_CONFIG_DIR': str(self.root / 'claude')})
+        environment.start()
+        self.addCleanup(environment.stop)
         bundle = self.root / '20261031-090000-review'
         self.source = write_published_run(bundle / 'transcripts' / 'run-1', deletion={'confirmed': True})
         self.audio = bundle / 'recording.wav'
@@ -48,7 +55,7 @@ class BridgeTests(unittest.TestCase):
     def test_real_bridge_load_media_export_cancel_and_refresh(self):
         row = self.bridge.refresh_library()['meetings'][0]
         result = self.bridge.load_run(row['id'], row['default_run_id'])
-        self.assertTrue(result['canonical']['segments'])
+        self.assertTrue(result['reader_transcript']['passages'])
         self.assertEqual(self.read(result['media_url']), (200, self.audio.read_bytes()))
         self.assertTrue(self.bridge.open_saved_html(row['id'], row['default_run_id'])['opened'])
         self.assertEqual(self.read(self.opened[0]), (200, self.source.with_suffix('.html').read_bytes()))
@@ -59,6 +66,45 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.read(self.opened[0])[0], 200)
         self.bridge.refresh_library()
         self.assertEqual(self.read(self.opened[0])[0], 404)
+
+    def test_reader_projection_preserves_full_source_and_reduces_serialized_bytes(self):
+        original = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        row = self.bridge.refresh_library()['meetings'][0]
+        full = self.bridge._library.load(row['id'], row['default_run_id'])['canonical']
+        result = self.bridge.load_run(row['id'], row['default_run_id'])
+        self.assertEqual(result['reader_transcript'], {'language': 'en', 'speaker_names': {},
+            'passages': [{'start': 0.1, 'end': 0.9, 'text': 'First.', 'speaker': 'SPEAKER_00'}]})
+        self.assertNotIn('canonical', result)
+        legacy = {**result, 'canonical': full}
+        del legacy['reader_transcript']
+        self.assertLess(len(json.dumps(result).encode()), len(json.dumps(legacy).encode()))
+        self.assertEqual(self.bridge._library.load(row['id'], row['default_run_id'])['canonical'],
+                         json.loads(original[self.source]))
+        self.assertEqual({p: p.read_bytes() for p in original}, original)
+
+    def test_unused_word_corruption_is_rejected_before_display_projection(self):
+        row = self.bridge.refresh_library()['meetings'][0]
+        value = json.loads(self.source.read_bytes())
+        value['segments'][0]['words'][0]['probability'] = 2
+        self.source.write_text(json.dumps(value), encoding='utf-8')
+        result = self.bridge.load_run(row['id'], row['default_run_id'])
+        self.assertEqual(result['code'], 'malformed_transcript')
+        self.assertNotIn('reader_transcript', result)
+
+    def test_historical_names_and_html_fallback_keep_their_display_states(self):
+        (self.source.parent / '.assemblyai.json').unlink()
+        value = json.loads(self.source.read_bytes())
+        del value['speaker_names']
+        self.source.write_text(json.dumps(value), encoding='utf-8')
+        row = self.bridge.refresh_library()['meetings'][0]
+        result = self.bridge.load_run(row['id'], row['default_run_id'])
+        self.assertEqual(result['reader_transcript']['speaker_names'], {})
+        self.assertEqual(result['reader_transcript']['passages'][0]['text'], 'First.')
+        self.source.write_text('{}', encoding='utf-8')
+        result = self.bridge.load_run(row['id'], row['default_run_id'])
+        self.assertIsNone(result['reader_transcript'])
+        self.assertEqual(result['status'], 'Saved HTML available')
+        self.assertTrue(self.bridge.open_saved_html(row['id'], row['default_run_id'])['opened'])
 
     def test_stale_ids_and_disappearing_root_are_bounded_errors(self):
         self.assertEqual(self.bridge.load_run('arbitrary','path')['code'], 'stale_id')
@@ -82,7 +128,7 @@ class BridgeTests(unittest.TestCase):
 
         with patch.object(self.bridge._library, 'open_media', side_effect=removed):
             result = self.bridge.load_run(row['id'], row['default_run_id'])
-        self.assertTrue(result['canonical']['segments'])
+        self.assertTrue(result['reader_transcript']['passages'])
         self.assertEqual(result['media_state'], 'missing')
         self.assertNotIn('media_url', result)
 
