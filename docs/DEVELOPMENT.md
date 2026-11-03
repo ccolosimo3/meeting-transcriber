@@ -51,7 +51,12 @@ source; POSIX tests are not an ACL proof.
   Native messages also enforce an exact action/arity/input allowlist before the
   framework dispatcher; hiding private Python attributes from API enumeration
   alone does not prevent raw dotted-attribute calls.
-- `desktop/assets/` renders escaped canonical text with source-ordinal identity.
+- `Bridge.load_run` derives a transient `reader_transcript` only after the full
+  Library load and validation. It contains language, speaker names and ordered
+  passages with start/end/text/speaker, or null for unavailable structured data.
+  It replaces `canonical` only on this private desktop response: Library data,
+  files, exports and summary source inputs retain complete canonical data.
+- `desktop/assets/` renders escaped passage text with source-ordinal identity.
   The actual media element drives interval highlighting; filtering changes the
   text view, not the audio. Library/Find/Details/Listening disclosure is local
   presentation state and never replaces the media element. Show categories

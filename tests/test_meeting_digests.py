@@ -121,7 +121,7 @@ else:
         with patch.dict(os.environ, {'PATH':str(self.root)+os.pathsep+os.environ.get('PATH',''),
                                      'OPENAI_API_KEY':'synthetic-sentinel','CODEX_APP_TOOLS_PIPE_PATH':'synthetic-sentinel'}):
             started = bridge.start_summary(self.row['id'], self.runs['T2'], 'claude')
-            self.assertEqual(bridge.load_run(self.row['id'], self.runs['T1'])['canonical']['text'], 'First.')
+            self.assertEqual(bridge.load_run(self.row['id'], self.runs['T1'])['reader_transcript']['passages'][0]['text'], 'First.')
             # Even replacing the active Library cannot retarget this job.
             bridge._library = Library()
             result = finished(bridge._digests, started['id'])
