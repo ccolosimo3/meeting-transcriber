@@ -58,12 +58,21 @@ source; POSIX tests are not an ACL proof.
   files, exports and summary source inputs retain complete canonical data.
 - `desktop/assets/` renders escaped passage text with source-ordinal identity.
   The actual media element drives interval highlighting; filtering changes the
-  text view, not the audio. Library/Find/Details/Listening disclosure is local
-  presentation state and never replaces the media element. Show categories
-  derive from the library snapshot's eligible runs and exact statuses; selected
-  version labels and warnings derive from the current run. Summary Markdown uses
+  text view, not the audio. Library/Find/Details/Listening and summary-generation
+  disclosure is local presentation state and never replaces the media element.
+  Show categories derive from the library snapshot's eligible runs and exact
+  statuses; selected version labels and warnings derive from the current run. Summary Markdown uses
   a local token parser and a closed text-node/DOM renderer; it cannot render raw
   HTML, remote resources or generated actions.
+
+  Completed-run retranscription and its paid-use disclosure live in More;
+  audio-only meetings keep the same action inline. The existing button/handler
+  moves between hosts. Summary generation is a compact anchored form using the
+  existing panel/focus/Escape owner, with outside-pointer/focus dismissal and
+  viewport-bounded scrolling; opening it does not invoke a job. Job status,
+  Cancel, results, errors, revision warnings and cleanup recovery remain outside
+  these optional controls. Summary history uses local date labels with collision
+  disambiguation; exact timestamp/hash/model provenance stays in Details.
 
 The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
 needed for pinned pywebview's `new Function` bridge registration; document,
