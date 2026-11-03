@@ -19,7 +19,7 @@
       <button id="details-toggle" type="button" aria-controls="details-panel" aria-expanded="false" disabled>Details</button>
       <details id="actions-menu" class="actions-menu">
         <summary id="actions-toggle" aria-label="More actions" aria-expanded="false">•••</summary>
-        <div class="actions-panel">
+        <div id="actions-panel" class="actions-panel">
           <button id="open-html" type="button" hidden>Open saved HTML ↗</button>
           <button id="setup-toggle" type="button">Transcription setup</button>
           <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
@@ -64,13 +64,18 @@
         <p id="reader-empty-detail" class="empty-detail">Choose a meeting from your library to begin.</p>
       </div>
       <div id="reader-content" class="reader-content" hidden>
-        <div class="transcription-tools"><button id="transcribe-audio" type="button" disabled>Transcribe</button><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button><p>Transcribe sends this recording to AssemblyAI. Paid account usage applies. Remote data is deleted after local save. Speakers are estimated automatically.</p></div>
+        <div id="transcription-tools" class="transcription-tools"><div id="transcription-action" class="transcription-action"><button id="transcribe-audio" type="button" aria-describedby="transcription-disclosure" disabled>Transcribe</button><p id="transcription-disclosure">Transcribe sends this recording to AssemblyAI. Paid account usage applies. Remote data is deleted after local save. Speakers are estimated automatically.</p></div><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button></div>
         <div class="summary-tools">
           <div class="summary-views" role="group" aria-label="Reader view"><button id="summary-view" type="button" aria-pressed="false" disabled>Summary</button><button id="transcript-view" type="button" aria-pressed="true">Transcript</button></div>
-          <label for="summary-provider">Generate with</label><select id="summary-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select><button id="generate-summary" type="button" disabled>Generate summary</button>
-          <p id="summary-disclosure">Sends this saved transcript to your signed-in Claude Code CLI subscription. No automatic follow-up.</p>
+          <button id="summary-generation-toggle" type="button" aria-controls="summary-generation-panel" aria-expanded="false" disabled>Summarize…</button>
         </div>
         <div class="reader-context">
+          <section id="summary-generation-panel" class="summary-generation-panel" aria-label="Summary generation" hidden>
+            <div class="panel-heading"><h2>Generate summary</h2><button id="summary-generation-close" type="button" aria-label="Close summary generation">×</button></div>
+            <div class="summary-generation-options"><label for="summary-provider">Generate with</label><select id="summary-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
+            <p id="summary-disclosure">Sends this saved transcript to your signed-in Claude Code CLI subscription. No automatic follow-up.</p>
+            <button id="generate-summary" type="button" aria-describedby="summary-disclosure" disabled>Generate summary</button>
+          </section>
           <section id="details-panel" class="details-panel" aria-label="Meeting details" hidden>
             <div class="panel-heading"><h2 id="details-title"></h2><button id="details-close" type="button" aria-label="Close details">×</button></div>
             <div class="meeting-meta"><span id="meeting-added"></span><span id="meeting-status" class="status"></span><span id="language-label"></span></div>

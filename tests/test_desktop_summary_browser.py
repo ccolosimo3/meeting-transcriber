@@ -118,14 +118,14 @@ class SummaryBrowserTests(unittest.TestCase):
                 owner.actions.append(name)
                 # Transport only: all record/history/selection projections are
                 # produced by the existing Bridge. Never run a provider job.
-                if name in ("refresh_library", "load_run", "summary_history", "choose_library", "open_saved_html"):
+                if name in ("refresh_library", "load_run", "summary_history", "choose_library", "open_saved_html", "start_transcription", "operation_status"):
                     if name == "summary_history" and owner.expire_history_once:
                         owner.expire_history_once = False
                         args[2] = "expired-fixture-id"
                     result = getattr(owner.bridge, name)(*args)
                 elif name == "start_summary":
                     source = owner.bridge._library.digest_source(args[0], args[1])
-                    owner.bridge._library.publish_digest(source, record(source, owner.skill, "claude", "synthetic", "# Newly saved\nCompleted projection.", None))
+                    owner.bridge._library.publish_digest(source, record(source, owner.skill, args[2], "synthetic", "# Newly saved\nCompleted projection.", None))
                     owner.job = {"id": "fixture-completed", "state": "succeeded", "meeting_id": args[0], "run_id": args[1]}
                     result = owner.job
                 elif name == "summary_status":
@@ -219,6 +219,69 @@ class SummaryBrowserTests(unittest.TestCase):
 
     def test_structured_history_and_completed_projection(self):
         asyncio.run(self.structured())
+
+    def test_contextual_summary_disclosure_and_focus(self):
+        asyncio.run(self.contextual_summary())
+
+    async def contextual_summary(self):
+        async with aiohttp.ClientSession() as session, session.ws_connect(self.websocket) as websocket:
+            page = await self.page(websocket, [])
+            self.assertFalse(await page.evaluate("document.querySelector('#summary-provider').checkVisibility()"))
+            self.assertFalse(await page.evaluate("document.querySelector('#transcribe-audio').checkVisibility()"))
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-view').checkVisibility() && document.querySelector('#transcript-view').checkVisibility()"))
+            await page.evaluate("document.querySelector('#summary-generation-toggle').click()")
+            await self.wait(page, "document.activeElement.id==='summary-provider'")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-disclosure').checkVisibility() && document.querySelector('#summary-disclosure').textContent.includes('Claude Code')"))
+            self.assertEqual(self.actions.count('start_summary'), 0)
+            await page.request('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Escape', 'code': 'Escape', 'windowsVirtualKeyCode': 27})
+            await page.request('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Escape', 'code': 'Escape', 'windowsVirtualKeyCode': 27})
+            await self.wait(page, "document.querySelector('#summary-generation-panel').hidden && document.activeElement.id==='summary-generation-toggle'")
+            await page.evaluate("(()=>{document.querySelector('#summary-generation-toggle').click();const s=document.querySelector('#summary-provider');s.value='codex';s.dispatchEvent(new Event('change'))})()")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-disclosure').checkVisibility() && document.querySelector('#summary-disclosure').textContent.includes('Codex CLI')"))
+            self.assertEqual(self.actions.count('start_summary'), 0)
+            await page.evaluate("document.querySelector('#generate-summary').click()")
+            await self.wait(page, "document.querySelector('#summary-text h1')?.textContent==='Newly saved'")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-generation-panel').hidden && document.querySelector('#digest-progress').checkVisibility() && document.querySelector('#summary-provenance').textContent.includes('codex')"))
+            self.assertEqual(self.actions.count('start_summary'), 1)
+            await page.websocket.close()
+
+    def test_contextual_transcription_preserves_inline_recovery_and_errors(self):
+        recording = next(self.library_root.iterdir()) / 'recording.wav'
+        for name, cleanup in [('Audio-only', False), ('Cleanup', True)]:
+            bundle = self.library_root / ('20261102-090000-' + name)
+            if cleanup:
+                write_published_run(bundle / 'transcripts/T1', deletion={'confirmed': False})
+            else:
+                bundle.mkdir(mode=0o700)
+            (bundle / 'recording.wav').write_bytes(recording.read_bytes())
+        self.hashes = self.saved_hashes()
+        asyncio.run(self.contextual_transcription())
+
+    async def contextual_transcription(self):
+        async with aiohttp.ClientSession() as session, session.ws_connect(self.websocket) as websocket:
+            page = await self.page(websocket, [])
+            await page.evaluate("document.querySelector('#actions-toggle').click()")
+            await self.wait(page, "document.querySelector('#transcribe-audio').checkVisibility()")
+            self.assertTrue(await page.evaluate("document.querySelector('#actions-menu').contains(document.querySelector('#transcribe-audio')) && document.querySelector('#transcribe-audio').textContent==='Transcribe again' && document.querySelector('#transcription-disclosure').checkVisibility() && document.querySelector('#transcription-disclosure').textContent.includes('Paid account usage')"))
+            self.assertFalse(await page.evaluate("document.querySelector('#transcription-tools').checkVisibility()"))
+            await page.evaluate("document.querySelector('#transcribe-audio').click()")
+            # Real job/preflight owner, empty synthetic credential location: no
+            # upload, executable fixture or provider request is necessary.
+            await self.wait(page, "document.querySelector('#operation-status').textContent.includes('No AssemblyAI API key')")
+            self.assertTrue(await page.evaluate("!document.querySelector('#actions-menu').open && document.querySelector('#operation-progress').checkVisibility() && document.querySelector('#operation-result').hidden"))
+            await self.wait(page, "document.querySelector('#reader').getAttribute('aria-busy')==='false' && document.querySelector('#meeting-list').getAttribute('aria-busy')==='false'")
+            await page.evaluate("[...document.querySelectorAll('#meeting-list button')].find(n=>n.querySelector('.meeting-name').textContent==='Audio only').click()")
+            await self.wait(page, "document.querySelector('#meeting-title').textContent==='Audio only' && document.querySelector('#audio-status').textContent==='Meeting recording'")
+            self.assertTrue(await page.evaluate("document.querySelector('#transcription-tools').contains(document.querySelector('#transcribe-audio')) && document.querySelector('#transcribe-audio').checkVisibility() && document.querySelector('#transcribe-audio').textContent==='Transcribe' && document.querySelector('#transcription-disclosure').checkVisibility() && document.querySelector('#summary-generation-toggle').disabled && document.querySelector('#operation-progress').checkVisibility()"))
+            await page.evaluate("document.querySelector('#actions-toggle').click()")
+            await self.wait(page, "document.querySelector('#actions-menu').open")
+            await page.evaluate("[...document.querySelectorAll('#meeting-list button')].find(n=>n.querySelector('.meeting-name').textContent==='Cleanup').click()")
+            await self.wait(page, "document.querySelector('#retry-cleanup').checkVisibility()")
+            self.assertTrue(await page.evaluate("!document.querySelector('#actions-menu').open && document.querySelector('#meeting-warning').checkVisibility() && document.querySelector('#meeting-warning').textContent.includes('cleanup unconfirmed') && !document.querySelector('#transcribe-audio').checkVisibility()"))
+            self.assertEqual(self.actions.count('start_transcription'), 1)
+            self.assertEqual(self.actions.count('start_summary'), 0)
+            self.assertEqual(self.saved_hashes(), self.hashes)
+            await page.websocket.close()
 
     def test_reader_passages_preserve_identity_find_and_playback(self):
         texts = ["Garden <img src=x> café 🍃", "Garden notes from Theo.", "Maya returns to garden."]
@@ -323,7 +386,7 @@ class SummaryBrowserTests(unittest.TestCase):
             for run, heading in [("T1", "Other run"), ("T2", "Cedar Lantern Meeting: Digest")]:
                 await page.evaluate("(()=>{const s=document.querySelector('#run-select');s.value=[...s.options].find(o=>o.textContent.includes(" + json.dumps(run) + ")).value;s.dispatchEvent(new Event('change'))})()")
                 await self.wait(page, "document.querySelector('#summary-text h1')?.textContent===" + json.dumps(heading))
-            await page.evaluate("document.querySelector('#generate-summary').click()")
+            await page.evaluate("document.querySelector('#summary-generation-toggle').click();document.querySelector('#generate-summary').click()")
             await self.wait(page, "document.querySelector('#summary-text h1')?.textContent==='Newly saved'")
             self.assertEqual(self.actions.count("start_summary"), 1)
             await page.websocket.close()

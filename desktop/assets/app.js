@@ -17,9 +17,10 @@
     "clear-text", "clear-speaker", "clear-filters", "actions-menu", "actions-toggle",
     "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message",
     "summary-view", "transcript-view", "summary-provider", "generate-summary", "summary-disclosure",
+    "summary-generation-toggle", "summary-generation-panel", "summary-generation-close",
     "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-format-warning", "summary-text",
     "digest-progress", "digest-status", "cancel-summary",
-    "import-audio", "transcribe-audio", "retry-cleanup", "operation-progress", "operation-status", "operation-result",
+    "import-audio", "transcribe-audio", "transcription-action", "transcription-tools", "actions-panel", "retry-cleanup", "operation-progress", "operation-status", "operation-result",
     "setup-toggle", "transcription-setup", "setup-close", "setup-status", "credential-location", "key-form", "assemblyai-key", "save-key", "ffprobe-status", "locate-ffprobe", "setup-error"
   ].map(id => [id, byId(id)]));
   const state = {
@@ -92,7 +93,7 @@
     if (restoreFocus) ui["library-toggle"].focus();
   }
 
-  const panels = ["find", "details"];
+  const panels = ["find", "details", "summary-generation"];
   const disclosures = [
     ["library-folder", "folder-toggle"], ["actions-menu", "actions-toggle"], ["listening", "listening-toggle"]
   ];
@@ -115,7 +116,7 @@
     ui[`${name}-panel`].hidden = !open;
     ui[`${name}-toggle`].setAttribute("aria-expanded", String(open));
     updateFilterContext();
-    if (focus) ui[open ? (name === "find" ? "transcript-search" : "details-close") : `${name}-toggle`].focus();
+    if (focus) ui[open ? (name === "find" ? "transcript-search" : name === "summary-generation" ? "summary-provider" : "details-close") : `${name}-toggle`].focus();
   }
 
   function updateListeningContext() {
@@ -198,8 +199,10 @@
     ui["details-toggle"].removeAttribute("title");
     ui["open-html"].hidden = true;
     ui["fallback-open-html"].hidden = true;
+    ui["actions-menu"].open = false;
     setPanelOpen("find", false, false);
     setPanelOpen("details", false, false);
+    setPanelOpen("summary-generation", false, false);
     document.querySelector(".reader").setAttribute("aria-busy", "false");
     document.title = "Meeting Transcriber";
   }
@@ -219,11 +222,16 @@
     ui["details-toggle"].disabled = !state.meeting;
     const operating = state.operationStarting || state.operation?.state === "running";
     ui["import-audio"].disabled = !available || operating;
+    const transcriptionHome = ui[state.runId ? "actions-panel" : "transcription-tools"];
+    if (ui["transcription-action"].parentElement !== transcriptionHome) transcriptionHome.prepend(ui["transcription-action"]);
+    ui["transcription-action"].hidden = !state.meeting;
+    ui["transcription-tools"].hidden = !state.meeting || (Boolean(state.runId) && !state.data?.cleanup_required);
     ui["transcribe-audio"].disabled = !available || operating || state.loading || state.busy || state.data?.media_state !== "ready" || Boolean(state.data?.transcription_warning);
     ui["transcribe-audio"].textContent = state.runId ? "Transcribe again" : "Transcribe";
     ui["retry-cleanup"].hidden = !state.data?.cleanup_required;
     ui["retry-cleanup"].disabled = operating || state.loading || state.busy;
     const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
+    ui["summary-generation-toggle"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy;
     ui["generate-summary"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy || running;
     ui["summary-provider"].disabled = running;
     ui["summary-view"].disabled = !state.data?.summary;
@@ -364,7 +372,11 @@
   }
 
   ui["import-audio"].addEventListener("click", () => startOperation("import_audio"));
-  ui["transcribe-audio"].addEventListener("click", () => { if (state.meeting) startOperation("start_transcription", [state.meeting.id]); });
+  ui["transcribe-audio"].addEventListener("click", () => {
+    if (!state.meeting) return;
+    if (state.runId) { ui["actions-menu"].open = false; ui["actions-toggle"].focus(); }
+    startOperation("start_transcription", [state.meeting.id]);
+  });
   ui["retry-cleanup"].addEventListener("click", () => { if (state.meeting && state.runId) startOperation("retry_remote_cleanup", [state.meeting.id, state.runId]); });
   ui["operation-result"].addEventListener("click", async () => {
     const result = await api().open_operation_result(state.operation.id);
@@ -523,6 +535,8 @@
     state.runId = requestedRun || null;
     state.data = null;
     state.view = "transcript";
+    ui["actions-menu"].open = false;
+    setPanelOpen("summary-generation", false, false);
     ui["summary-panel"].hidden = true;
     ui["summary-text"].textContent = "";
     ui["summary-provenance"].textContent = "";
@@ -883,6 +897,7 @@
   });
   ui["generate-summary"].addEventListener("click", async () => {
     if (!state.meeting || !state.runId || ui["generate-summary"].disabled) return;
+    setPanelOpen("summary-generation", false);
     const meeting = state.meeting;
     const runId = state.runId;
     state.digestGeneration = state.generation;

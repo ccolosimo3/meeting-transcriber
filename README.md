@@ -38,8 +38,9 @@ uv run --frozen --extra desktop python -m desktop.main
 Choose **Import audio** to copy one audio file into a new private meeting
 folder. The original stays unchanged and nothing is uploaded. Open the saved
 recording, then choose **Transcribe** to send it to your paid AssemblyAI account.
-An existing audio-only meeting can also be transcribed; **Transcribe again**
-creates a new saved version without replacing earlier transcripts or summaries.
+An existing audio-only meeting keeps **Transcribe** beside its paid-use disclosure.
+For a saved transcript, **More actions → Transcribe again** creates a new saved
+version without replacing earlier transcripts or summaries.
 
 Open **More actions → Transcription setup** to save a masked AssemblyAI key and
 check FFprobe. CLI and desktop share one private credential file:
@@ -78,11 +79,13 @@ Collapsing a panel keeps playback running. The **More actions** menu holds theme
 choice and **Open saved HTML** for the selected version. Layout, library and
 theme choices last for the current session.
 
-Use **Generate with** to choose Claude or Codex, then **Generate summary** to send
-the selected saved transcript. Claude is selected by default; the app never
-switches providers for you. Install the selected provider's native CLI and sign in with
-your own subscription outside the app first. Summary generation does not sign you in, use
-API keys, install a CLI or automatically retry with another provider. The CLI's
+Open **Summarize…**, use **Generate with** to choose Claude or Codex, then choose
+**Generate summary** after reviewing the disclosure to send the selected saved
+transcript. Opening the panel does not generate anything. Claude is selected by
+default; the app never switches providers for you. Install the selected provider's
+native CLI and sign in with your own subscription outside the app first. Summary
+generation does not sign you in, use API keys, install a CLI or automatically
+retry with another provider. The CLI's
 default model and your account's data controls apply. Generation never starts
 automatically after transcription and follow-up suggestions remain text only.
 The app checks `PATH` and the usual per-user `~/.local/bin` native install
