@@ -67,9 +67,12 @@ source; POSIX tests are not an ACL proof.
 
   Completed-run retranscription and its paid-use disclosure live in More;
   audio-only meetings keep the same action inline. The existing button/handler
-  moves between hosts. Summary generation uses the existing panel/focus/Escape
-  owner; opening it does not invoke a job. Job status, Cancel, results, errors,
-  and cleanup recovery remain outside these optional controls.
+  moves between hosts. Summary generation is a compact anchored form using the
+  existing panel/focus/Escape owner, with outside-pointer/focus dismissal and
+  viewport-bounded scrolling; opening it does not invoke a job. Job status,
+  Cancel, results, errors, revision warnings and cleanup recovery remain outside
+  these optional controls. Summary history uses local date labels with collision
+  disambiguation; exact timestamp/hash/model provenance stays in Details.
 
 The shipped CSP prohibits inline/remote scripts. On Mac only, `unsafe-eval` is
 needed for pinned pywebview's `new Function` bridge registration; document,

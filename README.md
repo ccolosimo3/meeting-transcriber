@@ -79,15 +79,22 @@ Collapsing a panel keeps playback running. The **More actions** menu holds theme
 choice and **Open saved HTML** for the selected version. Layout, library and
 theme choices last for the current session.
 
-Open **Summarize…**, use **Generate with** to choose Claude or Codex, then choose
+Open **Summarize**, choose a **Provider** (Claude Code or Codex), then choose
 **Generate summary** after reviewing the disclosure to send the selected saved
-transcript. Opening the panel does not generate anything. Claude is selected by
+transcript. The compact dropdown closes with Escape or by clicking outside it;
+opening it does not generate anything. Claude Code is selected by
 default; the app never switches providers for you. Install the selected provider's
 native CLI and sign in with your own subscription outside the app first. Summary
 generation does not sign you in, use API keys, install a CLI or automatically
 retry with another provider. The CLI's
 default model and your account's data controls apply. Generation never starts
 automatically after transcription and follow-up suggestions remain text only.
+
+Saved-summary choices show local dates, provider and source version; a trailing
+number distinguishes choices with the same displayed date. Exact generation time,
+source hash and reported model are in **Details**. Earlier-revision warnings and
+summary/provider errors remain visible above the reading controls.
+
 The app checks `PATH` and the usual per-user `~/.local/bin` native install
 directory, including when launched from Finder.
 Before submitting a transcript to Codex, the app discovers configured MCP server

@@ -59,27 +59,37 @@
     <section id="reader" class="reader" aria-label="Meeting reader" aria-busy="false">
       <div id="reader-empty" class="reader-empty">
         <span class="empty-mark" aria-hidden="true">≋</span>
-        <h2>Open a meeting.</h2>
-        <p>Read a saved transcript, find a passage, and hear the words in context.</p>
+        <h2>Open a meeting</h2>
         <p id="reader-empty-detail" class="empty-detail">Choose a meeting from your library to begin.</p>
       </div>
       <div id="reader-content" class="reader-content" hidden>
-        <div id="transcription-tools" class="transcription-tools"><div id="transcription-action" class="transcription-action"><button id="transcribe-audio" type="button" aria-describedby="transcription-disclosure" disabled>Transcribe</button><p id="transcription-disclosure">Transcribe sends this recording to AssemblyAI. Paid account usage applies. Remote data is deleted after local save. Speakers are estimated automatically.</p></div><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button></div>
+        <div class="reader-alerts">
+          <p id="meeting-warning" class="meeting-warning" role="status" hidden></p>
+          <p id="reader-notice" class="notice" role="status" hidden></p>
+          <div id="summary-alerts" hidden>
+            <p id="summary-provenance" class="summary-provenance" role="status" hidden></p>
+            <p id="summary-warning" class="summary-provenance" role="status" hidden></p>
+            <p id="summary-format-warning" class="summary-provenance" role="status" hidden></p>
+          </div>
+        </div>
+        <div id="transcription-tools" class="transcription-tools"><div id="transcription-action" class="transcription-action"><button id="transcribe-audio" type="button" aria-describedby="transcription-disclosure" disabled>Transcribe</button><p id="transcription-disclosure">Uploads audio to AssemblyAI (paid). Remote data is deleted after local save. Speaker labels are estimates.</p></div><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button></div>
         <div class="summary-tools">
           <div class="summary-views" role="group" aria-label="Reader view"><button id="summary-view" type="button" aria-pressed="false" disabled>Summary</button><button id="transcript-view" type="button" aria-pressed="true">Transcript</button></div>
-          <button id="summary-generation-toggle" type="button" aria-controls="summary-generation-panel" aria-expanded="false" disabled>Summarize…</button>
+          <div id="summary-generation" class="summary-generation">
+            <button id="summary-generation-toggle" type="button" aria-controls="summary-generation-panel" aria-expanded="false" disabled>Summarize <span aria-hidden="true">⌄</span></button>
+            <section id="summary-generation-panel" class="summary-generation-panel" aria-label="Generate summary" hidden>
+              <div class="summary-generation-options"><label for="summary-provider">Provider</label><select id="summary-provider"><option value="claude">Claude Code</option><option value="codex">Codex</option></select><button id="summary-generation-close" type="button" aria-label="Close summary generation">×</button></div>
+              <p id="summary-disclosure">Sends this transcript to your Claude Code subscription. No follow-up actions.</p>
+              <button id="generate-summary" type="button" aria-describedby="summary-disclosure" disabled>Generate summary</button>
+            </section>
+          </div>
         </div>
         <div class="reader-context">
-          <section id="summary-generation-panel" class="summary-generation-panel" aria-label="Summary generation" hidden>
-            <div class="panel-heading"><h2>Generate summary</h2><button id="summary-generation-close" type="button" aria-label="Close summary generation">×</button></div>
-            <div class="summary-generation-options"><label for="summary-provider">Generate with</label><select id="summary-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
-            <p id="summary-disclosure">Sends this saved transcript to your signed-in Claude Code CLI subscription. No automatic follow-up.</p>
-            <button id="generate-summary" type="button" aria-describedby="summary-disclosure" disabled>Generate summary</button>
-          </section>
           <section id="details-panel" class="details-panel" aria-label="Meeting details" hidden>
             <div class="panel-heading"><h2 id="details-title"></h2><button id="details-close" type="button" aria-label="Close details">×</button></div>
             <div class="meeting-meta"><span id="meeting-added"></span><span id="meeting-status" class="status"></span><span id="language-label"></span></div>
             <div class="run-row"><label for="run-select">Saved version</label><select id="run-select" aria-label="Saved transcript run"></select></div>
+            <p id="summary-source-details" class="summary-provenance" hidden></p>
           </section>
           <section id="find-panel" class="find-panel" aria-label="Find in transcript" hidden>
             <div id="transcript-tools" class="transcript-tools" hidden>
@@ -96,10 +106,8 @@
             <button id="clear-filters" type="button">Clear all</button>
           </div>
           <p id="selected-version" class="selected-version" hidden></p>
-          <p id="meeting-warning" class="meeting-warning" role="status" hidden></p>
-          <p id="reader-notice" class="notice" role="status" hidden></p>
         </div>
-        <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summaries</label><select id="summary-history"></select><p id="summary-provenance" class="summary-provenance"></p><p id="summary-warning" class="summary-provenance" role="status" hidden></p><p id="summary-format-warning" class="summary-provenance" role="status" hidden></p><div id="summary-text" class="summary-text" tabindex="0"></div></section>
+        <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summary</label><select id="summary-history"></select><div id="summary-text" class="summary-text" tabindex="0"></div></section>
         <div id="passages" class="passages" tabindex="0" aria-label="Transcript passages"></div>
         <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" type="button" hidden>Open saved HTML ↗</button></div>
         <footer class="player" aria-label="Audio player">
@@ -115,7 +123,7 @@
               </div>
             </details>
           </div>
-          <div class="player-feedback"><span id="audio-status" role="status">Audio loading…</span><span id="audio-duration">Duration unavailable</span><p id="playing-status" class="playing-status">Select a timestamp to listen from that moment.</p></div>
+          <div class="player-feedback"><span id="audio-status" role="status">Audio loading…</span><span id="audio-duration">Duration unavailable</span><p id="playing-status" class="playing-status"></p></div>
         </footer>
       </div>
     </section>

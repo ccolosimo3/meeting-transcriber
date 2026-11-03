@@ -17,8 +17,8 @@
     "clear-text", "clear-speaker", "clear-filters", "actions-menu", "actions-toggle",
     "listening", "listening-toggle", "listening-state", "fallback-open-html", "transcript-empty-message",
     "summary-view", "transcript-view", "summary-provider", "generate-summary", "summary-disclosure",
-    "summary-generation-toggle", "summary-generation-panel", "summary-generation-close",
-    "summary-panel", "summary-history", "summary-provenance", "summary-warning", "summary-format-warning", "summary-text",
+    "summary-generation", "summary-generation-toggle", "summary-generation-panel", "summary-generation-close",
+    "summary-panel", "summary-history", "summary-provenance", "summary-source-details", "summary-alerts", "summary-warning", "summary-format-warning", "summary-text",
     "digest-progress", "digest-status", "cancel-summary",
     "import-audio", "transcribe-audio", "transcription-action", "transcription-tools", "actions-panel", "retry-cleanup", "operation-progress", "operation-status", "operation-result",
     "setup-toggle", "transcription-setup", "setup-close", "setup-status", "credential-location", "key-form", "assemblyai-key", "save-key", "ffprobe-status", "locate-ffprobe", "setup-error"
@@ -116,7 +116,17 @@
     ui[`${name}-panel`].hidden = !open;
     ui[`${name}-toggle`].setAttribute("aria-expanded", String(open));
     updateFilterContext();
+    if (name === "summary-generation" && open) fitSummaryPanel();
     if (focus) ui[open ? (name === "find" ? "transcript-search" : name === "summary-generation" ? "summary-provider" : "details-close") : `${name}-toggle`].focus();
+  }
+
+  function fitSummaryPanel() {
+    const panel = ui["summary-generation-panel"];
+    if (!panel.hidden) panel.style.maxHeight = `${Math.max(0, window.innerHeight - panel.getBoundingClientRect().top - 12)}px`;
+  }
+
+  function providerLabel(provider) {
+    return provider === "claude" ? "Claude Code" : "Codex";
   }
 
   function updateListeningContext() {
@@ -193,6 +203,9 @@
     ui["summary-panel"].hidden = true;
     ui["summary-text"].textContent = "";
     ui["summary-format-warning"].hidden = true;
+    ui["summary-source-details"].hidden = true;
+    ui["summary-source-details"].textContent = "";
+    ui["summary-alerts"].hidden = true;
     ui["meeting-title"].textContent = "Meeting Transcriber";
     ui["meeting-title"].removeAttribute("title");
     ui["details-toggle"].textContent = "Details";
@@ -231,16 +244,18 @@
     ui["retry-cleanup"].hidden = !state.data?.cleanup_required;
     ui["retry-cleanup"].disabled = operating || state.loading || state.busy;
     const running = state.digestJob && ["running", "cancelling"].includes(state.digestJob.state);
-    ui["summary-generation-toggle"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy;
+    ui["summary-generation-toggle"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy || running;
     ui["generate-summary"].disabled = !state.data?.reader_transcript || !state.runId || state.loading || state.busy || running;
     ui["summary-provider"].disabled = running;
     ui["summary-view"].disabled = !state.data?.summary;
+    fitSummaryPanel();
   }
 
   function setReaderView(view) {
     state.view = view === "summary" && state.data?.summary ? "summary" : "transcript";
     const summary = state.view === "summary";
     ui["summary-panel"].hidden = !summary;
+    ui["summary-alerts"].hidden = !summary;
     ui["passages"].hidden = summary || !state.data?.reader_transcript;
     ui["transcript-empty"].hidden = summary || Boolean(state.data?.reader_transcript);
     ui["summary-view"].setAttribute("aria-pressed", String(summary));
@@ -254,8 +269,13 @@
     if (!state.data) return;
     Object.assign(state.data, data);
     ui["summary-history"].replaceChildren();
-    for (const saved of data.summaries || []) {
-      const option = element("option", "", `${saved.generated_at} · ${saved.provider} · ${saved.source_run}`);
+    const summaries = data.summaries || [];
+    const labels = summaries.map(saved => `${new Date(saved.generated_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · ${providerLabel(saved.provider)} · ${saved.source_run}`);
+    const counts = new Map();
+    for (const label of labels) counts.set(label, (counts.get(label) || 0) + 1);
+    for (const [index, saved] of summaries.entries()) {
+      const label = labels[index];
+      const option = element("option", "", counts.get(label) > 1 ? `${label} · ${index + 1}` : label);
       option.value = saved.id;
       ui["summary-history"].append(option);
     }
@@ -265,7 +285,10 @@
     ui["summary-text"].classList.toggle("summary-plaintext", Boolean(saved) && !formatted);
     ui["summary-format-warning"].textContent = saved && !formatted ? "Formatting unavailable. Showing original Markdown." : "";
     ui["summary-format-warning"].hidden = !saved || Boolean(formatted);
-    ui["summary-provenance"].textContent = saved ? `Source version ${saved.source_run} · ${saved.earlier_revision ? "Earlier transcript revision" : "Current transcript revision"} · ${saved.source_sha256.slice(0, 12)} · ${saved.provider} · ${saved.generated_at}${saved.reported_model ? ` · ${saved.reported_model}` : ""}` : "";
+    ui["summary-provenance"].textContent = saved?.earlier_revision ? `Earlier transcript revision: ${saved.source_run}.` : "";
+    ui["summary-provenance"].hidden = !saved?.earlier_revision;
+    ui["summary-source-details"].textContent = saved ? `Summary: ${providerLabel(saved.provider)} · ${saved.generated_at} · Source ${saved.source_run} · ${saved.earlier_revision ? "Earlier transcript revision" : "Current transcript revision"} · SHA-256 ${saved.source_sha256}${saved.reported_model ? ` · ${saved.reported_model}` : ""}` : "";
+    ui["summary-source-details"].hidden = !saved;
     ui["summary-history"].value = saved ? saved.id : "";
     const warnings = [data.summary_warning, saved?.provider_warning ? "The CLI reported a nonfatal provider warning during this generation." : ""].filter(Boolean);
     ui["summary-warning"].textContent = warnings.join(" ");
@@ -366,7 +389,7 @@
       return;
     }
     ui["setup-error"].hidden = true;
-    ui["setup-status"].textContent = result.key_ready ? "AssemblyAI key saved and ready. The saved key is never displayed." : result.key_error || "Save your AssemblyAI API key to transcribe. Import works without a key.";
+    ui["setup-status"].textContent = result.key_ready ? "AssemblyAI key saved and ready." : result.key_error || "Save your AssemblyAI API key to transcribe. Import works without a key.";
     ui["credential-location"].textContent = `Shared CLI and desktop credential file: ${result.credential_location}`;
     ui["ffprobe-status"].textContent = result.ffprobe_ready ? `FFprobe ready: ${result.ffprobe}` : result.ffprobe_error;
   }
@@ -540,6 +563,9 @@
     ui["summary-panel"].hidden = true;
     ui["summary-text"].textContent = "";
     ui["summary-provenance"].textContent = "";
+    ui["summary-source-details"].hidden = true;
+    ui["summary-source-details"].textContent = "";
+    ui["summary-alerts"].hidden = true;
     ui["summary-view"].setAttribute("aria-pressed", "false");
     ui["transcript-view"].setAttribute("aria-pressed", "true");
     state.rows = [];
@@ -577,7 +603,7 @@
     ui["transcript-empty"].hidden = false;
     ui["transcript-empty-message"].textContent = "Opening this meeting…";
     ui["audio-status"].textContent = "Audio loading…";
-    ui["playing-status"].textContent = "Select a timestamp to listen from that moment.";
+    ui["playing-status"].textContent = "";
     ui["playback-speed"].value = "1";
     updateListeningContext();
     notice("");
@@ -843,6 +869,13 @@
     ui[`${name}-toggle`].addEventListener("click", () => setPanelOpen(name, ui[`${name}-panel`].hidden));
     ui[`${name}-close`].addEventListener("click", () => setPanelOpen(name, false));
   }
+  document.addEventListener("pointerdown", event => {
+    if (!ui["summary-generation-panel"].hidden && !ui["summary-generation"].contains(event.target)) setPanelOpen("summary-generation", false, false);
+  });
+  ui["summary-generation"].addEventListener("focusout", event => {
+    if (!ui["summary-generation"].contains(event.relatedTarget)) setPanelOpen("summary-generation", false, false);
+  });
+  window.addEventListener("resize", fitSummaryPanel);
   for (const [id, opener] of disclosures) {
     ui[id].addEventListener("toggle", () => {
       ui[opener].setAttribute("aria-expanded", String(ui[id].open));
@@ -878,8 +911,8 @@
   ui["summary-view"].addEventListener("click", () => setReaderView("summary"));
   ui["transcript-view"].addEventListener("click", () => setReaderView("transcript"));
   ui["summary-provider"].addEventListener("change", () => {
-    const label = ui["summary-provider"].value === "claude" ? "Claude Code" : "Codex";
-    ui["summary-disclosure"].textContent = `Sends this saved transcript to your signed-in ${label} CLI subscription. No automatic follow-up.`;
+    const label = providerLabel(ui["summary-provider"].value);
+    ui["summary-disclosure"].textContent = `Sends this transcript to your ${label} subscription. No follow-up actions.`;
     updateLibraryControls();
   });
   ui["summary-history"].addEventListener("change", async () => {

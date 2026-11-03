@@ -215,7 +215,7 @@ class SummaryBrowserTests(unittest.TestCase):
     async def select(self, page, label):
         value = self.records[label]
         await page.evaluate("(()=>{const select=document.querySelector('#summary-history');select.value=" + json.dumps(value["id"]) + ";select.dispatchEvent(new Event('change'))})()")
-        await self.wait(page, "document.querySelector('#summary-history').value===" + json.dumps(value["id"]) + " && document.querySelector('#summary-provenance').textContent.includes(" + json.dumps(value["generated_at"]) + ")")
+        await self.wait(page, "document.querySelector('#summary-history').value===" + json.dumps(value["id"]) + " && document.querySelector('#summary-source-details').textContent.includes(" + json.dumps(value["generated_at"]) + ")")
 
     def test_structured_history_and_completed_projection(self):
         asyncio.run(self.structured())
@@ -229,19 +229,34 @@ class SummaryBrowserTests(unittest.TestCase):
             self.assertFalse(await page.evaluate("document.querySelector('#summary-provider').checkVisibility()"))
             self.assertFalse(await page.evaluate("document.querySelector('#transcribe-audio').checkVisibility()"))
             self.assertTrue(await page.evaluate("document.querySelector('#summary-view').checkVisibility() && document.querySelector('#transcript-view').checkVisibility()"))
+            self.assertTrue(await page.evaluate("(()=>{const labels=[...document.querySelector('#summary-history').options].map(o=>o.textContent);return new Set(labels).size===labels.length})()"))
+            await page.evaluate("document.querySelector('#details-toggle').click()")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-source-details').checkVisibility() && document.querySelector('#summary-source-details').textContent.includes(" + json.dumps(self.records['claude']['source_sha256']) + ")"))
+            await page.request('Emulation.setDeviceMetricsOverride', {'width': 400, 'height': 500, 'deviceScaleFactor': 1, 'mobile': False})
+            await page.evaluate("document.querySelector('#details-close').click()")
+            reading_top = await page.evaluate("document.querySelector('#summary-panel').getBoundingClientRect().top")
             await page.evaluate("document.querySelector('#summary-generation-toggle').click()")
             await self.wait(page, "document.activeElement.id==='summary-provider'")
+            self.assertEqual(await page.evaluate("document.querySelector('#summary-panel').getBoundingClientRect().top"), reading_top)
+            self.assertTrue(await page.evaluate("(()=>{const p=document.querySelector('#summary-generation-panel').getBoundingClientRect(),w=document.querySelector('#summary-warning').getBoundingClientRect();return p.left>=0&&p.right<=innerWidth&&p.bottom<=innerHeight&&w.bottom<=p.top})()"))
             self.assertTrue(await page.evaluate("document.querySelector('#summary-disclosure').checkVisibility() && document.querySelector('#summary-disclosure').textContent.includes('Claude Code')"))
             self.assertEqual(self.actions.count('start_summary'), 0)
+            target = await page.evaluate("(()=>{const r=document.querySelector('#transcript-view').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()")
+            for kind in ('mousePressed', 'mouseReleased'):
+                await page.request('Input.dispatchMouseEvent', {'type': kind, **target, 'button': 'left', 'clickCount': 1})
+            await self.wait(page, "document.querySelector('#summary-generation-panel').hidden && document.activeElement.id==='transcript-view'")
+            await page.evaluate("document.querySelector('#summary-view').click();document.querySelector('#summary-generation-toggle').click();document.querySelector('#details-toggle').focus()")
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-generation-panel').hidden && document.activeElement.id==='details-toggle'"))
+            await page.evaluate("document.querySelector('#summary-generation-toggle').click()")
             await page.request('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Escape', 'code': 'Escape', 'windowsVirtualKeyCode': 27})
             await page.request('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Escape', 'code': 'Escape', 'windowsVirtualKeyCode': 27})
             await self.wait(page, "document.querySelector('#summary-generation-panel').hidden && document.activeElement.id==='summary-generation-toggle'")
             await page.evaluate("(()=>{document.querySelector('#summary-generation-toggle').click();const s=document.querySelector('#summary-provider');s.value='codex';s.dispatchEvent(new Event('change'))})()")
-            self.assertTrue(await page.evaluate("document.querySelector('#summary-disclosure').checkVisibility() && document.querySelector('#summary-disclosure').textContent.includes('Codex CLI')"))
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-disclosure').checkVisibility() && document.querySelector('#summary-disclosure').textContent.includes('Codex')"))
             self.assertEqual(self.actions.count('start_summary'), 0)
             await page.evaluate("document.querySelector('#generate-summary').click()")
             await self.wait(page, "document.querySelector('#summary-text h1')?.textContent==='Newly saved'")
-            self.assertTrue(await page.evaluate("document.querySelector('#summary-generation-panel').hidden && document.querySelector('#digest-progress').checkVisibility() && document.querySelector('#summary-provenance').textContent.includes('codex')"))
+            self.assertTrue(await page.evaluate("document.querySelector('#summary-generation-panel').hidden && document.querySelector('#digest-progress').checkVisibility() && document.querySelector('#summary-source-details').textContent.includes('Codex')"))
             self.assertEqual(self.actions.count('start_summary'), 1)
             await page.websocket.close()
 
@@ -262,7 +277,7 @@ class SummaryBrowserTests(unittest.TestCase):
             page = await self.page(websocket, [])
             await page.evaluate("document.querySelector('#actions-toggle').click()")
             await self.wait(page, "document.querySelector('#transcribe-audio').checkVisibility()")
-            self.assertTrue(await page.evaluate("document.querySelector('#actions-menu').contains(document.querySelector('#transcribe-audio')) && document.querySelector('#transcribe-audio').textContent==='Transcribe again' && document.querySelector('#transcription-disclosure').checkVisibility() && document.querySelector('#transcription-disclosure').textContent.includes('Paid account usage')"))
+            self.assertTrue(await page.evaluate("document.querySelector('#actions-menu').contains(document.querySelector('#transcribe-audio')) && document.querySelector('#transcribe-audio').textContent==='Transcribe again' && document.querySelector('#transcription-disclosure').checkVisibility() && document.querySelector('#transcription-disclosure').textContent.includes('(paid)')"))
             self.assertFalse(await page.evaluate("document.querySelector('#transcription-tools').checkVisibility()"))
             await page.evaluate("document.querySelector('#transcribe-audio').click()")
             # Real job/preflight owner, empty synthetic credential location: no
@@ -344,6 +359,11 @@ class SummaryBrowserTests(unittest.TestCase):
             await page.evaluate("document.querySelector('#transcript-view').click()")
             await self.wait(page, "document.querySelector('#reader').getAttribute('aria-busy')==='false' && !document.querySelector('#fallback-open-html').disabled")
             await page.evaluate("document.querySelector('#fallback-open-html').click()")
+            # Audio readiness may re-enable the button while the opener request
+            # is still in flight. Wait for the actual observed open outcome.
+            deadline = time.monotonic() + 4
+            while not self.opened and time.monotonic() < deadline:
+                await asyncio.sleep(.01)
             await self.wait(page, "!document.querySelector('#fallback-open-html').disabled")
             self.assertTrue(await page.evaluate("!document.querySelector('#transcript-empty').hidden && document.querySelector('#passages').hidden && !document.querySelector('#fallback-open-html').hidden"))
             self.assertEqual(len(self.opened), 1, (self.actions, await page.evaluate("document.querySelector('#reader-notice').textContent")))
