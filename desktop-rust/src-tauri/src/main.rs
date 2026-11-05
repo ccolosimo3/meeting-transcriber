@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tauri::{Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, utils::config::Csp};
 use tauri_plugin_dialog::DialogExt;
 
-use library::{Audio, Error, Library, Listing};
+use library::{Audio, Error, Library, Listing, Selection};
 use media::{Media, READER_ORIGIN};
 
 #[derive(Default)]
@@ -32,17 +32,40 @@ struct Reader {
     verified: AtomicBool,
 }
 
+enum Operation {
+    Replace,
+    Refresh,
+    Load,
+}
+
 impl Reader {
-    fn begin(&self, replacing: bool) -> (u64, Option<Arc<Library>>) {
+    fn begin(&self, operation: Operation) -> Option<(u64, Option<Arc<Library>>)> {
         let mut session = self.session.lock().unwrap();
+        let library = match operation {
+            Operation::Replace => {
+                session.library = None;
+                None
+            }
+            Operation::Refresh => Some(session.library.take()?),
+            Operation::Load => Some(session.library.clone()?),
+        };
         self.media.revoke();
         session.generation += 1;
-        let previous = if replacing {
-            session.library.take()
-        } else {
-            session.library.clone()
-        };
-        (session.generation, previous)
+        Some((session.generation, library))
+    }
+
+    fn finish_scan(&self, generation: u64, loaded: Result<(Library, Listing), Error>) -> Value {
+        let mut session = self.session.lock().unwrap();
+        if session.generation != generation {
+            return failure(Error::stale());
+        }
+        match loaded {
+            Ok((library, listing)) => {
+                session.library = Some(Arc::new(library));
+                json!(listing)
+            }
+            Err(error) => failure(error),
+        }
     }
 }
 
@@ -50,39 +73,22 @@ fn failure(error: Error) -> Value {
     json!({"error": error.message, "code": error.code})
 }
 
-async fn scan(reader: &Reader, chosen: Option<PathBuf>) -> Value {
-    let (generation, previous) = reader.begin(chosen.is_some());
-    let loaded = tauri::async_runtime::spawn_blocking(move || {
-        let result = if let Some(path) = chosen {
-            Library::choose(path)?.scan()
-        } else if let Some(previous) = previous {
-            previous.scan()
-        } else {
-            return Ok(None);
-        }?;
-        Ok(Some(result))
+async fn scan(reader: &Reader, chosen: Option<Result<PathBuf, Error>>) -> Value {
+    let operation = if chosen.is_some() {
+        Operation::Replace
+    } else {
+        Operation::Refresh
+    };
+    let Some((generation, previous)) = reader.begin(operation) else {
+        return json!(Listing::default());
+    };
+    let loaded = tauri::async_runtime::spawn_blocking(move || match chosen {
+        Some(path) => Ok(Library::choose(path?)?.scan()),
+        None => Ok(previous.ok_or_else(Error::unavailable)?.scan()),
     })
-    .await;
-
-    let mut session = reader.session.lock().unwrap();
-    if session.generation != generation {
-        return failure(Error::stale());
-    }
-    match loaded {
-        Ok(Ok(Some((library, listing)))) => {
-            session.library = Some(Arc::new(library));
-            json!(listing)
-        }
-        Ok(Ok(None)) => json!(Listing::default()),
-        Ok(Err(error)) => {
-            session.library = None;
-            failure(error)
-        }
-        Err(_) => {
-            session.library = None;
-            failure(Error::unavailable())
-        }
-    }
+    .await
+    .unwrap_or_else(|_| Err(Error::unavailable()));
+    reader.finish_scan(generation, loaded)
 }
 
 #[tauri::command]
@@ -95,19 +101,18 @@ async fn choose_library(window: WebviewWindow, reader: State<'_, Reader>) -> Res
         .dialog()
         .file()
         .set_parent(&window)
+        .set_can_create_directories(false)
         .pick_folder(move |choice| {
             let _ = sender.send(choice);
         });
     let Some(choice) = result.await.map_err(|_| ())? else {
         return Ok(json!({"cancelled": true}));
     };
-    match choice.into_path() {
-        Ok(path) => Ok(scan(&reader, Some(path)).await),
-        Err(_) => {
-            reader.begin(true);
-            Ok(failure(Error::unavailable()))
-        }
-    }
+    Ok(scan(
+        &reader,
+        Some(choice.into_path().map_err(|_| Error::unavailable())),
+    )
+    .await)
 }
 
 #[tauri::command]
@@ -127,8 +132,7 @@ async fn load_run(
     if !reader.verified.load(Ordering::Acquire) {
         return Err(());
     }
-    let (generation, library) = reader.begin(false);
-    let Some(library) = library else {
+    let Some((generation, Some(library))) = reader.begin(Operation::Load) else {
         return Ok(failure(Error::stale()));
     };
     let loaded = tauri::async_runtime::spawn_blocking(move || {
@@ -141,54 +145,62 @@ async fn load_run(
         Err(error) => return Ok(failure(error)),
     };
 
-    // The same lock protects selection generation changes and media grants.
-    let session = reader.session.lock().unwrap();
-    if session.generation != generation {
-        return Ok(failure(Error::stale()));
-    }
-    let mut media_state = selection.audio.state();
-    let mut media_error = selection.media_error;
-    let mut media_url = None;
-    if let Audio::Available(file, name) = selection.audio {
-        match mime(&name).map(|mime| reader.media.issue(file, mime)) {
-            Some(Ok(url)) => media_url = Some(url),
-            result => {
-                media_state = "missing";
-                media_error = Some(Error {
-                    code: "unavailable_source",
-                    message: if result.is_none() {
-                        "This recording format is unavailable in the reader."
-                    } else {
-                        "Audio changed or is unavailable. Refresh to try again."
-                    },
-                });
-            }
-        }
-    }
-    Ok(json!({
-        "title": selection.title,
-        "added": selection.added,
-        "status": selection.status,
-        "reader_transcript": selection.transcript,
-        "historical": selection.historical,
-        "media_state": media_state,
-        "media_error": media_error,
-        "media_url": media_url,
-    }))
+    Ok(reader.finish_load(generation, selection))
 }
 
-fn mime(name: &OsStr) -> Option<&'static str> {
-    let extension = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
+impl Reader {
+    fn finish_load(&self, generation: u64, selection: Selection) -> Value {
+        // The same lock protects selection generation changes and media grants.
+        let session = self.session.lock().unwrap();
+        if session.generation != generation {
+            return failure(Error::stale());
+        }
+        let mut media_state = selection.audio.state();
+        let mut media_error = selection.media_error;
+        let mut media_url = None;
+        if let Audio::Available(file, name) = selection.audio {
+            match self.media.issue(file, mime(&name)) {
+                Ok(url) => media_url = Some(url),
+                Err(_) => {
+                    media_state = "missing";
+                    media_error = Some(Error {
+                        code: "unavailable_source",
+                        message: "Audio changed or is unavailable. Refresh to try again.",
+                    });
+                }
+            }
+        }
+        json!({
+            "title": selection.title,
+            "added": selection.added,
+            "status": selection.status,
+            "reader_transcript": selection.transcript,
+            "historical": selection.historical,
+            "media_state": media_state,
+            "media_error": media_error,
+            "media_url": media_url,
+        })
+    }
+}
+
+fn mime(name: &OsStr) -> &'static str {
+    let extension = Path::new(name)
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     match extension.as_str() {
-        "wav" => Some("audio/wav"),
-        "mp3" => Some("audio/mpeg"),
-        "m4a" | "mp4" => Some("audio/mp4"),
-        "aac" => Some("audio/aac"),
-        "aif" | "aiff" => Some("audio/aiff"),
-        "flac" => Some("audio/flac"),
-        "ogg" | "oga" | "opus" => Some("audio/ogg"),
-        "webm" => Some("audio/webm"),
-        _ => None,
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "m4a" | "m4b" | "mp4" => "audio/mp4",
+        "mov" | "qt" => "video/quicktime",
+        "aac" => "audio/aac",
+        "aif" | "aiff" | "aifc" => "audio/aiff",
+        "caf" => "audio/x-caf",
+        "flac" => "audio/flac",
+        "ogg" | "oga" | "opus" => "audio/ogg",
+        "webm" => "audio/webm",
+        _ => "application/octet-stream",
     }
 }
 
@@ -272,4 +284,61 @@ fn start_native(
     _app: &tauri::App,
 ) -> Result<(), tauri::Error> {
     Err(std::io::Error::other("Protected WebView2 session is pending native qualification").into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, sync::mpsc, thread, time::Duration};
+
+    #[test]
+    fn refresh_blocks_selections_from_the_snapshot_it_revalidates() {
+        let temporary = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        let meeting = temporary.path().join("20261104-120000-Audio-only");
+        fs::create_dir(&meeting).unwrap();
+        fs::write(meeting.join("recording.wav"), "synthetic recording").unwrap();
+        let (library, listing) = Library::choose(temporary.path().to_owned()).unwrap().scan();
+        let id = json!(listing)["meetings"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (media, _listener) = Media::listen().unwrap();
+        let reader = Reader {
+            session: Mutex::new(Session {
+                generation: 0,
+                library: Some(Arc::new(library)),
+            }),
+            media,
+            verified: AtomicBool::new(true),
+        };
+        let (selected, selection_ready) = mpsc::channel();
+        let (resume, resume_selection) = mpsc::channel();
+        thread::scope(|scope| {
+            let reader = &reader;
+            let id = &id;
+            let old = scope.spawn(move || {
+                let (generation, library) = reader.begin(Operation::Load).unwrap();
+                let selection = library.unwrap().select(id, None).unwrap();
+                selected.send(()).unwrap();
+                resume_selection
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap();
+                reader.finish_load(generation, selection)
+            });
+            selection_ready
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            let (generation, previous) = reader.begin(Operation::Refresh).unwrap();
+            assert!(reader.begin(Operation::Load).is_none());
+            let refreshed = reader.finish_scan(generation, Ok(previous.unwrap().scan()));
+            assert_eq!(refreshed["meetings"][0]["id"], *id);
+            resume.send(()).unwrap();
+            let obsolete = old.join().unwrap();
+            assert_eq!(obsolete["code"], "stale_id");
+            assert!(obsolete["media_url"].is_null());
+            let (generation, library) = reader.begin(Operation::Load).unwrap();
+            let active = reader.finish_load(generation, library.unwrap().select(id, None).unwrap());
+            assert!(active["media_url"].as_str().is_some());
+        });
+    }
 }

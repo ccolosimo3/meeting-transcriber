@@ -97,8 +97,25 @@ fn open_absolute(path: &Path) -> io::Result<Dir> {
     Ok(directory)
 }
 
+#[derive(Debug)]
+struct UnsafePath;
+
+impl std::fmt::Display for UnsafePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Linked or replaced source")
+    }
+}
+
+impl std::error::Error for UnsafePath {}
+
 fn unsafe_path() -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, "Linked or replaced source")
+    io::Error::other(UnsafePath)
+}
+
+fn is_unsafe_path(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|source| source.is::<UnsafePath>())
 }
 
 fn linked(info: &Metadata) -> bool {
@@ -143,6 +160,14 @@ fn regular(directory: &Dir, name: impl AsRef<Path>) -> io::Result<Option<(File, 
     if !info.is_file() {
         return Ok(None);
     }
+    open_verified_file(directory, name, &info).map(Some)
+}
+
+fn open_verified_file(
+    directory: &Dir,
+    name: &Path,
+    expected: &Metadata,
+) -> io::Result<(File, FileVersion)> {
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
@@ -152,10 +177,10 @@ fn regular(directory: &Dir, name: impl AsRef<Path>) -> io::Result<Option<(File, 
     }
     let file = directory.open_with(name, &options)?;
     let opened = file.metadata()?;
-    if linked(&opened) || !opened.is_file() || Identity::of(&info) != Identity::of(&opened) {
+    if linked(&opened) || !opened.is_file() || Identity::of(expected) != Identity::of(&opened) {
         return Err(unsafe_path());
     }
-    Ok(Some((file.into_std(), FileVersion::of(&opened)?)))
+    Ok((file.into_std(), FileVersion::of(&opened)?))
 }
 
 fn names(directory: &Dir) -> io::Result<Vec<OsString>> {
@@ -181,17 +206,21 @@ fn partial(name: &OsStr) -> bool {
 
 fn inspect_recording(directory: &Dir, names: &[OsString]) -> io::Result<(Audio, bool)> {
     let mut audio = Audio::Missing;
+    for name in names.iter().filter(|name| recording(name)) {
+        if let Some((file, _)) = regular(directory, name)? {
+            audio = match audio {
+                Audio::Missing => Audio::Available(file, name.clone()),
+                _ => Audio::Ambiguous,
+            };
+        }
+    }
     let mut unfinished = false;
-    for name in names {
-        if recording(name) {
-            if let Some((file, _)) = regular(directory, name)? {
-                audio = match audio {
-                    Audio::Missing => Audio::Available(file, name.clone()),
-                    _ => Audio::Ambiguous,
-                };
+    if matches!(audio, Audio::Missing) {
+        for name in names.iter().filter(|name| partial(name)) {
+            if regular(directory, name)?.is_some() {
+                unfinished = true;
+                break;
             }
-        } else if partial(name) && regular(directory, name)?.is_some() {
-            unfinished = true;
         }
     }
     Ok((audio, unfinished))
@@ -333,7 +362,9 @@ fn read_run(runs: &Dir, name: &OsStr) -> io::Result<Option<ReadRun>> {
 }
 
 fn receipt_json(file: File) -> Option<Value> {
-    serde_json::from_reader(BufReader::new(file)).ok()
+    serde_json::from_reader(BufReader::new(file))
+        .ok()
+        .filter(Value::is_object)
 }
 
 fn deletion_confirmed(receipt: &Value) -> bool {
@@ -366,10 +397,16 @@ impl Error {
     }
 
     fn source(error: &io::Error) -> Self {
-        match error.kind() {
-            io::ErrorKind::PermissionDenied => Self {
+        if is_unsafe_path(error) {
+            return Self {
                 code: "unsafe_path",
                 message: "Linked or changed source. Refresh the library.",
+            };
+        }
+        match error.kind() {
+            io::ErrorKind::PermissionDenied => Self {
+                code: "access_denied",
+                message: "Access denied. Choose a library or refresh.",
             },
             io::ErrorKind::InvalidData => Self {
                 code: "malformed_transcript",
@@ -379,6 +416,14 @@ impl Error {
                 code: "unavailable_source",
                 message: "Source unavailable. Refresh the library.",
             },
+        }
+    }
+
+    fn library(error: &io::Error) -> Self {
+        if is_unsafe_path(error) || error.kind() == io::ErrorKind::PermissionDenied {
+            Self::source(error)
+        } else {
+            Self::unavailable()
         }
     }
 }
@@ -445,15 +490,20 @@ pub struct Selection {
 
 impl Library {
     pub fn choose(path: PathBuf) -> Result<Self, Error> {
-        let root = Root::choose(path).map_err(|_| Error::unavailable())?;
+        let root = Root::choose(path).map_err(|error| {
+            if error.kind() == io::ErrorKind::PermissionDenied {
+                Error::source(&error)
+            } else {
+                Error::unavailable()
+            }
+        })?;
         Ok(Self {
             root,
             meetings: HashMap::new(),
         })
     }
 
-    pub fn scan(&self) -> Result<(Self, Listing), Error> {
-        let directory = self.root.open().map_err(|_| Error::unavailable())?;
+    pub fn scan(&self) -> (Self, Listing) {
         let mut listing = Listing {
             library: self
                 .root
@@ -470,7 +520,24 @@ impl Library {
             .values()
             .map(|meeting| (&meeting.name, meeting))
             .collect::<HashMap<_, _>>();
-        for name in names(&directory).map_err(|_| Error::unavailable())? {
+        let opened = self
+            .root
+            .open()
+            .and_then(|directory| Ok((names(&directory)?, directory)));
+        let (entries, directory) = match opened {
+            Ok(opened) => opened,
+            Err(error) => {
+                listing.errors.push(Error::library(&error));
+                return (
+                    Self {
+                        root: self.root.clone(),
+                        meetings,
+                    },
+                    listing,
+                );
+            }
+        };
+        for name in entries {
             match scan_meeting(
                 &directory,
                 name.clone(),
@@ -485,13 +552,13 @@ impl Library {
                 Err(error) => listing.report(&error),
             }
         }
-        Ok((
+        (
             Self {
                 root: self.root.clone(),
                 meetings,
             },
             listing,
-        ))
+        )
     }
 
     pub fn select(&self, meeting_id: &str, run_id: Option<&str>) -> Result<Selection, Error> {
@@ -505,7 +572,7 @@ impl Library {
                     .ok_or_else(Error::stale)
             })
             .transpose()?;
-        let root = self.root.open().map_err(|_| Error::stale())?;
+        let root = self.root.open().map_err(|error| Error::source(&error))?;
         let bundle = open_dir(&root, &meeting.name).map_err(|error| Error::source(&error))?;
         if Identity::of(
             &bundle
@@ -627,17 +694,14 @@ fn scan_meeting(
             Err(error) => listing.report(&error),
         }
     }
-    let status = if let Some(row) = rows.first() {
-        row.status
-    } else {
-        match inspect_recording(&bundle, &files) {
-            Ok((audio, unfinished)) => meeting_status(transcripts, &audio, unfinished),
-            Err(error) => {
-                listing.report(&error);
-                INCOMPLETE
-            }
+    let audio_status = match inspect_recording(&bundle, &files) {
+        Ok((audio, unfinished)) => meeting_status(transcripts, &audio, unfinished),
+        Err(error) => {
+            listing.report(&error);
+            INCOMPLETE
         }
     };
+    let status = rows.first().map_or(audio_status, |row| row.status);
     let (title, added) = meeting_identity(&name);
     let row = MeetingRow {
         id: id.clone(),
@@ -695,13 +759,21 @@ mod tests {
         let temp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let meeting = temp.path().join("20261104-120000-Test-meeting");
         let runs = meeting.join("transcripts");
-        for label in ["03-clean", "02-unconfirmed", "01-historical", "00-bad"] {
+        for label in [
+            "03-clean",
+            "02-unconfirmed",
+            "01-historical",
+            "00-bad",
+            "00-invalid-id",
+        ] {
             let directory = runs.join(label);
             fs::create_dir_all(&directory).unwrap();
             fs::write(directory.join(HTML), "<p>Hello</p>").unwrap();
             fs::write(directory.join(MARKDOWN), "# Hello").unwrap();
             let raw = if label == "00-bad" {
                 VALID.replace("0.9", "1.2")
+            } else if label == "00-invalid-id" {
+                VALID.replace(r#""id":4"#, r#""id":{"$serde_json::private::Number":"4"}"#)
             } else {
                 VALID.into()
             };
@@ -713,11 +785,13 @@ mod tests {
                     json!({"state":"published"})
                 };
                 fs::write(directory.join(MANAGED), receipt.to_string()).unwrap();
+            } else {
+                fs::write(directory.join(HISTORICAL), "null").unwrap();
             }
         }
         fs::write(meeting.join("recording.wav"), "test audio bytes").unwrap();
         let library = Library::choose(temp.path().to_owned()).unwrap();
-        let (library, listing) = library.scan().unwrap();
+        let (library, listing) = library.scan();
         let row = &listing.meetings[0];
         assert_eq!(row.title, "Test meeting");
         assert_eq!(
@@ -730,6 +804,7 @@ mod tests {
         assert!(row.runs[1].status.contains("cleanup unconfirmed"));
         let historical = library.select(&row.id, Some(&row.runs[2].id)).unwrap();
         assert!(historical.historical && historical.transcript.is_none());
+        assert_eq!(historical.status, "Historical transcript");
         let transcript = library
             .select(&row.id, Some(&row.runs[1].id))
             .unwrap()
@@ -741,9 +816,19 @@ mod tests {
             json!({"start":0.0,"end":1.0,"text":"Hello","speaker":"A"})
         );
         assert_eq!(display["speaker_names"]["A"], "Alex");
+        fs::write(
+            runs.join("02-unconfirmed").join(CANONICAL),
+            r#"{"language":"en","#,
+        )
+        .unwrap();
+        let truncated = library
+            .select(&row.id, Some(&row.runs[1].id))
+            .err()
+            .unwrap();
+        assert_eq!(truncated.code, "malformed_transcript");
         fs::remove_dir_all(runs.join("02-unconfirmed")).unwrap();
         assert!(library.select(&row.id, Some(&row.runs[1].id)).is_err());
-        let (_, refreshed) = library.scan().unwrap();
+        let (_, refreshed) = library.scan();
         assert_eq!(refreshed.meetings[0].id, row.id);
         assert_eq!(
             refreshed.meetings[0].default_run_id.as_deref(),
@@ -764,20 +849,47 @@ mod tests {
         let outside = temp.path().join("secret");
         fs::write(&recording, "verified").unwrap();
         fs::write(&outside, "outside sentinel").unwrap();
+        symlink(&outside, meeting.join("recording.partial.wav")).unwrap();
 
-        let (library, listing) = Library::choose(chosen).unwrap().scan().unwrap();
+        let (library, listing) = Library::choose(chosen.clone()).unwrap().scan();
         let row = &listing.meetings[0];
         assert_eq!(row.status, "Recording saved");
         let Audio::Available(mut handle, _) = library.select(&row.id, None).unwrap().audio else {
             panic!("expected the selected recording");
         };
+        let directory = open_absolute(&meeting).unwrap();
+        let name = Path::new("recording.wav");
+        let expected = directory.symlink_metadata(name).unwrap();
         fs::rename(&recording, meeting.join("moved.wav")).unwrap();
         symlink(outside, recording).unwrap();
+        assert!(open_verified_file(&directory, name, &expected).is_err());
         let mut bytes = String::new();
         handle.read_to_string(&mut bytes).unwrap();
         assert_eq!(bytes, "verified");
         let selection = library.select(&row.id, None).unwrap();
         assert!(matches!(selection.audio, Audio::Missing));
-        assert!(selection.media_error.is_some());
+        assert_eq!(selection.media_error.unwrap().code, "unsafe_path");
+
+        let runs = meeting.join("transcripts/01");
+        fs::create_dir_all(&runs).unwrap();
+        fs::write(runs.join(CANONICAL), VALID).unwrap();
+        fs::write(runs.join(MARKDOWN), "# Hello").unwrap();
+        fs::write(runs.join(HTML), "<p>Hello</p>").unwrap();
+        fs::write(runs.join(MANAGED), r#"{"state":"published"}"#).unwrap();
+        let (_, with_run) = library.scan();
+        assert_eq!(with_run.meetings[0].runs.len(), 1);
+        assert_eq!(with_run.errors[0].code, "unsafe_path");
+
+        fs::rename(&chosen, temp.path().join("old-chosen")).unwrap();
+        assert_eq!(
+            library.select(&row.id, None).err().unwrap().code,
+            "unavailable_source"
+        );
+        assert_eq!(library.scan().1.errors[0].code, "unavailable_library");
+        fs::create_dir(&chosen).unwrap();
+        assert_eq!(
+            library.select(&row.id, None).err().unwrap().code,
+            "unsafe_path"
+        );
     }
 }

@@ -1,7 +1,7 @@
 (() => {
+  "use strict";
   const readerHost = window.meetingReaderHost;
   if (readerHost) document.documentElement.dataset.readerOnly = "";
-  "use strict";
 
   const byId = id => document.getElementById(id);
   const ui = Object.fromEntries([

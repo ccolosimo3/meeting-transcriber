@@ -115,16 +115,25 @@ fn single<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>, ()>
 }
 
 fn admitted(headers: &HeaderMap, host: &str) -> bool {
-    single(headers, "host") == Ok(Some(host))
-        && matches!(single(headers, "origin"), Ok(None | Some(READER_ORIGIN)))
-        && matches!(
-            single(headers, "sec-fetch-mode"),
-            Ok(None | Some("no-cors" | "cors"))
-        )
-        && matches!(
-            single(headers, "sec-fetch-dest"),
-            Ok(None | Some("audio" | "video" | "empty"))
-        )
+    let origin = single(headers, "origin");
+    if single(headers, "host") != Ok(Some(host))
+        || !matches!(origin, Ok(None | Some(READER_ORIGIN)))
+    {
+        return false;
+    }
+    let site = single(headers, "sec-fetch-site");
+    let mode = single(headers, "sec-fetch-mode");
+    let dest = single(headers, "sec-fetch-dest");
+    // Native media may omit all metadata. When supplied, the destination
+    // must be media and the two loopback/document origins are cross-site.
+    // Credentialless CORS is reserved for the exact bundled document origin.
+    matches!(site, Ok(None | Some("cross-site")))
+        && match (mode, dest) {
+            (Ok(None), Ok(None)) => site == Ok(None),
+            (Ok(None | Some("no-cors")), Ok(Some("audio" | "video"))) => true,
+            (Ok(Some("cors")), Ok(Some("audio" | "video"))) => origin == Ok(Some(READER_ORIGIN)),
+            _ => false,
+        }
 }
 
 fn span(range: Option<&str>, size: u64) -> Option<(u64, u64)> {
@@ -311,6 +320,10 @@ mod tests {
                         assert!(headers.contains(content_range));
                     }
                 }
+                let (native, body) = request("GET", &path, &host,
+                    "Sec-Fetch-Site: cross-site\r\nSec-Fetch-Mode: no-cors\r\nSec-Fetch-Dest: audio\r\n");
+                assert!(native.starts_with("http/1.1 200"));
+                assert_eq!(body, "only granted recording");
                 let (head, body) = request("HEAD", &path, &host, "");
                 assert!(head.contains("content-length: 22"));
                 assert!(body.is_empty());
@@ -318,6 +331,12 @@ mod tests {
                 assert!(cors.contains(&format!("access-control-allow-origin: {READER_ORIGIN}")));
 
                 for (method, route, host, extra, status) in [
+                    ("GET", path.as_str(), host.as_str(),
+                        "Sec-Fetch-Site: cross-site\r\nSec-Fetch-Mode: no-cors\r\nSec-Fetch-Dest: empty\r\n", 403),
+                    ("GET", path.as_str(), host.as_str(),
+                        "Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: no-cors\r\nSec-Fetch-Dest: audio\r\n", 403),
+                    ("GET", path.as_str(), host.as_str(),
+                        "Sec-Fetch-Site: cross-site\r\nSec-Fetch-Site: same-site\r\nSec-Fetch-Dest: audio\r\n", 403),
                     ("GET", "/media/forged", host.as_str(), "", 404),
                     ("GET", path.as_str(), "localhost", "", 403),
                     ("GET", path.as_str(), host.as_str(), "Origin: null\r\n", 403),

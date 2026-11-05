@@ -18,7 +18,7 @@ struct Canonical {
 
 #[derive(Deserialize)]
 struct Segment {
-    id: serde_json::Number,
+    id: Box<serde_json::value::RawValue>,
     start: f64,
     end: f64,
     text: String,
@@ -67,7 +67,14 @@ fn invalid() -> io::Error {
 
 impl ReaderTranscript {
     pub fn read(file: File, historical: bool) -> io::Result<Self> {
-        let canonical: Canonical = serde_json::from_reader(BufReader::new(file))?;
+        let canonical: Canonical =
+            serde_json::from_reader(BufReader::new(file)).map_err(|error| {
+                if error.is_io() {
+                    error.into()
+                } else {
+                    invalid()
+                }
+            })?;
         if trimmed(&canonical.language).is_empty() || trimmed(&canonical.text).is_empty() {
             return Err(invalid());
         }
@@ -76,9 +83,9 @@ impl ReaderTranscript {
         for segment in &canonical.segments {
             let id = segment
                 .id
-                .as_str()
+                .get()
                 .strip_prefix('-')
-                .unwrap_or(segment.id.as_str());
+                .unwrap_or(segment.id.get());
             if !id.bytes().all(|byte| byte.is_ascii_digit())
                 || !interval(segment.start, segment.end)
                 || trimmed(&segment.text).is_empty()

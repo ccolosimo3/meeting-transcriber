@@ -16,7 +16,7 @@ cap-fs-ext = "=4.0.3"
 cap-std = "=4.0.3"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["arbitrary_precision"] }
+serde_json = { version = "1", features = ["raw_value"] }
 tauri-plugin-dialog = { version = "2", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]

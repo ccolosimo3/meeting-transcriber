@@ -16,9 +16,10 @@ task-local location on PATH and build the app.
 cargo install tauri-cli --version 2.12.4 --locked --root .local-artifacts/tauri-cli
 export PATH="$PWD/.local-artifacts/tauri-cli/bin:$PATH"
 cargo tauri build --bundles app -- --locked
+codesign --force --sign - "src-tauri/target/release/bundle/macos/Meeting Transcriber Reader.app"
 ```
 
-The bundle is under `src-tauri/target/release/bundle/macos/` unless
+The ad-hoc signature is for local development. The bundle is under `src-tauri/target/release/bundle/macos/` unless
 `CARGO_TARGET_DIR` overrides it. Run focused checks with
 `cargo test --release --locked --manifest-path src-tauri/Cargo.toml`.
 
