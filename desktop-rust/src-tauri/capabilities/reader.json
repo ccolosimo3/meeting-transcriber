@@ -1,0 +1,6 @@
+{
+  "identifier": "reader",
+  "description": "Read-only commands for the single bundled reader window.",
+  "windows": ["reader"],
+  "permissions": ["allow-choose-library", "allow-refresh-library", "allow-load-run"]
+}

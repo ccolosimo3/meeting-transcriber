@@ -26,6 +26,9 @@ Windows packages require separate native lifecycle and ACL qualification; Mac
 verification does not establish Windows behavior. Microphone recording remains a
 Mac CLI feature.
 
+The [Rust desktop reader](desktop-rust/README.md) is a separate development
+build for browsing, reading and playing saved meetings.
+
 ## Desktop library and audio viewer
 
 From a checkout with [uv](https://docs.astral.sh/uv/) installed:

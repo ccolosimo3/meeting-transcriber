@@ -1,4 +1,6 @@
 (() => {
+  const readerHost = window.meetingReaderHost;
+  if (readerHost) document.documentElement.dataset.readerOnly = "";
   "use strict";
 
   const byId = id => document.getElementById(id);
@@ -63,7 +65,7 @@
   }
 
   function api() {
-    return window.pywebview && window.pywebview.api;
+    return readerHost || window.pywebview?.api;
   }
 
   function notice(message) {
@@ -432,7 +434,8 @@
     ui["library-empty"].hidden = meetings.length > 0;
     ui["library-empty"].textContent = (query || show !== "all") && state.meetings.length
       ? "No meetings match. Try another title or choose Show All."
-      : "No meetings found. Import audio to begin, or choose a library.";
+      : readerHost ? "Choose a library folder with saved meetings."
+        : "No meetings found. Import audio to begin, or choose a library.";
     updateLibraryControls();
   }
 
@@ -586,7 +589,9 @@
       ui["open-html"].hidden = !(data.exports && data.exports.html && state.runId);
       if (data.reader_transcript) renderTranscript(data.reader_transcript);
       else {
-        ui["transcript-empty-message"].textContent = data.exports && data.exports.html
+        ui["transcript-empty-message"].textContent = readerHost && data.historical
+          ? "Open this older transcript in the existing app."
+          : data.exports && data.exports.html
           ? "A structured transcript is unavailable for this run. You can open its saved HTML, or choose another run."
           : "There is no readable transcript for this meeting yet. Its saved audio is available below when present.";
         ui["fallback-open-html"].hidden = ui["open-html"].hidden;
@@ -754,7 +759,9 @@
   function mediaFailure(message) {
     detachMedia();
     ui["audio-status"].textContent = message;
-    ui["playing-status"].textContent = "The transcript remains available to read and search.";
+    ui["playing-status"].textContent = readerHost && !state.data?.reader_transcript
+      ? "Choose another meeting or refresh the library."
+      : "The transcript remains available to read and search.";
   }
 
   function bindMedia(data, generation) {
@@ -976,5 +983,11 @@
   ui["passages"].addEventListener("scroll", () => { if (!programmaticScroll) releaseFollow(); }, { passive: true });
   window.addEventListener("beforeunload", detachMedia);
   window.addEventListener("pywebviewready", () => scanLibrary(false), { once: true });
-  if (api()) scanLibrary(false);
+  if (readerHost) {
+    ui["reader-empty-detail"].textContent = "Choose a library folder to begin.";
+    renderLibrary();
+    updateLibraryControls();
+    ui["library-folder"].open = true;
+    ui["folder-toggle"].setAttribute("aria-expanded", "true");
+  } else if (api()) scanLibrary(false);
 })();

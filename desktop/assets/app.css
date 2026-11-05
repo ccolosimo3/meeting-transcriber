@@ -244,3 +244,5 @@ audio { display: block; width: 100%; height: 42px; }
   .toolbar { gap: 7px; padding-inline: 10px; }
   #operation-progress { flex-wrap: wrap; }
 }
+
+[data-reader-only] [data-full-app] { display: none; }

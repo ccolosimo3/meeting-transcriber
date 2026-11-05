@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Meeting Transcriber Reader",
+  "version": "0.1.0",
+  "identifier": "io.meetingtranscriber.rustreader",
+  "build": {"frontendDist": "../../desktop/assets"},
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "capabilities": ["reader"],
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; object-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": ["icons/icon.png"]
+  }
+}

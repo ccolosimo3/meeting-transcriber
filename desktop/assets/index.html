@@ -14,23 +14,23 @@
     <button id="library-toggle" type="button" aria-controls="library" aria-expanded="true">Hide library</button>
     <h1 id="meeting-title" tabindex="-1">Meeting Transcriber</h1>
     <div class="toolbar-actions">
-      <button id="import-audio" type="button" disabled>Import audio</button>
+      <button id="import-audio" data-full-app type="button" disabled>Import audio</button>
       <button id="find-toggle" type="button" aria-controls="find-panel" aria-expanded="false" disabled>Find</button>
       <button id="details-toggle" type="button" aria-controls="details-panel" aria-expanded="false" disabled>Details</button>
       <details id="actions-menu" class="actions-menu">
         <summary id="actions-toggle" aria-label="More actions" aria-expanded="false">•••</summary>
         <div class="actions-panel">
-          <button id="open-html" type="button" hidden>Open saved HTML ↗</button>
-          <button id="setup-toggle" type="button">Transcription setup</button>
+          <button id="open-html" data-full-app type="button" hidden>Open saved HTML ↗</button>
+          <button id="setup-toggle" data-full-app type="button">Transcription setup</button>
           <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
         </div>
       </details>
     </div>
   </header>
   <div id="library-feedback" class="library-feedback" role="status" hidden><p id="library-feedback-message"></p><button id="library-recovery" type="button">Open Library</button></div>
-  <div id="digest-progress" class="library-feedback" role="status" hidden><p id="digest-status"></p><button id="cancel-summary" type="button" hidden>Cancel summary</button></div>
-  <div id="operation-progress" class="library-feedback" role="status" hidden><p id="operation-status"></p><button id="operation-result" type="button" hidden>Open transcript</button></div>
-  <section id="transcription-setup" class="transcription-setup" aria-label="Transcription setup" hidden>
+  <div id="digest-progress" data-full-app class="library-feedback" role="status" hidden><p id="digest-status"></p><button id="cancel-summary" type="button" hidden>Cancel summary</button></div>
+  <div id="operation-progress" data-full-app class="library-feedback" role="status" hidden><p id="operation-status"></p><button id="operation-result" type="button" hidden>Open transcript</button></div>
+  <section id="transcription-setup" data-full-app class="transcription-setup" aria-label="Transcription setup" hidden>
     <div class="panel-heading"><h2>Transcription setup</h2><button id="setup-close" type="button" aria-label="Close transcription setup">×</button></div>
     <p id="setup-status" role="status">Checking readiness…</p><p id="credential-location" class="library-path"></p>
     <form id="key-form"><label for="assemblyai-key">AssemblyAI API key</label><input id="assemblyai-key" type="password" autocomplete="off" spellcheck="false" required><button id="save-key" type="submit">Save key</button></form>
@@ -64,8 +64,8 @@
         <p id="reader-empty-detail" class="empty-detail">Choose a meeting from your library to begin.</p>
       </div>
       <div id="reader-content" class="reader-content" hidden>
-        <div class="transcription-tools"><button id="transcribe-audio" type="button" disabled>Transcribe</button><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button><p>Transcribe sends this recording to AssemblyAI. Paid account usage applies. Remote data is deleted after local save. Speakers are estimated automatically.</p></div>
-        <div class="summary-tools">
+        <div class="transcription-tools" data-full-app><button id="transcribe-audio" type="button" disabled>Transcribe</button><button id="retry-cleanup" type="button" hidden>Retry remote cleanup</button><p>Transcribe sends this recording to AssemblyAI. Paid account usage applies. Remote data is deleted after local save. Speakers are estimated automatically.</p></div>
+        <div class="summary-tools" data-full-app>
           <div class="summary-views" role="group" aria-label="Reader view"><button id="summary-view" type="button" aria-pressed="false" disabled>Summary</button><button id="transcript-view" type="button" aria-pressed="true">Transcript</button></div>
           <label for="summary-provider">Generate with</label><select id="summary-provider"><option value="claude">Claude</option><option value="codex">Codex</option></select><button id="generate-summary" type="button" disabled>Generate summary</button>
           <p id="summary-disclosure">Sends this saved transcript to your signed-in Claude Code CLI subscription. No automatic follow-up.</p>
@@ -96,7 +96,7 @@
         </div>
         <section id="summary-panel" class="summary-panel" aria-label="Meeting summary" hidden><label for="summary-history">Saved summaries</label><select id="summary-history"></select><p id="summary-provenance" class="summary-provenance"></p><p id="summary-warning" class="summary-provenance" role="status" hidden></p><p id="summary-format-warning" class="summary-provenance" role="status" hidden></p><div id="summary-text" class="summary-text" tabindex="0"></div></section>
         <div id="passages" class="passages" tabindex="0" aria-label="Transcript passages"></div>
-        <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" type="button" hidden>Open saved HTML ↗</button></div>
+        <div id="transcript-empty" class="transcript-empty" role="status" hidden><p id="transcript-empty-message"></p><button id="fallback-open-html" data-full-app type="button" hidden>Open saved HTML ↗</button></div>
         <footer class="player" aria-label="Audio player">
           <div class="player-main">
             <button id="back-ten" type="button" disabled>↶ 10 sec</button>
